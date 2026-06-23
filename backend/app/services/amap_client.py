@@ -1,0 +1,264 @@
+"""高德地图 API 客户端。
+
+封装地理编码、POI 周边搜索、路线规划、天气查询。
+文档: https://lbs.amap.com/api/webservice/guide/api/georegeo
+"""
+import logging
+from dataclasses import dataclass
+
+import httpx
+
+from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+AMAP_BASE = "https://restapi.amap.com/v3"
+
+# POI 类型码（高德开放平台）
+# 详见 https://lbs.amap.com/api/webservice/guide/api/search
+POI_TYPES = {
+    "attraction": "110000",  # 风景名胜
+    "meal": "050000",  # 餐饮服务
+    "hotel": "100000",  # 住宿服务
+}
+
+
+@dataclass
+class GeoResult:
+    """地理编码结果。"""
+
+    location: str  # "经度,纬度" (GCJ02)
+    lng: float
+    lat: float
+    city: str | None = None
+    adcode: str | None = None  # 区域编码，可用于天气查询
+
+
+@dataclass
+class Poi:
+    """POI 搜索结果。"""
+
+    id: str
+    name: str
+    type: str
+    lng: float
+    lat: float
+    address: str
+    tel: str = ""
+    rating: float | None = None  # 评分（如有）
+
+
+@dataclass
+class RouteSegment:
+    """两点间路线规划结果。"""
+
+    distance_m: int  # 距离（米）
+    duration_s: int  # 时间（秒）
+    mode: str  # driving / walking / transit
+
+
+class AmapError(Exception):
+    """高德 API 调用异常。"""
+
+
+class AmapClient:
+    """高德地图 API 客户端。"""
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self.api_key = api_key or settings.AMAP_API_KEY
+        self._client = httpx.Client(timeout=10.0)
+
+    def _check(self, data: dict) -> None:
+        """校验高德响应状态。"""
+        status = data.get("status")
+        if status != "1":
+            raise AmapError(f"高德 API 错误: {data.get('info')} (infocode={data.get('infocode')})")
+
+    def geocode(self, address: str) -> GeoResult:
+        """地理编码：地址 -> 坐标 + 城市。"""
+        resp = self._client.get(
+            f"{AMAP_BASE}/geocode/geo",
+            params={"key": self.api_key, "address": address},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._check(data)
+        geocodes = data.get("geocodes") or []
+        if not geocodes:
+            raise AmapError(f"无法解析地址: {address}")
+        g = geocodes[0]
+        loc = g["location"]  # "lng,lat"
+        lng, lat = loc.split(",")
+        return GeoResult(
+            location=loc,
+            lng=float(lng),
+            lat=float(lat),
+            city=g.get("city") or None,
+            adcode=g.get("adcode") or None,
+        )
+
+    def search_poi_around(
+        self,
+        location: str,
+        poi_type: str,
+        radius: int = 20000,
+        limit: int = 30,
+        city: str | None = None,
+    ) -> list[Poi]:
+        """周边 POI 搜索。
+
+        location: "lng,lat"  poi_type: POI_TYPES 中的值或类型码
+        """
+        params = {
+            "key": self.api_key,
+            "location": location,
+            "types": poi_type,
+            "radius": radius,
+            "offset": limit,
+            "page": 1,
+            "extensions": "all",
+            "sortrule": "weight",  # 按权重排序
+        }
+        if city:
+            params["city"] = city
+        resp = self._client.get(f"{AMAP_BASE}/place/around", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        self._check(data)
+        pois: list[Poi] = []
+        for p in data.get("pois") or []:
+            loc = p.get("location") or ""
+            if not loc:
+                continue
+            try:
+                lng, lat = loc.split(",")
+                rating = None
+                biz_ext = p.get("biz_ext") or {}
+                if isinstance(biz_ext, dict) and biz_ext.get("rating"):
+                    try:
+                        rating = float(biz_ext["rating"])
+                    except (ValueError, TypeError):
+                        rating = None
+                pois.append(
+                    Poi(
+                        id=p.get("id", ""),
+                        name=p.get("name", ""),
+                        type=p.get("type", ""),
+                        lng=float(lng),
+                        lat=float(lat),
+                        address=p.get("address") or "",
+                        tel=p.get("tel") or "",
+                        rating=rating,
+                    )
+                )
+            except (ValueError, KeyError):
+                continue
+        return pois
+
+    def search_poi_by_keyword(
+        self, keyword: str, city: str | None = None, limit: int = 10
+    ) -> list[Poi]:
+        """关键词 POI 搜索（用于校验 LLM 输出的景点名是否真实存在）。"""
+        params = {
+            "key": self.api_key,
+            "keywords": keyword,
+            "offset": limit,
+            "page": 1,
+            "extensions": "base",
+        }
+        if city:
+            params["city"] = city
+        resp = self._client.get(f"{AMAP_BASE}/place/text", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        self._check(data)
+        pois: list[Poi] = []
+        for p in data.get("pois") or []:
+            loc = p.get("location") or ""
+            if not loc:
+                continue
+            try:
+                lng, lat = loc.split(",")
+                pois.append(
+                    Poi(
+                        id=p.get("id", ""),
+                        name=p.get("name", ""),
+                        type=p.get("type", ""),
+                        lng=float(lng),
+                        lat=float(lat),
+                        address=p.get("address") or "",
+                        tel=p.get("tel") or "",
+                    )
+                )
+            except (ValueError, KeyError):
+                continue
+        return pois
+
+    def plan_route(
+        self, origin: str, destination: str, mode: str = "walking"
+    ) -> RouteSegment | None:
+        """路线规划。
+
+        origin/destination: "lng,lat"  mode: driving / walking / transit
+        返回 None 表示规划失败。
+        """
+        path_map = {
+            "driving": "/direction/driving",
+            "walking": "/direction/walking",
+            "transit": "/direction/transit/integrated",
+        }
+        path = path_map.get(mode)
+        if not path:
+            return None
+        params: dict = {"key": self.api_key, "origin": origin, "destination": destination}
+        if mode == "transit":
+            params["city"] = ""  # transit 需 city，但此处简化处理
+        try:
+            resp = self._client.get(f"{AMAP_BASE}{path}", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            self._check(data)
+            route = data.get("route") or {}
+            paths = route.get("paths") or []
+            if not paths:
+                return None
+            p = paths[0]
+            return RouteSegment(
+                distance_m=int(p.get("distance", 0)),
+                duration_s=int(p.get("duration", 0)),
+                mode=mode,
+            )
+        except (AmapError, httpx.HTTPError, ValueError) as e:
+            logger.warning("路线规划失败 %s -> %s (%s): %s", origin, destination, mode, e)
+            return None
+
+    def weather(self, adcode: str) -> dict | None:
+        """天气查询。返回当天天气信息，失败返回 None。"""
+        try:
+            resp = self._client.get(
+                f"{AMAP_BASE}/weather/weatherInfo",
+                params={"key": self.api_key, "city": adcode, "extensions": "base"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self._check(data)
+            lives = data.get("lives") or []
+            return lives[0] if lives else None
+        except (AmapError, httpx.HTTPError) as e:
+            logger.warning("天气查询失败 %s: %s", adcode, e)
+            return None
+
+    def close(self) -> None:
+        self._client.close()
+
+
+# 模块级单例，供服务层复用
+_client: AmapClient | None = None
+
+
+def get_amap_client() -> AmapClient:
+    global _client
+    if _client is None:
+        _client = AmapClient()
+    return _client
