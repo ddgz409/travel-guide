@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Day, Item, Trip
 from app.services.amap_client import AmapClient, AmapError, Poi, POI_TYPES, get_amap_client
+from app.services.web_search import search_travel_tips
 from app.services.zhipu_client import LLMError, ZhipuClient, get_zhipu_client
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,15 @@ logger = logging.getLogger(__name__)
 # 系统提示词：约束 LLM 角色与输出格式
 SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供的真实景点数据为用户规划行程。
 
-要求：
-1. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
-2. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
-3. 同一区域的景点安排在同一天，路线合理不绕路
-4. 为每个条目提供简短描述和实用贴士
-5. 合理估算每个条目的费用（cost，单位：元）
-6. 必须返回 JSON 对象，格式如下：
+核心原则：
+1. 优先选择高评分（★4.0以上）和地标性景点，确保覆盖目的地最著名的必去之处
+2. 如果用户指定了"必去景点"，必须全部包含在行程中
+3. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
+4. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
+5. 同一区域的景点安排在同一天，路线合理不绕路
+6. 为每个条目提供简短描述和实用贴士
+7. 合理估算每个条目的费用（cost，单位：元）
+8. 必须返回 JSON 对象，格式如下：
 {
   "days": [
     {
@@ -88,14 +91,19 @@ class GuideGenerator:
             geo = self.amap.geocode(trip.destination)
             logger.info("地理编码 %s -> %s", trip.destination, geo.location)
 
-            # 2. POI 检索（候选池）
-            pool = self._fetch_poi_pool(geo, trip.destination)
+            # 2. POI 检索（候选池）—— 扩大半径 + 按评分排序
+            must_include = (trip.preferences or {}).get("must_include") or []
+            pool = self._fetch_poi_pool(geo, trip.destination, must_include)
             if not pool:
                 raise GeneratorError(f"未找到 {trip.destination} 的景点数据")
 
+            # 2.5 网页搜索：获取公开的旅游攻略摘要作为 LLM 参考
+            web_results = search_travel_tips(trip.destination, max_results=8)
+            logger.info("网页搜索 %s: %d 条摘要", trip.destination, len(web_results))
+
             # 3 & 4. LLM 生成 + 解析校验
             try:
-                day_plans = self._generate_via_llm(pool, trip, days_count)
+                day_plans = self._generate_via_llm(pool, trip, days_count, web_results)
             except LLMError as e:
                 logger.warning("LLM 生成失败，降级处理: %s", e)
                 day_plans = self._fallback_plan(pool, trip, days_count)
@@ -121,11 +129,13 @@ class GuideGenerator:
         """重新生成指定某一天。"""
         try:
             geo = self.amap.geocode(trip.destination)
-            pool = self._fetch_poi_pool(geo, trip.destination)
+            must_include = (trip.preferences or {}).get("must_include") or []
+            pool = self._fetch_poi_pool(geo, trip.destination, must_include)
             if not pool:
                 raise GeneratorError(f"未找到 {trip.destination} 的景点数据")
 
-            day_plans = self._generate_via_llm(pool, trip, (trip.end_date - trip.start_date).days + 1)
+            web_results = search_travel_tips(trip.destination, max_results=8)
+            day_plans = self._generate_via_llm(pool, trip, (trip.end_date - trip.start_date).days + 1, web_results)
             target = next((d for d in day_plans if d.get("day_index") == day_index), None)
             if not target:
                 raise GeneratorError(f"未生成第 {day_index} 天的行程")
@@ -146,30 +156,50 @@ class GuideGenerator:
     # 步骤实现
     # ------------------------------------------------------------------
 
-    def _fetch_poi_pool(self, geo, destination: str) -> dict[str, list[Poi]]:
-        """获取三类 POI 候选池。"""
+    def _fetch_poi_pool(self, geo, destination: str, must_include: list[dict] | None = None) -> dict[str, list[Poi]]:
+        """获取三类 POI 候选池。扩大半径，按评分排序，确保必去景点在列。"""
+        must_include = must_include or []
         pool: dict[str, list[Poi]] = {}
         for kind, type_code in POI_TYPES.items():
             try:
                 pois = self.amap.search_poi_around(
                     location=geo.location,
                     poi_type=type_code,
-                    radius=30000,
+                    radius=50000,      # 扩大到 50km
                     limit=POI_LIMIT,
                     city=geo.city,
                 )
+                # 按评分降序排序
+                pois.sort(key=lambda p: p.rating or 0, reverse=True)
                 pool[kind] = pois
-                logger.info("POI 检索 %s: %d 条", kind, len(pois))
+                logger.info("POI 检索 %s: %d 条 (top评分: %.1f)", kind, len(pois), pois[0].rating if pois else 0)
             except AmapError as e:
                 logger.warning("POI 检索 %s 失败: %s", kind, e)
                 pool[kind] = []
+
+        # 确保 must_include 景点在候选池中（如果高德没搜到，用关键词搜索补）
+        for mi in must_include:
+            name = mi.get("name", "")
+            if not name:
+                continue
+            found = any(name in p.name or p.name in name for p in pool.get("attraction", []))
+            if not found:
+                try:
+                    results = self.amap.search_poi_by_keyword(name, city=geo.city, limit=1)
+                    if results:
+                        pool["attraction"].insert(0, results[0])  # 插到最前面
+                        logger.info("must_include 补入候选池: %s", name)
+                except AmapError:
+                    pass
+
         return pool
 
     def _generate_via_llm(
-        self, pool: dict[str, list[Poi]], trip: Trip, days_count: int
+        self, pool: dict[str, list[Poi]], trip: Trip, days_count: int,
+        web_results: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """调用 LLM 生成行程，解析并校验。"""
-        user_prompt = self._build_user_prompt(pool, trip, days_count)
+        user_prompt = self._build_user_prompt(pool, trip, days_count, web_results)
         result = self.llm.chat_json(SYSTEM_PROMPT, user_prompt)
 
         days = result.get("days")
@@ -184,27 +214,47 @@ class GuideGenerator:
         return days
 
     def _build_user_prompt(
-        self, pool: dict[str, list[Poi]], trip: Trip, days_count: int
+        self, pool: dict[str, list[Poi]], trip: Trip, days_count: int,
+        web_results: list[dict[str, Any]] | None = None,
     ) -> str:
-        """构造用户提示词，注入候选 POI 与偏好。"""
+        """构造用户提示词，注入候选 POI（含评分）+ 网页摘要。"""
         def fmt(kind: str) -> str:
-            return "\n".join(
-                f"- {p.name}（{p.address or '地址未知'}）" for p in pool.get(kind, [])[:15]
-            )
+            lines = []
+            for p in pool.get(kind, [])[:20]:
+                rating_str = f" ★{p.rating}" if p.rating else ""
+                lines.append(f"- {p.name}{rating_str}（{p.address or '地址未知'}）")
+            return "\n".join(lines)
 
         prefs = trip.preferences or {}
         interests = prefs.get("interests", [])
         budget_level = prefs.get("budget_level", "中等")
         transport = prefs.get("transport", "公共交通")
+        must_include = prefs.get("must_include") or []
+
+        # 必去景点提示
+        must_section = ""
+        if must_include:
+            names = [m.get("name", "") for m in must_include if m.get("name")]
+            if names:
+                must_section = f"\n⚠️ 用户指定的必去景点（必须全部安排！）：\n" + "\n".join(f"- {n}" for n in names)
+
+        # 网页搜索摘要
+        web_section = ""
+        if web_results:
+            snippets = "\n".join(
+                f"- {r['snippet'][:200]}" for r in web_results[:6] if r.get("snippet")
+            )
+            if snippets:
+                web_section = f"\n📖 网上关于{trip.destination}的攻略建议（仅供参考，最终安排以候选景点为准）：\n{snippets}"
 
         return f"""请为以下旅行规划 {days_count} 天的行程：
 
 目的地：{trip.destination}
 日期：{trip.start_date} 至 {trip.end_date}（共 {days_count} 天）
 人数：{trip.travelers} 人
-偏好：兴趣 {interests}；预算等级 {budget_level}；交通方式 {transport}
+偏好：兴趣 {interests}；预算等级 {budget_level}；交通方式 {transport}{must_section}{web_section}
 
-可选景点：
+可选景点（按评分降序，优先选前面高分景点）：
 {fmt('attraction')}
 
 可选餐饮：
@@ -213,7 +263,7 @@ class GuideGenerator:
 可选住宿：
 {fmt('hotel')}
 
-请严格使用以上候选地点生成 {days_count} 天的 JSON 行程。"""
+请严格使用以上候选地点生成 {days_count} 天的 JSON 行程。优先安排高评分和地标性景点。{"同时参考网上攻略建议，合理规划路线。" if web_results else ""}"""
 
     def _validate_and_enrich(
         self, item: dict[str, Any], pool: dict[str, list[Poi]], destination: str

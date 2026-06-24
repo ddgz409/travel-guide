@@ -2,6 +2,7 @@
 
 import type {
   GenerateRequest,
+  PoiSearchResult,
   Token,
   Trip,
   TripListItem,
@@ -49,10 +50,13 @@ async function request<T>(
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-  // 401 时清除失效 token
+  // 401 处理：有 token 说明是过期，无 token 说明是登录失败
   if (res.status === 401) {
-    setToken(null);
-    throw new ApiError("登录已过期，请重新登录", 401);
+    if (token) {
+      setToken(null);
+      throw new ApiError("登录已过期，请重新登录", 401);
+    }
+    // 无 token 的 401（如登录/注册失败），按普通错误处理，走下方 !res.ok 分支
   }
 
   if (!res.ok) {
@@ -92,6 +96,12 @@ export const authApi = {
 // ---------------- 攻略 ----------------
 
 export const tripsApi = {
+  /** 搜索景点（供搜索框使用）。 */
+  searchPois: (q: string, city: string = "", limit: number = 8) =>
+    request<PoiSearchResult[]>(
+      `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}`
+    ),
+
   generate: (payload: GenerateRequest) =>
     request<Trip>("/trips/generate", {
       method: "POST",
@@ -111,7 +121,7 @@ export const tripsApi = {
   updateItem: (
     tripId: string,
     itemId: string,
-    data: { name?: string; description?: string; duration_min?: number; cost?: number; time_slot?: string; selected?: boolean },
+    data: { name?: string; description?: string; duration_min?: number; cost?: number; time_slot?: string; selected?: boolean; poi_id?: string; location?: Record<string, unknown>; rating?: number },
   ) =>
     request<Trip>(`/trips/${tripId}/items/${itemId}`, {
       method: "PUT",

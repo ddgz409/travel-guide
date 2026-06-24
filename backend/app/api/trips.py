@@ -20,6 +20,7 @@ from app.schemas import (
     TripUpdate,
 )
 from app.services.generator import GeneratorError, get_generator
+from app.services.amap_client import get_amap_client
 from app.services.pdf_export import export_trip_pdf
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
@@ -51,6 +52,11 @@ def generate(
     if payload.start_date != payload.end_date:
         title = f"{payload.destination}{(payload.end_date - payload.start_date).days + 1}日游"
 
+    # 合并 must_include 到 preferences
+    preferences = dict(payload.preferences)
+    if payload.must_include:
+        preferences["must_include"] = payload.must_include
+
     trip = Trip(
         user_id=current.id,
         title=title,
@@ -58,7 +64,7 @@ def generate(
         start_date=payload.start_date,
         end_date=payload.end_date,
         travelers=payload.travelers,
-        preferences=payload.preferences,
+        preferences=preferences,
         status="generating",
     )
     db.add(trip)
@@ -83,6 +89,45 @@ def _run_generate(trip_id: str, generator) -> None:
         generator.generate(trip, db)
     finally:
         db.close()
+
+
+@router.get("/pois/search")
+def search_pois(
+    q: str,
+    city: str = "",
+    limit: int = 10,
+    current: User = Depends(get_current_user),
+):
+    """搜索景点（供前端搜索框使用）。
+
+    通过高德关键词搜索 POI，返回景点列表含评分。
+    """
+    if not q.strip():
+        return []
+    amap = get_amap_client()
+    try:
+        results = amap.search_poi_by_keyword(
+            keyword=q.strip(),
+            city=city.strip() or None,
+            limit=min(limit, 20),
+        )
+        return [
+            {
+                "poi_id": p.id,
+                "name": p.name,
+                "location": {
+                    "lng": p.lng,
+                    "lat": p.lat,
+                    "address": p.address,
+                },
+                "rating": p.rating,
+                "type": p.type,
+                "address": p.address,
+            }
+            for p in results
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
 
 
 @router.get("", response_model=list[TripListItem])
@@ -138,10 +183,12 @@ def update_item(
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
 
-    for field in ("name", "description", "duration_min", "cost", "time_slot"):
+    for field in ("name", "description", "duration_min", "cost", "time_slot", "poi_id", "rating"):
         val = getattr(payload, field, None)
         if val is not None:
             setattr(item, field, val)
+    if payload.location is not None:
+        item.location = payload.location
     # 自选编辑：取消/恢复勾选
     if payload.selected is not None:
         item.selected = payload.selected

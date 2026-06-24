@@ -98,10 +98,20 @@ export interface TripListItem {
   created_at: string;
 }
 
+export interface PoiSearchResult {
+  poi_id: string;
+  name: string;
+  location: Location | null;
+  rating: number | null;
+  type: string;
+  address: string;
+}
+
 export interface GenerateRequest {
   destination: string;
   start_date: string;
   end_date: string;
   travelers: number;
   preferences: TripPreferences;
+  must_include?: PoiSearchResult[];
 }

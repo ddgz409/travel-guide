@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { tripsApi } from "@/lib/api";
-import type { Day, Trip } from "@/lib/types";
+import type { Day, Trip, PoiSearchResult } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
 import { ItemCard } from "@/components/item-card";
 
@@ -64,6 +64,18 @@ export default function TripDetailPage() {
   const swapItem = useMutation({
     mutationFn: ({ itemId, altIndex }: { itemId: string; altIndex: number }) =>
       tripsApi.swapItem(tripId, itemId, altIndex),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trip", tripId] }),
+  });
+
+  // 搜索替换（直接替换为任意搜索到的 POI）
+  const replaceItem = useMutation({
+    mutationFn: ({ itemId, poi }: { itemId: string; poi: PoiSearchResult }) =>
+      tripsApi.updateItem(tripId, itemId, {
+        name: poi.name,
+        poi_id: poi.poi_id,
+        location: (poi.location as unknown as Record<string, unknown>) || undefined,
+        rating: poi.rating ?? undefined,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["trip", tripId] }),
   });
 
@@ -248,6 +260,7 @@ export default function TripDetailPage() {
                     index={idx}
                     onToggle={(selected) => toggleItem.mutate({ itemId: it.id, selected })}
                     onSwap={(altIndex) => swapItem.mutate({ itemId: it.id, altIndex })}
+                    onReplace={(poi) => replaceItem.mutate({ itemId: it.id, poi })}
                     onDragStart={() => setDragIndex(idx)}
                     onDragOver={() => setDragOverIndex(idx)}
                     onDrop={() => currentDay && handleDrop(currentDay, dayItems, idx)}

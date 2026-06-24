@@ -39,6 +39,9 @@ class ItemUpdate(BaseModel):
     cost: float | None = None
     time_slot: TimeSlot | None = None
     selected: bool | None = None
+    poi_id: str | None = None
+    location: dict | None = None
+    rating: float | None = None
 
 
 class ReorderItem(BaseModel):
@@ -76,6 +79,10 @@ class TripGenerateRequest(BaseModel):
     preferences: dict = Field(
         default_factory=lambda: {},
         description="偏好：兴趣、住宿等级、交通方式等",
+    )
+    must_include: list[dict] = Field(
+        default_factory=list,
+        description="用户自选的必去景点列表 [{name, poi_id, location}]",
     )
 
     model_config = ConfigDict(json_schema_extra={

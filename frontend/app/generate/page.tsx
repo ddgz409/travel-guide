@@ -1,15 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, useRef, useCallback, type FormEvent, type KeyboardEvent } from "react";
 
 import { tripsApi } from "@/lib/api";
+import type { PoiSearchResult } from "@/lib/types";
 
 const INTEREST_OPTIONS = [
   "文化", "美食", "购物", "自然", "历史", "夜生活", "亲子", "艺术", "运动",
 ];
 const BUDGET_LEVELS = ["经济", "中等", "豪华"];
 const TRANSPORTS = ["公共交通", "自驾", "步行", "混合"];
+
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export default function GeneratePage() {
   const router = useRouter();
@@ -23,6 +26,59 @@ export default function GeneratePage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // ---- 搜索景点 ----
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PoiSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [mustInclude, setMustInclude] = useState<PoiSearchResult[]>([]);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    setSearching(true);
+    try {
+      const results = await tripsApi.searchPois(q.trim(), destination.trim(), 8);
+      setSearchResults(results);
+      setShowResults(true);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [destination]);
+
+  const handleSearchInput = (val: string) => {
+    setSearchQuery(val);
+    if (_debounceTimer) clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(() => doSearch(val), 400);
+  };
+
+  const handleSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (_debounceTimer) clearTimeout(_debounceTimer);
+      doSearch(searchQuery);
+    }
+  };
+
+  const addMustInclude = (poi: PoiSearchResult) => {
+    if (!mustInclude.find((m) => m.poi_id === poi.poi_id)) {
+      setMustInclude((prev) => [...prev, poi]);
+    }
+    setShowResults(false);
+    setSearchQuery("");
+  };
+
+  const removeMustInclude = (poiId: string) => {
+    setMustInclude((prev) => prev.filter((m) => m.poi_id !== poiId));
+  };
+
+  // ---- 提交 ----
   const toggleInterest = (v: string) => {
     setInterests((prev) =>
       prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v],
@@ -45,6 +101,7 @@ export default function GeneratePage() {
         end_date: endDate,
         travelers,
         preferences: { interests, budget_level: budgetLevel, transport },
+        must_include: mustInclude.length > 0 ? mustInclude : undefined,
       });
       router.push(`/trips/${trip.id}`);
     } catch (err) {
@@ -58,7 +115,7 @@ export default function GeneratePage() {
     <div className="flex-1 max-w-2xl mx-auto w-full px-5 py-10">
       <h1 className="text-2xl font-extrabold mb-1">生成旅行攻略</h1>
       <p className="text-gray-600 text-sm mb-8">
-        填写你的旅行需求，AI 将为你定制专属行程
+        填写需求，搜索你想去的景点加入必去清单，AI 为你定制行程
       </p>
 
       <form
@@ -72,10 +129,87 @@ export default function GeneratePage() {
             type="text"
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
-            placeholder="如：东京、成都、大理"
+            placeholder="如：北京、成都、东京"
             className="w-full rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
           />
         </div>
+
+        {/* 搜索景点 */}
+        <div ref={searchRef} className="relative">
+          <label className="block text-sm font-bold mb-2">搜索你想去的景点（可选）</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              onKeyDown={handleSearchKey}
+              onFocus={() => searchResults.length > 0 && setShowResults(true)}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+              placeholder="输入景点名搜索，如：故宫、长城..."
+              className="flex-1 rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
+            />
+          </div>
+          {searching && (
+            <div className="absolute z-20 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg p-3 text-sm text-gray-400">
+              搜索中...
+            </div>
+          )}
+          {showResults && searchResults.length > 0 && (
+            <div className="absolute z-20 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+              {searchResults.map((poi) => {
+                const added = mustInclude.some((m) => m.poi_id === poi.poi_id);
+                return (
+                  <button
+                    key={poi.poi_id}
+                    type="button"
+                    onClick={() => !added && addMustInclude(poi)}
+                    disabled={added}
+                    className="w-full text-left px-4 py-3 hover:bg-sky-50 transition-colors flex items-center justify-between disabled:opacity-40 border-b border-gray-100 last:border-0"
+                  >
+                    <div>
+                      <span className="font-semibold text-[15px]">{poi.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{poi.address}</span>
+                    </div>
+                    <span className="text-xs font-bold text-amber-500">
+                      {poi.rating ? `★ ${poi.rating}` : added ? "已添加" : "+ 添加"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 已选必去景点 */}
+        {mustInclude.length > 0 && (
+          <div>
+            <label className="block text-sm font-bold mb-2">
+              🎯 必去景点（{mustInclude.length} 个，AI 将优先安排）
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {mustInclude.map((poi) => (
+                <span
+                  key={poi.poi_id}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-100 text-sky-700 text-sm font-semibold border border-sky-200"
+                >
+                  {poi.name}
+                  {poi.rating && (
+                    <span className="text-xs text-amber-500">★{poi.rating}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeMustInclude(poi.poi_id)}
+                    className="ml-0.5 w-4 h-4 rounded-full bg-sky-200 hover:bg-red-200 text-sky-600 hover:text-red-600 text-xs flex items-center justify-center transition-colors"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="h-px bg-gray-100" />
 
         {/* 日期 */}
         <div className="grid grid-cols-2 gap-4">
@@ -193,7 +327,7 @@ export default function GeneratePage() {
           disabled={submitting}
           className="w-full bg-gradient-to-r from-sky-500 to-indigo-500 text-white rounded-xl py-3.5 font-bold text-base hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          {submitting ? "提交中..." : "✨ 生成攻略"}
+          {submitting ? "提交中..." : mustInclude.length > 0 ? `✨ 生成攻略（含 ${mustInclude.length} 个必去景点）` : "✨ 生成攻略"}
         </button>
       </form>
     </div>
