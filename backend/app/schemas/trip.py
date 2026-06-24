@@ -24,6 +24,9 @@ class ItemOut(BaseModel):
     description: str | None = None
     duration_min: int | None = None
     cost: float | None = None
+    rating: float | None = None
+    selected: bool = True
+    alternatives: list[dict] | None = None
     transport_to_next: dict | None = None
 
 
@@ -35,6 +38,20 @@ class ItemUpdate(BaseModel):
     duration_min: int | None = None
     cost: float | None = None
     time_slot: TimeSlot | None = None
+    selected: bool | None = None
+
+
+class ReorderItem(BaseModel):
+    """拖拽排序：条目在新顺序中的位置。"""
+
+    item_id: str
+    new_seq: int
+
+
+class ReorderRequest(BaseModel):
+    """批量重排序请求。"""
+
+    items: list[ReorderItem]
 
 
 class DayOut(BaseModel):

@@ -111,11 +111,31 @@ export const tripsApi = {
   updateItem: (
     tripId: string,
     itemId: string,
-    data: { name?: string; description?: string; duration_min?: number; cost?: number; time_slot?: string },
+    data: { name?: string; description?: string; duration_min?: number; cost?: number; time_slot?: string; selected?: boolean },
   ) =>
     request<Trip>(`/trips/${tripId}/items/${itemId}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }),
+
+  /** 切换条目勾选状态（自选编辑：取消/恢复）。 */
+  toggleItem: (tripId: string, itemId: string, selected: boolean) =>
+    request<Trip>(`/trips/${tripId}/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify({ selected }),
+    }),
+
+  /** 换备选 POI（"换一个"）。altIndex 为备选列表中的序号。 */
+  swapItem: (tripId: string, itemId: string, altIndex: number) =>
+    request<Trip>(`/trips/${tripId}/items/${itemId}/swap?alt_index=${altIndex}`, {
+      method: "POST",
+    }),
+
+  /** 批量重排序（拖拽排序）。 */
+  reorderItems: (tripId: string, dayId: string, items: { item_id: string; new_seq: number }[]) =>
+    request<Trip>(`/trips/${tripId}/days/${dayId}/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ items }),
     }),
 
   regenerateDay: (tripId: string, dayIndex: number) =>

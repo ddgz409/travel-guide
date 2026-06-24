@@ -29,6 +29,14 @@ export interface TransportToNext {
   duration_s: number;
 }
 
+export interface Alternative {
+  poi_id: string | null;
+  name: string;
+  location: Location | null;
+  rating: number | null;
+  address?: string | null;
+}
+
 export interface Item {
   id: string;
   seq: number;
@@ -40,6 +48,9 @@ export interface Item {
   description: string | null;
   duration_min: number | null;
   cost: number | null;
+  rating: number | null;
+  selected: boolean;
+  alternatives: Alternative[] | null;
   transport_to_next: TransportToNext | null;
 }
 

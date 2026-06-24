@@ -13,6 +13,7 @@ from app.core.deps import get_current_user
 from app.models import Day, Item, Trip, User
 from app.schemas import (
     ItemUpdate,
+    ReorderRequest,
     TripGenerateRequest,
     TripListItem,
     TripOut,
@@ -141,6 +142,78 @@ def update_item(
         val = getattr(payload, field, None)
         if val is not None:
             setattr(item, field, val)
+    # 自选编辑：取消/恢复勾选
+    if payload.selected is not None:
+        item.selected = payload.selected
+    db.commit()
+    db.refresh(trip)
+    return trip
+
+
+@router.post("/{trip_id}/items/{item_id}/swap", response_model=TripOut)
+def swap_item_alternative(
+    trip_id: str,
+    item_id: str,
+    alt_index: int = 0,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """将条目替换为第 alt_index 个备选 POI（"换一个"功能）。
+
+    原 POI 放回备选列表末尾，被选中的备选提升为当前条目。
+    """
+    trip = _trip_or_404(trip_id, db, current.id)
+    item = db.get(Item, item_id)
+    if item is None or item.day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="条目不存在")
+
+    alts = item.alternatives or []
+    if not alts:
+        raise HTTPException(status_code=400, detail="该条目没有备选")
+    if alt_index < 0 or alt_index >= len(alts):
+        raise HTTPException(status_code=400, detail="备选序号超出范围")
+
+    # 保存当前条目信息，放回备选
+    current_info = {
+        "poi_id": item.poi_id,
+        "name": item.name,
+        "location": item.location,
+        "rating": item.rating,
+        "address": (item.location or {}).get("address") if item.location else None,
+    }
+    chosen = alts.pop(alt_index)
+    alts.append(current_info)
+
+    # 应用备选
+    item.poi_id = chosen.get("poi_id")
+    item.name = chosen.get("name", item.name)
+    item.location = chosen.get("location")
+    item.rating = chosen.get("rating")
+    item.alternatives = alts
+    db.commit()
+    db.refresh(trip)
+    return trip
+
+
+@router.put("/{trip_id}/days/{day_id}/reorder", response_model=TripOut)
+def reorder_items(
+    trip_id: str,
+    day_id: str,
+    payload: ReorderRequest,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """批量重排序某天的条目（拖拽排序）。"""
+    trip = _trip_or_404(trip_id, db, current.id)
+    day = db.get(Day, day_id)
+    if day is None or day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="行程天数不存在")
+
+    for entry in payload.items:
+        item = db.get(Item, entry.item_id)
+        if item is None or item.day_id != day.id:
+            raise HTTPException(status_code=400, detail=f"条目 {entry.item_id} 不属于该天")
+        item.seq = entry.new_seq
     db.commit()
     db.refresh(trip)
     return trip

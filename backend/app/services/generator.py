@@ -246,11 +246,16 @@ class GuideGenerator:
                 "lat": matched.lat,
                 "address": matched.address,
             }
+            item["rating"] = matched.rating
         else:
             # 找不到真实坐标，保留条目但无坐标（地图上无法标注）
             logger.warning("无法验证地点是否存在: %s", name)
             item["poi_id"] = None
             item["location"] = None
+            item["rating"] = None
+
+        # 4. 收集备选 POI（用于"换一个"功能）：取候选池中同类型、未被本条目命中的
+        item["alternatives"] = self._collect_alternatives(matched, pool, item_type)
 
         # 规范化字段
         item.setdefault("duration_min", 90)
@@ -270,6 +275,36 @@ class GuideGenerator:
                 if name and (name in p.name or p.name in name):
                     return p
         return None
+
+    @staticmethod
+    def _collect_alternatives(
+        matched: Poi | None, pool: dict[str, list[Poi]], item_type: str
+    ) -> list[dict[str, Any]]:
+        """收集备选 POI（用于前端"换一个"功能）。
+
+        取候选池中同类型、未被当前命中的 POI，最多 5 个，按评分降序。
+        """
+        kind = item_type if item_type in POI_TYPES else "attraction"
+        pois = pool.get(kind, [])
+        candidates = [p for p in pois if matched is None or p.id != matched.id]
+        # 按评分降序
+        candidates.sort(key=lambda p: p.rating or 0, reverse=True)
+        result: list[dict[str, Any]] = []
+        for p in candidates[:5]:
+            result.append(
+                {
+                    "poi_id": p.id,
+                    "name": p.name,
+                    "location": {
+                        "lng": p.lng,
+                        "lat": p.lat,
+                        "address": p.address,
+                    },
+                    "rating": p.rating,
+                    "address": p.address,
+                }
+            )
+        return result
 
     def _fallback_plan(
         self, pool: dict[str, list[Poi]], trip: Trip, days_count: int
@@ -307,6 +342,8 @@ class GuideGenerator:
                             "lat": p.lat,
                             "address": p.address,
                         },
+                        "rating": p.rating,
+                        "alternatives": [],
                     }
                 )
             if meals:
@@ -325,6 +362,8 @@ class GuideGenerator:
                             "lat": m.lat,
                             "address": m.address,
                         },
+                        "rating": m.rating,
+                        "alternatives": [],
                     }
                 )
             days.append({"day_index": d, "summary": "（降级生成）", "items": items})
@@ -376,6 +415,9 @@ class GuideGenerator:
                 description=it.get("description"),
                 duration_min=it.get("duration_min"),
                 cost=float(it.get("cost") or 0),
+                rating=it.get("rating"),
+                selected=True,
+                alternatives=it.get("alternatives"),
                 transport_to_next=transport,
             )
             db.add(item)

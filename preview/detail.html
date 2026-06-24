@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>攻略详情 — UI 预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #fafafa; --card: #ffffff; --text: #111827; --muted: #6b7280;
+    --line: #f0f0f0; --brand: #0ea5e9; --brand-dark: #0284c7;
+    --amber: #f59e0b; --green: #10b981; --red: #ef4444;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-lg: 0 10px 25px -5px rgba(0,0,0,.08), 0 8px 10px -6px rgba(0,0,0,.04);
+    --radius: 16px;
+  }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; font-weight: 450; }
+  .demo-note { text-align:center; background:#fffbeb; color:#92400e; padding:8px; font-size:13px; border-bottom:1px solid #fde68a; }
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  .nav-inner { max-width: 1080px; margin: 0 auto; padding: 0 20px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .logo span { background: linear-gradient(135deg, #0ea5e9, #6366f1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px 20px; }
+
+  /* 头部 */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .header h1 { font-size: 26px; font-weight: 800; }
+  .header .meta { font-size: 14px; color: var(--muted); margin-top: 4px; }
+  .actions { display: flex; gap: 8px; }
+  .btn { padding: 8px 14px; border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; color: #374151; }
+  .btn:hover { background: #f9fafb; }
+  .btn-brand { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .btn-brand:hover { background: var(--brand-dark); }
+
+  /* 编辑模式提示 */
+  .edit-banner { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 1px solid #a7f3d0; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 14px; color: #065f46; display: flex; justify-content: space-between; align-items: center; }
+  .edit-banner .hint { font-size: 13px; color: #047857; }
+
+  /* 天数切换 */
+  .days-bar { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; flex-wrap: wrap; }
+  .day-tab { padding: 8px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; color: #374151; }
+  .day-tab.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+  .layout { display: grid; grid-template-columns: 1fr 420px; gap: 24px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* 当日概述 */
+  .summary { background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 1px solid #fde68a; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; color: #92400e; line-height: 1.6; }
+
+  /* 时间轴条目 */
+  .timeline { position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 19px; top: 24px; bottom: 24px; width: 2px; background: #e5e7eb; }
+  .item { display: flex; gap: 14px; margin-bottom: 14px; position: relative; }
+  .item-num { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; flex-shrink: 0; z-index: 1; box-shadow: 0 0 0 4px #fff; }
+  .num-morning { background: #fef3c7; color: #b45309; }
+  .num-afternoon { background: #dbeafe; color: #1d4ed8; }
+  .num-evening { background: #ede9fe; color: #6d28d9; }
+  .item-card { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .item-card.unchecked { opacity: .45; }
+  .item-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .slot-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .slot-morning { background: #fef3c7; color: #b45309; }
+  .slot-afternoon { background: #dbeafe; color: #1d4ed8; }
+  .slot-evening { background: #ede9fe; color: #6d28d9; }
+  .type-badge { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: #f3f4f6; color: #4b5563; font-weight: 500; }
+  .duration { font-size: 12px; color: var(--muted); }
+  .item-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .item-rating { font-size: 12px; color: var(--amber); font-weight: 700; margin-left: auto; }
+  .item-desc { font-size: 14px; color: #4b5563; line-height: 1.6; margin-bottom: 8px; }
+  .item-bottom { display: flex; justify-content: space-between; align-items: center; }
+  .item-cost { font-size: 14px; font-weight: 700; color: #ea580c; }
+  .item-actions { display: flex; gap: 6px; }
+  .icon-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .icon-btn:hover { background: #f9fafb; }
+  .icon-btn.danger:hover { background: #fef2f2; border-color: #fecaca; }
+  .transport { font-size: 12px; color: var(--muted); padding: 6px 0 6px 54px; display: flex; align-items: center; gap: 4px; }
+
+  /* 地图 */
+  .map-wrap { position: sticky; top: 80px; }
+  .map { height: 460px; border-radius: var(--radius); border: 1px solid var(--line); background: linear-gradient(135deg, #f0f9ff, #e0f2fe); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--muted); }
+  .map .emoji { font-size: 48px; }
+  .map-note { font-size: 13px; }
+
+  /* 预算 */
+  .budget { margin-top: 32px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+  .budget h2 { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+  .budget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .budget-item { background: #f9fafb; border-radius: 12px; padding: 12px; text-align: center; }
+  .budget-item .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .budget-item .val { font-size: 18px; font-weight: 800; }
+  .budget-total { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid var(--line); }
+  .budget-total .per { font-size: 14px; color: #4b5563; }
+  .budget-total .total { font-size: 24px; font-weight: 800; color: #ea580c; }
+</style>
+</head>
+<body>
+<div class="demo-note">📐 UI 预览 Demo · 攻略详情页（含自选编辑功能）</div>
+
+<nav class="nav"><div class="nav-inner"><div class="logo">🧭 <span>旅行攻略</span></div><div style="font-size:14px;color:#6b7280">← 返回我的攻略</div></div></nav>
+
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>东京3日游</h1>
+      <div class="meta">📍 东京 · 2026-07-01 至 2026-07-03 · 2人 · <span style="color:#f59e0b;font-weight:700">★ 4.8</span></div>
+    </div>
+    <div class="actions">
+      <button class="btn">📄 导出PDF</button>
+      <button class="btn">🔗 分享</button>
+      <button class="btn btn-brand">✓ 完成编辑</button>
+    </div>
+  </div>
+
+  <div class="edit-banner">
+    <span>✏️ 编辑模式：取消勾选不想去的景点，点击 🔄 换备选，拖动 ⋮ 调整顺序</span>
+    <span class="hint">已取消 1 个 · 已替换 1 个</span>
+  </div>
+
+  <div class="days-bar">
+    <div class="day-tab active">Day 1 · 07-01</div>
+    <div class="day-tab">Day 2 · 07-02</div>
+    <div class="day-tab">Day 3 · 07-03</div>
+    <button class="btn" style="margin-left:auto">🔄 重新生成当天</button>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="summary">📝 今日聚焦浅草与上野地区，感受东京传统文化。上午浅草寺祈福，下午上野公园与博物馆，晚上体验居酒屋氛围。</div>
+
+      <div class="timeline">
+        <div class="item">
+          <div class="item-num num-morning">1</div>
+          <div class="item-card">
+            <div class="item-top">
+              <span class="slot-badge slot-morning">☀️ 上午</span>
+              <span class="type-badge">🏞️ 景点</span>
+              <span class="duration">⏱ 2小时</span>
+              <span class="item-rating">★ 4.7</span>
+            </div>
+            <div class="item-name">浅草寺</div>
+            <div class="item-desc">东京最古老的寺庙，雷门大灯笼是地标。建议早上去人少，顺道逛仲见世商店街品尝人形烧。</div>
+            <div class="item-bottom">
+              <span class="item-cost">💰 免费</span>
+              <div class="item-actions">
+                <button class="icon-btn" title="拖动排序">⋮</button>
+                <button class="icon-btn" title="换一个">🔄</button>
+                <button class="icon-btn danger" title="取消勾选">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="transport">🚶 步行 0.8km · 10分钟</div>
+
+        <div class="item">
+          <div class="item-num num-morning">2</div>
+          <div class="item-card">
+            <div class="item-top">
+              <span class="slot-badge slot-morning">☀️ 上午</span>
+              <span class="type-badge">🍽️ 餐饮</span>
+              <span class="duration">⏱ 1小时</span>
+              <span class="item-rating">★ 4.5</span>
+            </div>
+            <div class="item-name">仲见世商店街</div>
+            <div class="item-desc">浅草寺前的传统商店街，近百间小店售卖仙贝、人形烧等传统小吃与纪念品。</div>
+            <div class="item-bottom">
+              <span class="item-cost">💰 ¥120</span>
+              <div class="item-actions">
+                <button class="icon-btn">⋮</button>
+                <button class="icon-btn">🔄</button>
+                <button class="icon-btn danger">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="transport">🚇 地铁 3.2km · 15分钟</div>
+
+        <!-- 被取消的条目 -->
+        <div class="item">
+          <div class="item-num num-afternoon" style="opacity:.4">3</div>
+          <div class="item-card unchecked">
+            <div class="item-top">
+              <span class="slot-badge slot-afternoon">🌤️ 下午</span>
+              <span class="type-badge">🏞️ 景点</span>
+              <span class="duration">⏱ 1.5小时</span>
+              <span style="font-size:12px;color:#ef4444;font-weight:600">已取消</span>
+            </div>
+            <div class="item-name">东京晴空塔</div>
+            <div class="item-desc">已被取消，不会出现在行程中。可重新勾选恢复。</div>
+            <div class="item-bottom">
+              <span class="item-cost" style="text-decoration:line-through;opacity:.5">💰 ¥150</span>
+              <div class="item-actions">
+                <button class="icon-btn" style="background:#d1fae5;border-color:#a7f3d0" title="恢复勾选">✓</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="item">
+          <div class="item-num num-afternoon">4</div>
+          <div class="item-card">
+            <div class="item-top">
+              <span class="slot-badge slot-afternoon">🌤️ 下午</span>
+              <span class="type-badge">🏞️ 景点</span>
+              <span class="duration">⏱ 3小时</span>
+              <span class="item-rating">★ 4.6</span>
+            </div>
+            <div class="item-name">上野公园</div>
+            <div class="item-desc">东京最大的公园之一，园内有东京国立博物馆、上野动物园。春季樱花盛开时尤为美丽。</div>
+            <div class="item-bottom">
+              <span class="item-cost">💰 ¥60</span>
+              <div class="item-actions">
+                <button class="icon-btn">⋮</button>
+                <button class="icon-btn">🔄</button>
+                <button class="icon-btn danger">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="transport">🚶 步行 0.5km · 7分钟</div>
+
+        <div class="item">
+          <div class="item-num num-evening">5</div>
+          <div class="item-card">
+            <div class="item-top">
+              <span class="slot-badge slot-evening">🌙 晚上</span>
+              <span class="type-badge">🍽️ 餐饮</span>
+              <span class="duration">⏱ 2小时</span>
+              <span class="item-rating">★ 4.8</span>
+            </div>
+            <div class="item-name">浅草居酒屋街</div>
+            <div class="item-desc">体验地道东京居酒屋文化，品尝烤串、生啤。推荐先点招牌烤鸡串和毛豆。</div>
+            <div class="item-bottom">
+              <span class="item-cost">💰 ¥280</span>
+              <div class="item-actions">
+                <button class="icon-btn">⋮</button>
+                <button class="icon-btn">🔄</button>
+                <button class="icon-btn danger">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="map-wrap">
+        <div class="map">
+          <div class="emoji">🗺️</div>
+          <div class="map-note">高德地图展示当日路线</div>
+          <div class="map-note" style="font-size:11px">标注5个景点 · 连线显示步行/地铁路线</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="budget">
+    <h2>💰 预算估算</h2>
+    <div class="budget-grid">
+      <div class="budget-item"><div class="label">🏞️ 景点</div><div class="val">¥210</div></div>
+      <div class="budget-item"><div class="label">🍽️ 餐饮</div><div class="val">¥680</div></div>
+      <div class="budget-item"><div class="label">🏨 住宿</div><div class="val">¥1,200</div></div>
+      <div class="budget-item"><div class="label">🚗 交通</div><div class="val">¥180</div></div>
+    </div>
+    <div class="budget-total">
+      <span class="per">人均 ¥1,135 × 2人</span>
+      <span class="total">总计 ¥2,270</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -112,6 +112,12 @@ class Item(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cost: Mapped[float | None] = mapped_column(Float, default=0, nullable=True)
+    # 评分（来自高德 POI）
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 用户是否勾选（自选编辑：可取消不想去的条目）
+    selected: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # 备选 POI 列表（用于"换一个"功能）[{name, poi_id, location, rating, ...}]
+    alternatives: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # 到下一站交通 {mode, distance, duration, cost}
     transport_to_next: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

@@ -5,39 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { tripsApi } from "@/lib/api";
-import type { Day, Item, Trip } from "@/lib/types";
+import type { Day, Trip } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
+import { ItemCard } from "@/components/item-card";
 
-const SLOT_LABEL: Record<string, string> = {
-  morning: "上午",
-  afternoon: "下午",
-  evening: "晚上",
-};
-const SLOT_ICON: Record<string, string> = { morning: "☀️", afternoon: "🌤️", evening: "🌙" };
 const TYPE_LABEL: Record<string, string> = {
-  attraction: "景点",
-  meal: "餐饮",
-  hotel: "住宿",
-  transport: "交通",
+  attraction: "景点", meal: "餐饮", hotel: "住宿", transport: "交通",
 };
-
-function formatDuration(min: number | null): string {
-  if (!min) return "";
-  if (min < 60) return `${min}分钟`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h}小时${m}分` : `${h}小时`;
-}
-
-function formatTransport(t: Item["transport_to_next"]): string | null {
-  if (!t) return null;
-  const km = (t.distance_m / 1000).toFixed(1);
-  const min = Math.round(t.duration_s / 60);
-  const modeLabel: Record<string, string> = {
-    walking: "步行", driving: "驾车", transit: "公交",
-  };
-  return `${modeLabel[t.mode] || t.mode} ${km}km · ${min}分钟`;
-}
 
 export default function TripDetailPage() {
   const params = useParams();
@@ -46,6 +20,8 @@ export default function TripDetailPage() {
   const tripId = params.id as string;
   const [activeDay, setActiveDay] = useState(0);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // 轮询：generating 时每 2 秒刷新，ready/failed 后停止
   const { data: trip, isLoading } = useQuery<Trip>({
@@ -77,11 +53,38 @@ export default function TripDetailPage() {
     },
   });
 
+  // 切换勾选
+  const toggleItem = useMutation({
+    mutationFn: ({ itemId, selected }: { itemId: string; selected: boolean }) =>
+      tripsApi.toggleItem(tripId, itemId, selected),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trip", tripId] }),
+  });
+
+  // 换备选
+  const swapItem = useMutation({
+    mutationFn: ({ itemId, altIndex }: { itemId: string; altIndex: number }) =>
+      tripsApi.swapItem(tripId, itemId, altIndex),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trip", tripId] }),
+  });
+
   // 重新生成某天
   const regenDay = useMutation({
     mutationFn: (dayIndex: number) => tripsApi.regenerateDay(tripId, dayIndex),
     onSettled: () => qc.invalidateQueries({ queryKey: ["trip", tripId] }),
   });
+
+  // 拖拽排序
+  const handleDrop = (day: Day, items: Trip["days"][0]["items"], toIndex: number) => {
+    if (dragIndex === null || dragIndex === toIndex) return;
+    const reordered = [...items];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    tripsApi.reorderItems(tripId, day.id, reordered.map((it, i) => ({
+      item_id: it.id, new_seq: i,
+    }))).then(() => qc.invalidateQueries({ queryKey: ["trip", tripId] }));
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
 
   if (isLoading) {
     return (
@@ -137,41 +140,44 @@ export default function TripDetailPage() {
   const days = trip.days || [];
   const currentDay: Day | undefined = days[activeDay] || days[0];
   const dayItems = currentDay?.items || [];
+  const selectedItems = dayItems.filter((it) => it.selected);
 
-  // 预算汇总
+  // 预算汇总（只计算勾选的条目）
   const budgetByType: Record<string, number> = {};
   let totalCost = 0;
   days.forEach((d) =>
     d.items.forEach((it) => {
+      if (!it.selected) return;
       const c = it.cost || 0;
       totalCost += c;
       budgetByType[it.type] = (budgetByType[it.type] || 0) + c;
     }),
   );
   const totalBudget = trip.budget_total ?? totalCost * trip.travelers;
+  const canceledCount = dayItems.filter((it) => !it.selected).length;
 
   return (
-    <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+    <div className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
       {/* 标题栏 */}
-      <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
+      <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{trip.title}</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            {trip.destination} · {trip.start_date} 至 {trip.end_date} · {trip.travelers} 人
+          <h1 className="text-2xl font-extrabold">{trip.title}</h1>
+          <p className="text-gray-600 text-sm mt-1">
+            📍 {trip.destination} · {trip.start_date} 至 {trip.end_date} · {trip.travelers}人
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => exportPdf.mutate()}
             disabled={exportPdf.isPending}
-            className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             {exportPdf.isPending ? "导出中..." : "📄 导出PDF"}
           </button>
           <button
             onClick={() => share.mutate()}
             disabled={share.isPending}
-            className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             🔗 分享
           </button>
@@ -179,11 +185,16 @@ export default function TripDetailPage() {
       </div>
 
       {shareUrl && (
-        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 flex items-center justify-between">
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-800 flex items-center justify-between">
           <span>分享链接已复制：{shareUrl}</span>
-          <button onClick={() => setShareUrl(null)} className="text-green-600 hover:underline">
-            关闭
-          </button>
+          <button onClick={() => setShareUrl(null)} className="text-green-600 hover:underline">关闭</button>
+        </div>
+      )}
+
+      {/* 编辑提示 */}
+      {canceledCount > 0 && (
+        <div className="mb-4 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800">
+          ✏️ 编辑模式：已取消 {canceledCount} 个景点 · 可拖拽卡片调整顺序，点 🔄 换备选
         </div>
       )}
 
@@ -193,14 +204,14 @@ export default function TripDetailPage() {
         <>
           {/* 天数切换 */}
           <div className="flex items-center gap-2 mb-6 flex-wrap">
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="flex gap-2 flex-wrap">
               {days.map((d, i) => (
                 <button
                   key={d.id}
                   onClick={() => setActiveDay(i)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
                     i === activeDay
-                      ? "bg-sky-600 text-white"
+                      ? "bg-sky-500 text-white"
                       : "bg-white border border-gray-200 text-gray-700 hover:border-sky-400"
                   }`}
                 >
@@ -213,91 +224,62 @@ export default function TripDetailPage() {
               <button
                 onClick={() => regenDay.mutate(currentDay.day_index)}
                 disabled={regenDay.isPending}
-                className="ml-auto px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
-                title="基于真实数据重新生成这一天"
+                className="ml-auto px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
                 {regenDay.isPending ? "重新生成中..." : "🔄 重新生成当天"}
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
             {/* 左：时间轴 */}
             <div>
               {currentDay?.summary && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
                   📝 {currentDay.summary}
                 </div>
               )}
-              <div className="space-y-3">
+              <div className="relative pb-4">
+                <div className="absolute left-5 top-5 bottom-5 w-0.5 bg-gray-200" />
                 {dayItems.map((it, idx) => (
-                  <div
+                  <ItemCard
                     key={it.id}
-                    className="bg-white rounded-xl border border-gray-200 p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex flex-col items-center pt-0.5">
-                        <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center text-sm font-bold">
-                          {idx + 1}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs text-gray-400">
-                            {SLOT_ICON[it.time_slot]} {SLOT_LABEL[it.time_slot]}
-                          </span>
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                            {TYPE_LABEL[it.type]}
-                          </span>
-                          {it.duration_min && (
-                            <span className="text-xs text-gray-400">
-                              ⏱ {formatDuration(it.duration_min)}
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="font-semibold mt-1">{it.name}</h3>
-                        {it.description && (
-                          <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                            {it.description}
-                          </p>
-                        )}
-                        {it.cost ? (
-                          <p className="text-sm text-orange-600 mt-1">💰 ¥{it.cost}</p>
-                        ) : null}
-                        {it.transport_to_next && (
-                          <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-100">
-                            → {formatTransport(it.transport_to_next)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                    item={it}
+                    index={idx}
+                    onToggle={(selected) => toggleItem.mutate({ itemId: it.id, selected })}
+                    onSwap={(altIndex) => swapItem.mutate({ itemId: it.id, altIndex })}
+                    onDragStart={() => setDragIndex(idx)}
+                    onDragOver={() => setDragOverIndex(idx)}
+                    onDrop={() => currentDay && handleDrop(currentDay, dayItems, idx)}
+                    dragging={dragIndex === idx}
+                    dragOver={dragOverIndex === idx}
+                  />
                 ))}
               </div>
             </div>
 
-            {/* 右：地图 */}
+            {/* 右：地图（只显示勾选的景点） */}
             <div className="lg:sticky lg:top-20 self-start">
-              <TripMap items={dayItems} height="500px" />
+              <TripMap items={selectedItems} height="500px" />
             </div>
           </div>
 
           {/* 预算汇总 */}
-          <div className="mt-8 bg-white rounded-2xl border border-gray-200 p-6">
-            <h2 className="font-semibold text-lg mb-4">💰 预算估算</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="mt-8 bg-white rounded-2xl border border-gray-200/80 p-6 shadow-sm">
+            <h2 className="font-bold text-lg mb-4">💰 预算估算</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
               {Object.entries(budgetByType).map(([type, cost]) => (
-                <div key={type} className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">{TYPE_LABEL[type] || type}</div>
-                  <div className="font-semibold text-lg">¥{cost.toLocaleString()}</div>
+                <div key={type} className="bg-gray-50 rounded-xl p-3 text-center">
+                  <div className="text-xs text-gray-500 mb-1">{TYPE_LABEL[type] || type}</div>
+                  <div className="font-extrabold text-lg">¥{cost.toLocaleString()}</div>
                 </div>
               ))}
             </div>
             <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-              <span className="text-gray-600">
-                人均 ¥{Math.round(totalCost).toLocaleString()} × {trip.travelers} 人
+              <span className="text-gray-700">
+                人均 ¥{Math.round(totalCost).toLocaleString()} × {trip.travelers}人
               </span>
-              <span className="text-xl font-bold text-orange-600">
+              <span className="text-2xl font-extrabold text-orange-600">
                 总计 ¥{Math.round(totalBudget).toLocaleString()}
               </span>
             </div>
