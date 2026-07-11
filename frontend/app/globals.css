@@ -1,34 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #111827;
+  --background: #ffffff;
+  --foreground: #333333;
+  --brand: #ff9d00;
+  --brand-hover: #ff8a00;
+  --promo: #ff6155;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  --font-sans: "PingFang SC", "Microsoft YaHei", Arial, system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: #111827;
+  background: #ffffff;
+  color: #666666;
   font-family: var(--font-sans);
-  font-weight: 450;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3 {
-  font-weight: 800;
-  color: #000000;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  color: #333333;
+  letter-spacing: 0;
+}
+
+a {
+  color: #333333;
+  transition: color 0.15s;
+}
+a:hover {
+  color: var(--brand);
 }
 
 input, select, textarea, button {
-  color: #111111;
   font-family: inherit;
 }

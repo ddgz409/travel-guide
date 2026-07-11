@@ -2,8 +2,7 @@
 
 export interface User {
   id: string;
-  email: string;
-  nickname: string;
+  username: string;
   created_at: string;
 }
 

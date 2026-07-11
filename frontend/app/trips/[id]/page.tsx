@@ -112,7 +112,7 @@ export default function TripDetailPage() {
   if (trip.status === "generating") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-20">
-        <div className="w-16 h-16 border-4 border-sky-200 border-t-sky-600 rounded-full animate-spin mb-6" />
+        <div className="w-16 h-16 border-4 border-orange-200 border-t-#ff8a00 rounded-full animate-spin mb-6" />
         <h2 className="text-xl font-semibold mb-2">AI 正在为你规划行程...</h2>
         <p className="text-gray-500 text-sm">
           正在检索 {trip.destination} 的景点数据并生成攻略，请稍候
@@ -133,7 +133,7 @@ export default function TripDetailPage() {
         <div className="flex gap-3">
           <button
             onClick={() => router.push("/generate")}
-            className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700"
+            className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
           >
             重新创建
           </button>
@@ -182,14 +182,14 @@ export default function TripDetailPage() {
           <button
             onClick={() => exportPdf.mutate()}
             disabled={exportPdf.isPending}
-            className="px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="px-3.5 py-2 rounded border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             {exportPdf.isPending ? "导出中..." : "📄 导出PDF"}
           </button>
           <button
             onClick={() => share.mutate()}
             disabled={share.isPending}
-            className="px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="px-3.5 py-2 rounded border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             🔗 分享
           </button>
@@ -197,7 +197,7 @@ export default function TripDetailPage() {
       </div>
 
       {shareUrl && (
-        <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-800 flex items-center justify-between">
+        <div className="mb-4 bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800 flex items-center justify-between">
           <span>分享链接已复制：{shareUrl}</span>
           <button onClick={() => setShareUrl(null)} className="text-green-600 hover:underline">关闭</button>
         </div>
@@ -205,7 +205,7 @@ export default function TripDetailPage() {
 
       {/* 编辑提示 */}
       {canceledCount > 0 && (
-        <div className="mb-4 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800">
+        <div className="mb-4 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded p-3 text-sm text-emerald-800">
           ✏️ 编辑模式：已取消 {canceledCount} 个景点 · 可拖拽卡片调整顺序，点 🔄 换备选
         </div>
       )}
@@ -221,10 +221,10 @@ export default function TripDetailPage() {
                 <button
                   key={d.id}
                   onClick={() => setActiveDay(i)}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  className={`px-4 py-2 rounded text-sm font-semibold transition-all ${
                     i === activeDay
-                      ? "bg-sky-500 text-white"
-                      : "bg-white border border-gray-200 text-gray-700 hover:border-sky-400"
+                      ? "bg-orange-400 text-white"
+                      : "bg-white border border-gray-200 text-gray-700 hover:border-#ffaa33"
                   }`}
                 >
                   Day {d.day_index}
@@ -236,7 +236,7 @@ export default function TripDetailPage() {
               <button
                 onClick={() => regenDay.mutate(currentDay.day_index)}
                 disabled={regenDay.isPending}
-                className="ml-auto px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                className="ml-auto px-3.5 py-2 rounded border border-gray-200 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
                 {regenDay.isPending ? "重新生成中..." : "🔄 重新生成当天"}
               </button>
@@ -247,7 +247,7 @@ export default function TripDetailPage() {
             {/* 左：时间轴 */}
             <div>
               {currentDay?.summary && (
-                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
+                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded p-4 mb-4 text-sm text-amber-900">
                   📝 {currentDay.summary}
                 </div>
               )}
@@ -278,11 +278,11 @@ export default function TripDetailPage() {
           </div>
 
           {/* 预算汇总 */}
-          <div className="mt-8 bg-white rounded-2xl border border-gray-200/80 p-6 shadow-sm">
+          <div className="mt-8 bg-white rounded-lg border border-gray-200/80 p-6 shadow-sm">
             <h2 className="font-bold text-lg mb-4">💰 预算估算</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
               {Object.entries(budgetByType).map(([type, cost]) => (
-                <div key={type} className="bg-gray-50 rounded-xl p-3 text-center">
+                <div key={type} className="bg-gray-50 rounded p-3 text-center">
                   <div className="text-xs text-gray-500 mb-1">{TYPE_LABEL[type] || type}</div>
                   <div className="font-extrabold text-lg">¥{cost.toLocaleString()}</div>
                 </div>

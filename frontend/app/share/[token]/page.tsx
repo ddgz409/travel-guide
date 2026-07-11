@@ -42,7 +42,7 @@ export default function SharePage() {
       <div className="flex-1 flex flex-col items-center justify-center py-20 text-gray-500">
         <div className="text-5xl mb-4">🔍</div>
         <p>分享链接无效或攻略不存在</p>
-        <Link href="/" className="mt-4 text-sky-600 hover:underline">返回首页</Link>
+        <Link href="/" className="mt-4 text-#ff8a00 hover:underline">返回首页</Link>
       </div>
     );
   }
@@ -56,7 +56,7 @@ export default function SharePage() {
   return (
     <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
       <div className="mb-6">
-        <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
+        <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
           📤 分享的攻略
         </span>
         <h1 className="text-2xl font-bold mt-2">{trip.title}</h1>
@@ -80,7 +80,7 @@ export default function SharePage() {
             <div className="space-y-2 mt-3">
               {day.items.map((it: Item, idx: number) => (
                 <div key={it.id} className="flex gap-3 text-sm">
-                  <span className="w-6 h-6 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-orange-50 text-#ff8a00 flex items-center justify-center text-xs font-bold flex-shrink-0">
                     {idx + 1}
                   </span>
                   <div className="flex-1">
@@ -116,7 +116,7 @@ export default function SharePage() {
       </div>
 
       <div className="text-center mt-8 pb-8">
-        <Link href="/" className="text-sky-600 hover:underline text-sm">
+        <Link href="/" className="text-#ff8a00 hover:underline text-sm">
           我也要生成旅行攻略 →
         </Link>
       </div>

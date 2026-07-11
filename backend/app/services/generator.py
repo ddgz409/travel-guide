@@ -58,8 +58,8 @@ time_slot 取值: morning / afternoon / evening"""
 
 # 单类 POI 候选数量上限
 POI_LIMIT = 25
-# 路线规划默认交通方式
-DEFAULT_ROUTE_MODE = "walking"
+# 路线规划：步行上限（米），超过则改用公交/地铁
+WALK_MAX_DISTANCE_M = 1500
 
 
 class GeneratorError(Exception):
@@ -146,7 +146,7 @@ class GuideGenerator:
                 db.delete(old_day)
                 db.flush()
 
-            self._persist_day(trip, target, db)
+            self._persist_day(trip, target, db, trip.destination)
             db.commit()
         except Exception as e:
             logger.exception("重新生成第 %d 天失败", day_index)
@@ -422,9 +422,9 @@ class GuideGenerator:
     def _persist(self, trip: Trip, day_plans: list[dict[str, Any]], db: Session) -> None:
         """持久化全部天与条目，并回填路线规划。"""
         for plan in day_plans:
-            self._persist_day(trip, plan, db)
+            self._persist_day(trip, plan, db, trip.destination)
 
-    def _persist_day(self, trip: Trip, plan: dict[str, Any], db: Session) -> None:
+    def _persist_day(self, trip: Trip, plan: dict[str, Any], db: Session, city: str = "") -> None:
         """持久化单天及其条目，含路线规划回填。"""
         day_index = int(plan.get("day_index", 1))
         day_date = trip.start_date + timedelta(days=day_index - 1)
@@ -443,16 +443,37 @@ class GuideGenerator:
             loc = it.get("location") or {}
             loc_str = f"{loc.get('lng')},{loc.get('lat')}" if loc.get("lng") else None
 
-            # 路线规划：上一站 -> 当前站
+            # 路线规划：上一站 -> 当前站，按距离自动选交通方式
             transport = None
             if prev_loc and loc_str:
-                seg = self.amap.plan_route(prev_loc, loc_str, mode=DEFAULT_ROUTE_MODE)
-                if seg:
-                    transport = {
-                        "mode": seg.mode,
-                        "distance_m": seg.distance_m,
-                        "duration_s": seg.duration_s,
-                    }
+                # 先步行规划拿距离
+                walk_seg = self.amap.plan_route(prev_loc, loc_str, mode="walking")
+                if walk_seg:
+                    if walk_seg.distance_m <= WALK_MAX_DISTANCE_M:
+                        # 近距离：步行
+                        transport = {
+                            "mode": "walking",
+                            "distance_m": walk_seg.distance_m,
+                            "duration_s": walk_seg.duration_s,
+                        }
+                    else:
+                        # 远距离：优先公交/地铁，失败则用驾车
+                        seg = self.amap.plan_route(prev_loc, loc_str, mode="transit", city=city)
+                        if seg is None:
+                            seg = self.amap.plan_route(prev_loc, loc_str, mode="driving")
+                        if seg:
+                            transport = {
+                                "mode": seg.mode,
+                                "distance_m": seg.distance_m,
+                                "duration_s": seg.duration_s,
+                            }
+                        else:
+                            # 兜底用步行数据
+                            transport = {
+                                "mode": "walking",
+                                "distance_m": walk_seg.distance_m,
+                                "duration_s": walk_seg.duration_s,
+                            }
 
             item = Item(
                 day_id=day.id,

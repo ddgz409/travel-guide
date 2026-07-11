@@ -39,7 +39,7 @@ function formatTransport(t: Item["transport_to_next"]): string | null {
   const km = (t.distance_m / 1000).toFixed(1);
   const min = Math.round(t.duration_s / 60);
   const modeLabel: Record<string, string> = {
-    walking: "步行", driving: "驾车", transit: "公交",
+    walking: "🚶 步行", driving: "🚗 驾车", transit: "🚇 地铁/公交",
   };
   return `${modeLabel[t.mode] || t.mode} ${km}km · ${min}分钟`;
 }
@@ -112,7 +112,7 @@ export function ItemCard({
           {index + 1}
         </div>
 
-        <div className={`flex-1 bg-white border border-gray-200/80 rounded-2xl p-4 shadow-sm ${!item.selected ? "opacity-45" : ""}`}>
+        <div className={`flex-1 bg-white border border-gray-200/80 rounded-lg p-4 shadow-sm ${!item.selected ? "opacity-45" : ""}`}>
           {/* 顶部标签 */}
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${SLOT_BADGE[slot]}`}>
@@ -146,7 +146,7 @@ export function ItemCard({
                 <>
                   <button
                     onClick={() => { setShowAlts((s) => !s); setAltSearch(""); setAltResults([]); }}
-                    className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-sky-50 hover:border-sky-300 text-sm flex items-center justify-center transition-colors"
+                    className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-#fffaf0 hover:border-#ffcc80 text-sm flex items-center justify-center transition-colors"
                     title="换一个"
                   >
                     🔄
@@ -175,8 +175,8 @@ export function ItemCard({
 
       {/* 备选+搜索弹窗 */}
       {showAlts && (
-        <div ref={altSearchRef} className="ml-[52px] mb-3.5 bg-sky-50 border border-sky-200 rounded-xl p-3">
-          <div className="text-xs font-bold text-sky-800 mb-2">选择备选景点替换：</div>
+        <div ref={altSearchRef} className="ml-[52px] mb-3.5 bg-#fffaf0 border border-orange-200 rounded p-3">
+          <div className="text-xs font-bold text-orange-800 mb-2">选择备选景点替换：</div>
 
           {/* 搜索输入框 */}
           <input
@@ -184,7 +184,7 @@ export function ItemCard({
             value={altSearch}
             onChange={(e) => handleAltSearchInput(e.target.value)}
             placeholder="搜索任意景点替换..."
-            className="w-full rounded-lg border border-sky-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            className="w-full rounded-lg border border-orange-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-#ff9d00"
           />
 
           {/* 预设备选列表 */}
@@ -195,7 +195,7 @@ export function ItemCard({
                 <button
                   key={i}
                   onClick={() => { onSwap(i); setShowAlts(false); }}
-                  className="w-full text-left bg-white rounded-lg px-3 py-2 text-sm hover:bg-sky-100 transition-colors flex justify-between items-center"
+                  className="w-full text-left bg-white rounded-lg px-3 py-2 text-sm hover:bg-orange-50 transition-colors flex justify-between items-center"
                 >
                   <span className="font-medium">{alt.name}</span>
                   {alt.rating && <span className="text-xs text-amber-500 font-bold">★ {alt.rating}</span>}

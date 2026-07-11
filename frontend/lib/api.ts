@@ -78,16 +78,16 @@ async function request<T>(
 // ---------------- 认证 ----------------
 
 export const authApi = {
-  register: (email: string, password: string, nickname: string) =>
+  register: (username: string, password: string) =>
     request<Token>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, nickname }),
+      body: JSON.stringify({ username, password }),
     }),
 
-  login: (email: string, password: string) =>
+  login: (username: string, password: string) =>
     request<Token>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
 
   me: () => request<User>("/auth/me"),

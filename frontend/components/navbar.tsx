@@ -16,46 +16,58 @@ export function Navbar() {
   };
 
   return (
-    <nav className="border-b border-gray-200/80 bg-white/85 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-5 h-15 flex items-center justify-between" style={{ height: 60 }}>
-        <Link href="/" className="flex items-center gap-2 font-extrabold text-lg">
-          <span className="text-2xl">🧭</span>
-          <span className="bg-gradient-to-r from-sky-500 to-indigo-500 bg-clip-text text-transparent">
-            旅行攻略
-          </span>
+    <header className="bg-white border-b border-[#e5e5e5] sticky top-0 z-50">
+      <div className="max-w-[1200px] mx-auto px-5 flex items-center" style={{ height: 60 }}>
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-1.5 mr-8">
+          <span className="text-2xl">🐝</span>
+          <span className="text-[20px] font-bold text-[#ff9d00]">旅行攻略</span>
         </Link>
 
-        <div className="flex items-center gap-5 text-sm font-semibold">
+        {/* 菜单 */}
+        <nav className="flex items-center gap-1 text-[15px]">
+          <Link
+            href="/"
+            className={`px-4 py-2 transition-colors ${pathname === "/" ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
+          >
+            首页
+          </Link>
+          <Link
+            href="/generate"
+            className={`px-4 py-2 transition-colors ${pathname === "/generate" ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
+          >
+            生成攻略
+          </Link>
+          {user && (
+            <Link
+              href="/trips"
+              className={`px-4 py-2 transition-colors ${pathname.startsWith("/trips") ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
+            >
+              我的攻略
+            </Link>
+          )}
+        </nav>
+
+        {/* 右侧用户区 */}
+        <div className="ml-auto flex items-center gap-4 text-sm">
           {user ? (
             <>
-              <Link
-                href="/generate"
-                className={`hover:text-sky-600 transition-colors ${pathname === "/generate" ? "text-sky-600" : "text-gray-700"}`}
-              >
-                生成攻略
-              </Link>
-              <Link
-                href="/trips"
-                className={`hover:text-sky-600 transition-colors ${pathname.startsWith("/trips") ? "text-sky-600" : "text-gray-700"}`}
-              >
-                我的攻略
-              </Link>
-              <span className="text-gray-700 hidden sm:inline">{user.nickname}</span>
+              <span className="text-[#666] hidden sm:inline">{user.username}</span>
               <button
                 onClick={handleLogout}
-                className="text-gray-600 hover:text-red-500 transition-colors font-medium"
+                className="text-[#999] hover:text-[#ff9d00] transition-colors"
               >
                 退出
               </button>
             </>
           ) : (
             <>
-              <Link href="/login" className="text-gray-700 hover:text-sky-600 transition-colors">
+              <Link href="/login" className="text-[#666] hover:text-[#ff9d00] transition-colors">
                 登录
               </Link>
               <Link
                 href="/register"
-                className="bg-sky-500 text-white px-4 py-2 rounded-xl hover:bg-sky-600 transition-colors shadow-sm"
+                className="bg-[#ff9d00] text-white px-4 py-1.5 rounded hover:bg-[#ff8a00] transition-colors text-[13px]"
               >
                 注册
               </Link>
@@ -63,6 +75,6 @@ export function Navbar() {
           )}
         </div>
       </div>
-    </nav>
+    </header>
   );
 }

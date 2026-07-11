@@ -120,7 +120,7 @@ export default function GeneratePage() {
 
       <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-2xl border border-gray-200/80 p-7 shadow-sm space-y-6"
+        className="bg-white rounded-lg border border-gray-200/80 p-7 shadow-sm space-y-6"
       >
         {/* 目的地 */}
         <div>
@@ -130,7 +130,7 @@ export default function GeneratePage() {
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
             placeholder="如：北京、成都、东京"
-            className="w-full rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
+            className="w-full rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
           />
         </div>
 
@@ -146,16 +146,16 @@ export default function GeneratePage() {
               onFocus={() => searchResults.length > 0 && setShowResults(true)}
               onBlur={() => setTimeout(() => setShowResults(false), 200)}
               placeholder="输入景点名搜索，如：故宫、长城..."
-              className="flex-1 rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
+              className="flex-1 rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
             />
           </div>
           {searching && (
-            <div className="absolute z-20 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg p-3 text-sm text-gray-400">
+            <div className="absolute z-20 mt-1 w-full bg-white rounded border border-gray-200 shadow-lg p-3 text-sm text-gray-400">
               搜索中...
             </div>
           )}
           {showResults && searchResults.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+            <div className="absolute z-20 mt-1 w-full bg-white rounded border border-gray-200 shadow-lg overflow-hidden">
               {searchResults.map((poi) => {
                 const added = mustInclude.some((m) => m.poi_id === poi.poi_id);
                 return (
@@ -164,7 +164,7 @@ export default function GeneratePage() {
                     type="button"
                     onClick={() => !added && addMustInclude(poi)}
                     disabled={added}
-                    className="w-full text-left px-4 py-3 hover:bg-sky-50 transition-colors flex items-center justify-between disabled:opacity-40 border-b border-gray-100 last:border-0"
+                    className="w-full text-left px-4 py-3 hover:bg-#fffaf0 transition-colors flex items-center justify-between disabled:opacity-40 border-b border-gray-100 last:border-0"
                   >
                     <div>
                       <span className="font-semibold text-[15px]">{poi.name}</span>
@@ -190,7 +190,7 @@ export default function GeneratePage() {
               {mustInclude.map((poi) => (
                 <span
                   key={poi.poi_id}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-100 text-sky-700 text-sm font-semibold border border-sky-200"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 text-orange-700 text-sm font-semibold border border-orange-200"
                 >
                   {poi.name}
                   {poi.rating && (
@@ -199,7 +199,7 @@ export default function GeneratePage() {
                   <button
                     type="button"
                     onClick={() => removeMustInclude(poi.poi_id)}
-                    className="ml-0.5 w-4 h-4 rounded-full bg-sky-200 hover:bg-red-200 text-sky-600 hover:text-red-600 text-xs flex items-center justify-center transition-colors"
+                    className="ml-0.5 w-4 h-4 rounded-full bg-#ffe8b3 hover:bg-red-200 text-#ff8a00 hover:text-red-600 text-xs flex items-center justify-center transition-colors"
                   >
                     ×
                   </button>
@@ -219,7 +219,7 @@ export default function GeneratePage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
+              className="w-full rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
             />
           </div>
           <div>
@@ -228,7 +228,7 @@ export default function GeneratePage() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full rounded-xl border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-sky-500 transition-colors"
+              className="w-full rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
             />
           </div>
         </div>
@@ -240,7 +240,7 @@ export default function GeneratePage() {
             <button
               type="button"
               onClick={() => setTravelers((n) => Math.max(1, n - 1))}
-              className="w-10 h-10 rounded-xl border-[1.5px] border-gray-200 hover:border-sky-500 hover:bg-sky-50 text-lg font-bold transition-colors"
+              className="w-10 h-10 rounded border-[1.5px] border-gray-200 hover:border-orange-400 hover:bg-#fffaf0 text-lg font-bold transition-colors"
             >
               −
             </button>
@@ -248,7 +248,7 @@ export default function GeneratePage() {
             <button
               type="button"
               onClick={() => setTravelers((n) => Math.min(20, n + 1))}
-              className="w-10 h-10 rounded-xl border-[1.5px] border-gray-200 hover:border-sky-500 hover:bg-sky-50 text-lg font-bold transition-colors"
+              className="w-10 h-10 rounded border-[1.5px] border-gray-200 hover:border-orange-400 hover:bg-#fffaf0 text-lg font-bold transition-colors"
             >
               +
             </button>
@@ -269,8 +269,8 @@ export default function GeneratePage() {
                 onClick={() => toggleInterest(v)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold border-[1.5px] transition-all ${
                   interests.includes(v)
-                    ? "bg-sky-500 text-white border-sky-500"
-                    : "bg-white text-gray-700 border-gray-200 hover:border-sky-400 hover:text-sky-600"
+                    ? "bg-orange-400 text-white border-orange-400"
+                    : "bg-white text-gray-700 border-gray-200 hover:border-#ffaa33 hover:text-#ff8a00"
                 }`}
               >
                 {v}
@@ -289,10 +289,10 @@ export default function GeneratePage() {
                   key={v}
                   type="button"
                   onClick={() => setBudgetLevel(v)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-[1.5px] transition-all ${
+                  className={`flex-1 py-2.5 rounded text-sm font-semibold border-[1.5px] transition-all ${
                     budgetLevel === v
-                      ? "bg-sky-500 text-white border-sky-500"
-                      : "bg-white text-gray-700 border-gray-200 hover:border-sky-400"
+                      ? "bg-orange-400 text-white border-orange-400"
+                      : "bg-white text-gray-700 border-gray-200 hover:border-#ffaa33"
                   }`}
                 >
                   {v}
@@ -305,7 +305,7 @@ export default function GeneratePage() {
             <select
               value={transport}
               onChange={(e) => setTransport(e.target.value)}
-              className="w-full rounded-xl border-[1.5px] border-gray-200 px-4 py-2.5 text-sm font-semibold focus:outline-none focus:border-sky-500 transition-colors"
+              className="w-full rounded border-[1.5px] border-gray-200 px-4 py-2.5 text-sm font-semibold focus:outline-none focus:border-orange-400 transition-colors"
             >
               {TRANSPORTS.map((v) => (
                 <option key={v} value={v}>
@@ -317,7 +317,7 @@ export default function GeneratePage() {
         </div>
 
         {error && (
-          <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+          <div className="rounded bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
             {error}
           </div>
         )}
@@ -325,7 +325,7 @@ export default function GeneratePage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-gradient-to-r from-sky-500 to-indigo-500 text-white rounded-xl py-3.5 font-bold text-base hover:opacity-90 disabled:opacity-50 transition-opacity"
+          className="w-full bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded py-3.5 font-bold text-base hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {submitting ? "提交中..." : mustInclude.length > 0 ? `✨ 生成攻略（含 ${mustInclude.length} 个必去景点）` : "✨ 生成攻略"}
         </button>

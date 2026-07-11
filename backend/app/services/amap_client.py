@@ -196,11 +196,13 @@ class AmapClient:
         return pois
 
     def plan_route(
-        self, origin: str, destination: str, mode: str = "walking"
+        self, origin: str, destination: str, mode: str = "walking",
+        city: str | None = None,
     ) -> RouteSegment | None:
         """路线规划。
 
         origin/destination: "lng,lat"  mode: driving / walking / transit
+        transit 模式需要 city 参数（城市名或 adcode）。
         返回 None 表示规划失败。
         """
         path_map = {
@@ -213,13 +215,26 @@ class AmapClient:
             return None
         params: dict = {"key": self.api_key, "origin": origin, "destination": destination}
         if mode == "transit":
-            params["city"] = ""  # transit 需 city，但此处简化处理
+            # transit 必须传 city，否则高德返回错误
+            params["city"] = city or "北京"
         try:
             resp = self._client.get(f"{AMAP_BASE}{path}", params=params)
             resp.raise_for_status()
             data = resp.json()
             self._check(data)
             route = data.get("route") or {}
+            if mode == "transit":
+                # 公交/地铁：路径在 route.transits 里
+                transits = route.get("transits") or []
+                if not transits:
+                    return None
+                t = transits[0]
+                return RouteSegment(
+                    distance_m=int(t.get("distance", 0)),
+                    duration_s=int(t.get("duration", 0)),
+                    mode=mode,
+                )
+            # 步行/驾车：路径在 route.paths 里
             paths = route.get("paths") or []
             if not paths:
                 return None

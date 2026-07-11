@@ -15,16 +15,15 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     """注册新用户并返回令牌。"""
-    exists = db.scalar(select(User).where(User.email == payload.email))
+    exists = db.scalar(select(User).where(User.username == payload.username))
     if exists:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已注册"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="该用户名已被注册"
         )
 
     user = User(
-        email=payload.email,
+        username=payload.username,
         password_hash=hash_password(payload.password),
-        nickname=payload.nickname,
     )
     db.add(user)
     db.commit()
@@ -37,10 +36,10 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     """登录并返回令牌。"""
-    user = db.scalar(select(User).where(User.email == payload.email))
+    user = db.scalar(select(User).where(User.username == payload.username))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误"
         )
 
     token = create_access_token(user.id)

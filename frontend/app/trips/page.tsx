@@ -36,19 +36,19 @@ export default function TripsPage() {
         <h1 className="text-2xl font-extrabold">我的攻略</h1>
         <button
           onClick={() => router.push("/generate")}
-          className="bg-gradient-to-r from-sky-500 to-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
+          className="bg-gradient-to-r from-orange-400 to-orange-500 text-white px-5 py-2.5 rounded text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
         >
           + 新建攻略
         </button>
       </div>
 
       {!trips || trips.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-2xl border border-gray-200/80 shadow-sm">
+        <div className="text-center py-16 bg-white rounded-lg border border-gray-200/80 shadow-sm">
           <div className="text-5xl mb-4">🧳</div>
           <p className="text-gray-600 mb-5">还没有攻略，开始你的第一次旅行规划吧</p>
           <Link
             href="/generate"
-            className="inline-block bg-sky-500 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-sky-600"
+            className="inline-block bg-orange-400 text-white px-5 py-2.5 rounded font-semibold hover:bg-orange-500"
           >
             生成攻略
           </Link>
@@ -62,7 +62,7 @@ export default function TripsPage() {
             return (
               <div
                 key={t.id}
-                className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5 group"
+                className="bg-white rounded-lg border border-gray-200/80 overflow-hidden shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5 group"
               >
                 <Link href={`/trips/${t.id}`} className="block">
                   <div className="h-28 flex items-center justify-center text-[42px]" style={{ background: `linear-gradient(135deg, ${gradient})` }}>
@@ -70,7 +70,7 @@ export default function TripsPage() {
                   </div>
                   <div className="p-5">
                     <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-bold text-[16px] group-hover:text-sky-600 transition-colors">{t.title}</h3>
+                      <h3 className="font-bold text-[16px] group-hover:text-#ff8a00 transition-colors">{t.title}</h3>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${badge.cls}`}>
                         {badge.label}
                       </span>

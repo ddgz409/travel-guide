@@ -11,8 +11,8 @@ interface AuthState {
   error: string | null;
   /** 应用启动时调用：若有 token 则拉取用户。 */
   init: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, nickname: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
 }
@@ -37,10 +37,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  login: async (email, password) => {
+  login: async (username, password) => {
     set({ error: null });
     try {
-      const token = await authApi.login(email, password);
+      const token = await authApi.login(username, password);
       setToken(token.access_token);
       set({ user: token.user });
     } catch (e) {
@@ -49,10 +49,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  register: async (email, password, nickname) => {
+  register: async (username, password) => {
     set({ error: null });
     try {
-      const token = await authApi.register(email, password, nickname);
+      const token = await authApi.register(username, password);
       setToken(token.access_token);
       set({ user: token.user });
     } catch (e) {
