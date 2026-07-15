@@ -238,14 +238,20 @@ class GuideGenerator:
             if names:
                 must_section = f"\n⚠️ 用户指定的必去景点（必须全部安排！）：\n" + "\n".join(f"- {n}" for n in names)
 
-        # 网页搜索摘要
+        # 网页搜索摘要 + 正文
         web_section = ""
         if web_results:
-            snippets = "\n".join(
-                f"- {r['snippet'][:200]}" for r in web_results[:6] if r.get("snippet")
-            )
-            if snippets:
-                web_section = f"\n📖 网上关于{trip.destination}的攻略建议（仅供参考，最终安排以候选景点为准）：\n{snippets}"
+            parts = []
+            for r in web_results[:6]:
+                snippet = r.get("snippet", "")
+                content = r.get("content", "")  # 抓取的网页正文
+                if content:
+                    # 有正文时优先用正文，截取前 800 字
+                    parts.append(f"【{r.get('title', '')[:50]}】\n{content[:800]}")
+                elif snippet:
+                    parts.append(f"- {snippet[:200]}")
+            if parts:
+                web_section = f"\n📖 网上关于{trip.destination}的攻略参考（来自马蜂窝/穷游等公开攻略，请据此总结最佳行程建议）：\n" + "\n\n".join(parts)
 
         return f"""请为以下旅行规划 {days_count} 天的行程：
 

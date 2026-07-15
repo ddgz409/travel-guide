@@ -62,6 +62,7 @@ export function Navbar() {
             </>
           ) : (
             <>
+              <span className="text-[#999] text-[13px] hidden sm:inline">游客模式</span>
               <Link href="/login" className="text-[#666] hover:text-[#ff9d00] transition-colors">
                 登录
               </Link>

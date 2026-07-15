@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_optional_user
 from app.models import Day, Item, Trip, User
 from app.schemas import (
     ItemUpdate,
@@ -91,12 +91,70 @@ def _run_generate(trip_id: str, generator) -> None:
         db.close()
 
 
+# 游客用户 ID 固定值，所有游客攻略挂在这个虚拟用户下
+GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def _ensure_guest_user(db: Session) -> User:
+    """确保游客虚拟用户存在。"""
+    guest = db.get(User, GUEST_USER_ID)
+    if guest is None:
+        import secrets as _sec
+        guest = User(
+            id=GUEST_USER_ID,
+            username=f"游客_{_sec.token_hex(4)}",
+            password_hash="!",
+        )
+        db.add(guest)
+        db.commit()
+    return guest
+
+
+@router.post("/guest-generate", response_model=TripOut, status_code=status.HTTP_201_CREATED)
+def guest_generate(
+    payload: TripGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """游客模式生成攻略（无需登录）。"""
+    if payload.end_date < payload.start_date:
+        raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
+
+    guest = _ensure_guest_user(db)
+
+    title = f"{payload.destination}之旅"
+    if payload.start_date != payload.end_date:
+        title = f"{payload.destination}{(payload.end_date - payload.start_date).days + 1}日游"
+
+    preferences = dict(payload.preferences)
+    if payload.must_include:
+        preferences["must_include"] = payload.must_include
+
+    trip = Trip(
+        user_id=guest.id,
+        title=title,
+        destination=payload.destination,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        travelers=payload.travelers,
+        preferences=preferences,
+        status="generating",
+    )
+    db.add(trip)
+    db.commit()
+    db.refresh(trip)
+
+    generator = get_generator()
+    background_tasks.add_task(_run_generate, trip.id, generator)
+    return trip
+
+
 @router.get("/pois/search")
 def search_pois(
     q: str,
     city: str = "",
     limit: int = 10,
-    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """搜索景点（供前端搜索框使用）。
 
@@ -144,11 +202,11 @@ def list_trips(current: User = Depends(get_current_user), db: Session = Depends(
 @router.get("/{trip_id}", response_model=TripOut)
 def get_trip(
     trip_id: str,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """获取攻略详情（含 days/items）。"""
-    return _trip_or_404(trip_id, db, current.id)
+    return _trip_or_404(trip_id, db, current.id if current else None)
 
 
 @router.put("/{trip_id}", response_model=TripOut)
@@ -174,11 +232,11 @@ def update_item(
     trip_id: str,
     item_id: str,
     payload: ItemUpdate,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """编辑单个行程条目。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -202,14 +260,14 @@ def swap_item_alternative(
     trip_id: str,
     item_id: str,
     alt_index: int = 0,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """将条目替换为第 alt_index 个备选 POI（"换一个"功能）。
 
     原 POI 放回备选列表末尾，被选中的备选提升为当前条目。
     """
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -247,11 +305,11 @@ def reorder_items(
     trip_id: str,
     day_id: str,
     payload: ReorderRequest,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """批量重排序某天的条目（拖拽排序）。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     day = db.get(Day, day_id)
     if day is None or day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="行程天数不存在")
@@ -271,11 +329,11 @@ def regenerate_day(
     trip_id: str,
     day_index: int,
     background_tasks: BackgroundTasks,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """重新生成指定某一天。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     total_days = (trip.end_date - trip.start_date).days + 1
     if day_index < 1 or day_index > total_days:
         raise HTTPException(status_code=400, detail="天数超出范围")
@@ -315,11 +373,11 @@ def _run_regen_day(trip_id: str, day_index: int, generator) -> None:
 @router.post("/{trip_id}/share", response_model=TripOut)
 def create_share_link(
     trip_id: str,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """生成分享 token（开启匿名只读访问）。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     if not trip.share_token:
         trip.share_token = secrets.token_urlsafe(16)
     db.commit()
@@ -339,11 +397,11 @@ def get_shared_trip(token: str, db: Session = Depends(get_db)):
 @router.get("/{trip_id}/export")
 def export_trip(
     trip_id: str,
-    current: User = Depends(get_current_user),
+    current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """导出攻略为 PDF。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
     if trip.status != "ready":
         raise HTTPException(status_code=400, detail="攻略尚未生成完成，无法导出")
     pdf_bytes = export_trip_pdf(trip)

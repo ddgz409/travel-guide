@@ -1,10 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useRef, useCallback, type FormEvent, type KeyboardEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useRef, useCallback, type FormEvent, type KeyboardEvent, Suspense } from "react";
 
 import { tripsApi } from "@/lib/api";
 import type { PoiSearchResult } from "@/lib/types";
+import { useAuthStore } from "@/stores/auth";
 
 const INTEREST_OPTIONS = [
   "文化", "美食", "购物", "自然", "历史", "夜生活", "亲子", "艺术", "运动",
@@ -15,8 +16,17 @@ const TRANSPORTS = ["公共交通", "自驾", "步行", "混合"];
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export default function GeneratePage() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#999]">加载中...</div>}>
+      <GenerateContent />
+    </Suspense>
+  );
+}
+
+function GenerateContent() {
   const router = useRouter();
-  const [destination, setDestination] = useState("");
+  const searchParams = useSearchParams();
+  const [destination, setDestination] = useState(searchParams.get("dest") || "");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [travelers, setTravelers] = useState(1);
@@ -95,14 +105,19 @@ export default function GeneratePage() {
 
     setSubmitting(true);
     try {
-      const trip = await tripsApi.generate({
+      const payload = {
         destination: destination.trim(),
         start_date: startDate,
         end_date: endDate,
         travelers,
         preferences: { interests, budget_level: budgetLevel, transport },
         must_include: mustInclude.length > 0 ? mustInclude : undefined,
-      });
+      };
+      // 登录用户走正常接口，游客走 guest-generate
+      const { user } = useAuthStore.getState();
+      const trip = user
+        ? await tripsApi.generate(payload)
+        : await tripsApi.guestGenerate(payload);
       router.push(`/trips/${trip.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "提交失败");

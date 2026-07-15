@@ -25,7 +25,7 @@ export default function HomePage() {
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     if (!searchDest.trim()) return;
-    router.push(user ? `/generate?dest=${encodeURIComponent(searchDest.trim())}` : "/register");
+    router.push(`/generate?dest=${encodeURIComponent(searchDest.trim())}`);
   };
 
   return (
@@ -70,7 +70,7 @@ export default function HomePage() {
           {DESTINATIONS.map((d) => (
             <Link
               key={d.name}
-              href={user ? `/generate?dest=${encodeURIComponent(d.name)}` : "/register"}
+              href={`/generate?dest=${encodeURIComponent(d.name)}`}
               className="block bg-white border border-[#e5e5e5] rounded overflow-hidden hover:shadow-md transition-all group"
             >
               <div className={`h-28 flex items-center justify-center text-[44px] bg-gradient-to-br ${d.color}`}>

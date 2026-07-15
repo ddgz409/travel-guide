@@ -108,6 +108,13 @@ export const tripsApi = {
       body: JSON.stringify(payload),
     }),
 
+  /** 游客模式生成（无需登录）。 */
+  guestGenerate: (payload: GenerateRequest) =>
+    request<Trip>("/trips/guest-generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   list: () => request<TripListItem[]>("/trips"),
 
   get: (id: string) => request<Trip>(`/trips/${id}`),

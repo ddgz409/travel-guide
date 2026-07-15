@@ -42,7 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const token = await authApi.login(username, password);
       setToken(token.access_token);
-      set({ user: token.user });
+      set({ user: token.user, loading: false });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "登录失败" });
       throw e;
@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const token = await authApi.register(username, password);
       setToken(token.access_token);
-      set({ user: token.user });
+      set({ user: token.user, loading: false });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "注册失败" });
       throw e;
