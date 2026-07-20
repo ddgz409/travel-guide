@@ -1,8 +1,8 @@
-"""爬取共用工具：HTTP 重试、剥标签、Bing site 搜索。"""
+"""爬取共用工具：HTTP 重试、剥标签、站内搜索（Bing → DuckDuckGo 降级）。"""
 import logging
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 
@@ -46,12 +46,17 @@ def fetch_text(url: str, *, retries: int = 2, timeout: float = 8.0) -> str | Non
     return None
 
 
-def bing_site_search(site: str, query: str, max_results: int = 6) -> list[dict[str, str]]:
-    """Bing site: 搜索，返回 [{title, snippet, url}]。"""
-    q = f"site:{site} {query}"
-    url = f"https://www.bing.com/search?q={quote(q)}&count={max_results}"
-    html = fetch_text(url, retries=2, timeout=8.0)
-    if not html:
+def _unwrap_ddg_url(href: str) -> str:
+    if not href:
+        return ""
+    m = re.search(r"[?&]uddg=([^&]+)", href)
+    if m:
+        return unquote(m.group(1))
+    return href
+
+
+def _parse_bing_html(html: str, max_results: int) -> list[dict[str, str]]:
+    if not html or "Captcha" in html and "b_algo" not in html:
         return []
     results: list[dict[str, str]] = []
     pairs = re.findall(
@@ -76,3 +81,58 @@ def bing_site_search(site: str, query: str, max_results: int = 6) -> list[dict[s
         if len(results) >= max_results:
             break
     return results
+
+
+def _parse_ddg_html(html: str, site: str, max_results: int) -> list[dict[str, str]]:
+    if not html:
+        return []
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+    pairs = re.findall(
+        r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+        html,
+        re.S,
+    )
+    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</(?:a|td|div)>', html, re.S)
+    for i, (href, title_html) in enumerate(pairs):
+        url = _unwrap_ddg_url(href)
+        if not url.startswith("http"):
+            continue
+        if "duckduckgo.com" in url or "y.js" in url:
+            continue
+        if site and site not in url:
+            continue
+        title = re.sub(r"<[^>]+>", "", title_html).strip()[:120]
+        if not title or url in seen:
+            continue
+        seen.add(url)
+        sn = ""
+        if i < len(snippets):
+            sn = re.sub(r"<[^>]+>", "", snippets[i]).strip()[:300]
+        results.append({"title": title, "snippet": sn, "url": url})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def ddg_site_search(site: str, query: str, max_results: int = 6) -> list[dict[str, str]]:
+    """DuckDuckGo HTML 站内搜索。"""
+    q = f"site:{site} {query}"
+    url = f"https://html.duckduckgo.com/html/?q={quote(q)}"
+    html = fetch_text(url, retries=2, timeout=8.0)
+    return _parse_ddg_html(html or "", site, max_results)
+
+
+def bing_site_search(site: str, query: str, max_results: int = 6) -> list[dict[str, str]]:
+    """站内搜索：先 Bing，空/验证码则降级 DuckDuckGo。
+
+    返回 [{title, snippet, url}]。
+    """
+    q = f"site:{site} {query}"
+    url = f"https://www.bing.com/search?q={quote(q)}&count={max_results}"
+    html = fetch_text(url, retries=1, timeout=8.0)
+    results = _parse_bing_html(html or "", max_results)
+    if results:
+        return results
+    logger.info("bing_site_search empty/captcha, fallback ddg site=%s q=%s", site, query)
+    return ddg_site_search(site, query, max_results=max_results)

@@ -86,6 +86,7 @@ export interface ExternalTip {
     rating?: string;
     price?: string;
     likes?: string;
+    portal?: boolean;
   } | null;
 }
 
