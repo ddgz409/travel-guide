@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 from app.core.config import get_settings
-from app.core.database import Base, engine
+from app.core.database import Base, engine, ensure_sqlite_columns
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -37,6 +37,7 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 def on_startup() -> None:
     """启动时自动建表（MVP 用 create_all，生产应改用 Alembic 迁移）。"""
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_columns()
 
 
 @app.get("/")

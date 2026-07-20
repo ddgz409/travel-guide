@@ -1,7 +1,7 @@
 """数据库引擎与会话管理。"""
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -31,3 +31,21 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def ensure_sqlite_columns() -> None:
+    """为已有 SQLite 库补全 create_all 不会添加的新列。"""
+    if not settings.is_sqlite:
+        return
+    inspector = inspect(engine)
+    if "trips" not in inspector.get_table_names():
+        return
+    cols = {c["name"] for c in inspector.get_columns("trips")}
+    if "external_refs" not in cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE trips ADD COLUMN external_refs JSON "
+                    "DEFAULT '{\"xiaohongshu\":[],\"ctrip\":[]}'"
+                )
+            )

@@ -50,6 +50,10 @@ class Trip(Base):
     budget_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     # 偏好：兴趣/住宿等级/交通方式等
     preferences: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # 小红书/携程参考 {xiaohongshu: [...], ctrip: [...]}
+    external_refs: Mapped[dict] = mapped_column(
+        JSON, default=lambda: {"xiaohongshu": [], "ctrip": []}, nullable=False
+    )
     # generating / ready / failed
     status: Mapped[str] = mapped_column(String(16), default="generating", nullable=False)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)

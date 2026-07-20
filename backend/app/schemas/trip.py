@@ -1,12 +1,34 @@
 """攻略相关 Pydantic 模型。"""
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 TimeSlot = Literal["morning", "afternoon", "evening"]
 ItemType = Literal["attraction", "meal", "hotel", "transport"]
 TripStatus = Literal["generating", "ready", "failed"]
+
+ExternalSource = Literal["xiaohongshu", "ctrip"]
+
+
+class ExternalTip(BaseModel):
+    """小红书 / 携程参考条目。"""
+
+    source: ExternalSource
+    title: str
+    snippet: str = ""
+    url: str
+    meta: dict[str, Any] | None = None
+
+
+class ExternalRefs(BaseModel):
+    """按来源分组的外部参考。"""
+
+    xiaohongshu: list[ExternalTip] = Field(default_factory=list)
+    ctrip: list[ExternalTip] = Field(default_factory=list)
+
+
+EMPTY_EXTERNAL_REFS: dict[str, list] = {"xiaohongshu": [], "ctrip": []}
 
 
 class ItemOut(BaseModel):
@@ -113,6 +135,7 @@ class TripOut(BaseModel):
     travelers: int
     budget_total: float | None = None
     preferences: dict = {}
+    external_refs: dict = Field(default_factory=lambda: {"xiaohongshu": [], "ctrip": []})
     status: TripStatus
     error_msg: str | None = None
     share_token: str | None = None
