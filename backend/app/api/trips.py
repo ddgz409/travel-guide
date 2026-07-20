@@ -255,6 +255,54 @@ def update_item(
     return trip
 
 
+@router.get("/{trip_id}/items/{item_id}/route")
+def get_item_route(
+    trip_id: str,
+    item_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """获取条目到下一站的详细路线（换乘方案+时间）。
+
+    如果已存储 detail 则直接返回；否则实时调高德 API 规划。
+    """
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    item = db.get(Item, item_id)
+    if item is None or item.day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="条目不存在")
+
+    transport = item.transport_to_next
+    if not transport:
+        return {"detail": None, "mode": None}
+
+    # 如果已有 detail，直接返回
+    if transport.get("detail"):
+        return transport
+
+    # 没有 detail，实时规划（旧数据或步行/驾车模式）
+    # 找下一站
+    next_item = db.scalar(
+        select(Item).where(Item.day_id == item.day_id, Item.seq == item.seq + 1)
+    )
+    if not next_item or not item.location or not next_item.location:
+        return transport
+
+    origin = f"{item.location['lng']},{item.location['lat']}"
+    dest = f"{next_item.location['lng']},{next_item.location['lat']}"
+    amap = get_amap_client()
+    mode = transport.get("mode", "walking")
+    if mode == "transit":
+        seg = amap.plan_route(origin, dest, mode="transit", city=trip.destination)
+    else:
+        seg = amap.plan_route(origin, dest, mode=mode)
+    if seg and seg.detail:
+        transport["detail"] = seg.detail
+        # 更新数据库
+        item.transport_to_next = transport
+        db.commit()
+    return transport
+
+
 @router.post("/{trip_id}/items/{item_id}/swap", response_model=TripOut)
 def swap_item_alternative(
     trip_id: str,

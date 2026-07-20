@@ -155,6 +155,10 @@ export const tripsApi = {
       body: JSON.stringify({ items }),
     }),
 
+  /** 获取条目到下一站的详细路线（换乘方案）。 */
+  getItemRoute: (tripId: string, itemId: string) =>
+    request<Record<string, unknown>>(`/trips/${tripId}/items/${itemId}/route`),
+
   regenerateDay: (tripId: string, dayIndex: number) =>
     request<Trip>(`/trips/${tripId}/regenerate-day/${dayIndex}`, { method: "POST" }),
 

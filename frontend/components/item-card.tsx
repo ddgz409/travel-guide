@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback } from "react";
 
 import { tripsApi } from "@/lib/api";
-import type { Alternative, Item, PoiSearchResult } from "@/lib/types";
+import type { Alternative, Item, PoiSearchResult, RouteStep } from "@/lib/types";
 
 const SLOT_LABEL: Record<string, string> = {
   morning: "上午", afternoon: "下午", evening: "晚上",
@@ -34,14 +34,30 @@ function formatDuration(min: number | null): string {
   return m ? `${h}小时${m}分` : `${h}小时`;
 }
 
-function formatTransport(t: Item["transport_to_next"]): string | null {
+function formatTransport(t: Item["transport_to_next"]): { summary: string; hasDetail: boolean } | null {
   if (!t) return null;
   const km = (t.distance_m / 1000).toFixed(1);
   const min = Math.round(t.duration_s / 60);
   const modeLabel: Record<string, string> = {
     walking: "🚶 步行", driving: "🚗 驾车", transit: "🚇 地铁/公交",
   };
-  return `${modeLabel[t.mode] || t.mode} ${km}km · ${min}分钟`;
+  // 有换乘详情时，提取线路名
+  if (t.detail && t.detail.length > 0) {
+    const busLines = t.detail.filter((s) => s.type === "bus" && s.line_name);
+    if (busLines.length > 0) {
+      // 提取线路简称（如"地铁1号线八通线(环球度假区--苹果园)" -> "地铁1号线"）
+      const names = busLines.map((b) => {
+        const name = b.line_name || "";
+        // 取括号前的部分，或前8个字
+        const short = name.split("(")[0].split("（")[0];
+        return short.length > 8 ? short.slice(0, 8) : short;
+      });
+      const timeStr = t.arrival_time ? `${t.departure_time || ""}-${t.arrival_time} · ` : "";
+      return { summary: `${timeStr}${names.join("→")} · ${min}分钟`, hasDetail: true };
+    }
+  }
+  const timeStr = t.arrival_time ? `${t.departure_time || ""}-${t.arrival_time} · ` : "";
+  return { summary: `${timeStr}${modeLabel[t.mode] || t.mode} ${km}km · ${min}分钟`, hasDetail: false };
 }
 
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -49,6 +65,7 @@ let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 interface ItemCardProps {
   item: Item;
   index: number;
+  tripId: string;
   onToggle: (selected: boolean) => void;
   onSwap: (altIndex: number) => void;
   onReplace: (poi: PoiSearchResult) => void;
@@ -60,12 +77,44 @@ interface ItemCardProps {
 }
 
 export function ItemCard({
-  item, index, onToggle, onSwap, onReplace,
+  item, index, tripId, onToggle, onSwap, onReplace,
   onDragStart, onDragOver, onDrop, dragging, dragOver,
 }: ItemCardProps) {
   const [showAlts, setShowAlts] = useState(false);
   const slot = item.time_slot;
   const transport = formatTransport(item.transport_to_next);
+
+  // ---- 路线详情展开 ----
+  const [showRoute, setShowRoute] = useState(false);
+  const [routeSteps, setRouteSteps] = useState<RouteStep[] | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  const handleShowRoute = async () => {
+    if (showRoute) {
+      setShowRoute(false);
+      return;
+    }
+    // 已有 detail 直接展开
+    if (item.transport_to_next?.detail && item.transport_to_next.detail.length > 0) {
+      setRouteSteps(item.transport_to_next.detail);
+      setShowRoute(true);
+      return;
+    }
+    // 调接口获取
+    setRouteLoading(true);
+    try {
+      const res = await tripsApi.getItemRoute(tripId, item.id);
+      const detail = (res as { detail?: RouteStep[] }).detail;
+      if (detail && detail.length > 0) {
+        setRouteSteps(detail);
+        setShowRoute(true);
+      }
+    } catch {
+      // 忽略
+    } finally {
+      setRouteLoading(false);
+    }
+  };
 
   // ---- 搜索备选景点 ----
   const [altSearch, setAltSearch] = useState("");
@@ -231,7 +280,52 @@ export function ItemCard({
       )}
 
       {transport && item.selected && (
-        <div className="text-xs text-gray-400 pl-[52px] pb-1">🚶 {transport}</div>
+        <div className="pl-[52px] pb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{transport.summary}</span>
+            {transport.hasDetail && (
+              <button
+                onClick={handleShowRoute}
+                className="text-xs text-[#ff9d00] hover:text-[#ff8a00] font-medium"
+              >
+                {routeLoading ? "加载中..." : showRoute ? "收起" : "查看路线"}
+              </button>
+            )}
+          </div>
+          {/* 路线详情展开 */}
+          {showRoute && routeSteps && (
+            <div className="mt-2 bg-[#fffaf0] border border-orange-100 rounded-lg p-3 space-y-2">
+              {routeSteps.map((step, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  {step.type === "walk" ? (
+                    <>
+                      <span className="text-gray-400 mt-0.5">🚶</span>
+                      <div>
+                        <span className="text-gray-500">{step.instruction || `步行${step.distance_m || 0}米`}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="mt-0.5">{step.line_type?.includes("地铁") ? "🚇" : "🚌"}</span>
+                      <div className="flex-1">
+                        <div className="font-semibold text-[#333]">{step.line_name}</div>
+                        <div className="text-gray-500 mt-0.5">
+                          {step.departure_stop} → {step.arrival_stop}
+                          {step.via_stops != null && step.via_stops > 0 && `（${step.via_stops}站）`}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {item.transport_to_next?.arrival_time && (
+                <div className="pt-2 border-t border-orange-100 text-xs text-[#ff9d00] font-semibold">
+                  预计 {item.transport_to_next.departure_time || ""} 出发 → {item.transport_to_next.arrival_time} 到达
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </>
   );
