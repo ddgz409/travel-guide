@@ -32,6 +32,9 @@ dist/
 *.sqlite3
 db.sqlite3
 
+# Git worktrees (local isolation)
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
