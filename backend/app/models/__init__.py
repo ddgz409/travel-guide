@@ -54,6 +54,12 @@ class Trip(Base):
     external_refs: Mapped[dict] = mapped_column(
         JSON, default=lambda: {"xiaohongshu": [], "ctrip": []}, nullable=False
     )
+    # 携程酒店现爬状态：ok / amap_only
+    hotel_fetch_status: Mapped[str] = mapped_column(
+        String(16), default="amap_only", nullable=False
+    )
+    # 携程酒店候选精简列表 [{name, url, score, tags, ...}]
+    hotel_candidates: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # generating / ready / failed
     status: Mapped[str] = mapped_column(String(16), default="generating", nullable=False)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)

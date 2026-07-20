@@ -11,6 +11,7 @@
 鲁棒性：LLM 失败降级为候选池贪心排列；部分成功保留；独立超时重试。
 """
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -21,6 +22,7 @@ from app.models import Day, Item, Trip
 from app.schemas.trip import EMPTY_EXTERNAL_REFS
 from app.services.amap_client import AmapClient, AmapError, Poi, POI_TYPES, get_amap_client
 from app.services.ctrip_client import search_ctrip
+from app.services.ctrip_hotel_client import CtripHotel, search_ctrip_hotels
 from app.services.web_search import search_travel_tips
 from app.services.xiaohongshu_client import search_xiaohongshu
 from app.services.zhipu_client import LLMError, ZhipuClient, get_zhipu_client
@@ -67,6 +69,13 @@ POI_LIMIT = 25
 WALK_MAX_DISTANCE_M = 1500
 
 
+def _min_to_time(minutes: int) -> str:
+    """分钟数转 HH:MM 格式。"""
+    h = (minutes // 60) % 24
+    m = minutes % 60
+    return f"{h:02d}:{m:02d}"
+
+
 class GeneratorError(Exception):
     """生成引擎错误。"""
 
@@ -101,6 +110,20 @@ class GuideGenerator:
             pool = self._fetch_poi_pool(geo, trip.destination, must_include)
             if not pool:
                 raise GeneratorError(f"未找到 {trip.destination} 的景点数据")
+
+            # 2.4 携程酒店现爬（每次生成，不缓存）→ 软排序后优先并入住宿池
+            pool, hotel_status, hotel_cands = self._merge_ctrip_hotels(
+                pool, trip.destination
+            )
+            trip.hotel_fetch_status = hotel_status
+            trip.hotel_candidates = hotel_cands
+            db.commit()
+            logger.info(
+                "ctrip hotels %s: status=%s candidates=%d",
+                trip.destination,
+                hotel_status,
+                len(hotel_cands),
+            )
 
             # 2.5 网页搜索：获取公开的旅游攻略摘要作为 LLM 参考
             web_results = search_travel_tips(trip.destination, max_results=8)
@@ -228,6 +251,84 @@ class GuideGenerator:
                     refs[key] = []
         return refs
 
+    def _merge_ctrip_hotels(
+        self, pool: dict[str, list[Poi]], destination: str
+    ) -> tuple[dict[str, list[Poi]], str, list[dict]]:
+        """现爬携程酒店，软排序后插到住宿池最前；失败则 amap_only。"""
+        amap_hotels = list(pool.get("hotel") or [])
+        try:
+            ctrip_hotels = search_ctrip_hotels(destination, max_results=20)
+        except Exception as e:
+            logger.warning("ctrip hotel scrape failed: %s", e)
+            ctrip_hotels = []
+
+        if not ctrip_hotels:
+            return pool, "amap_only", []
+
+        ctrip_pois: list[Poi] = []
+        for h in ctrip_hotels:
+            poi = self._ctrip_hotel_to_poi(h, destination)
+            if poi:
+                ctrip_pois.append(poi)
+
+        if not ctrip_pois:
+            return pool, "amap_only", []
+
+        seen = {self._norm_hotel_name(p.name) for p in ctrip_pois}
+        merged = ctrip_pois[:]
+        for p in amap_hotels:
+            key = self._norm_hotel_name(p.name)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(p)
+            if len(merged) >= POI_LIMIT:
+                break
+
+        pool = dict(pool)
+        pool["hotel"] = merged
+        candidates = [h.to_candidate() for h in ctrip_hotels[:12]]
+        return pool, "ok", candidates
+
+    @staticmethod
+    def _norm_hotel_name(name: str) -> str:
+        return re.sub(r"[\s·•\-—（）()]+", "", (name or "").lower())
+
+    def _ctrip_hotel_to_poi(self, h: CtripHotel, destination: str) -> Poi | None:
+        """携程酒店转 Poi；用高德补坐标，失败则跳过（无法进路线规划）。"""
+        note = "·".join(h.tags) if h.tags else "携程推荐"
+        rating = None
+        if h.good_rate is not None:
+            rating = round(min(5.0, h.good_rate / 20.0), 1)
+        try:
+            results = self.amap.search_poi_by_keyword(h.name, city=destination, limit=1)
+        except AmapError as e:
+            logger.warning("enrich ctrip hotel '%s' failed: %s", h.name, e)
+            results = []
+        if results:
+            p = results[0]
+            return Poi(
+                id=p.id or f"ctrip-{abs(hash(h.name)) % 10_000_000}",
+                name=h.name,
+                type="hotel",
+                lng=p.lng,
+                lat=p.lat,
+                address=p.address or destination,
+                rating=rating or p.rating,
+                note=note,
+            )
+        # 无坐标仍放入候选（LLM 可选；路线阶段再补）
+        return Poi(
+            id=f"ctrip-{abs(hash(h.name)) % 10_000_000}",
+            name=h.name,
+            type="hotel",
+            lng=0.0,
+            lat=0.0,
+            address=destination,
+            rating=rating,
+            note=note,
+        )
+
     def _generate_via_llm(
         self, pool: dict[str, list[Poi]], trip: Trip, days_count: int,
         web_results: list[dict[str, Any]] | None = None,
@@ -260,7 +361,8 @@ class GuideGenerator:
             lines = []
             for p in pool.get(kind, [])[:20]:
                 rating_str = f" ★{p.rating}" if p.rating else ""
-                lines.append(f"- {p.name}{rating_str}（{p.address or '地址未知'}）")
+                note_str = f" [{p.note}]" if getattr(p, "note", "") else ""
+                lines.append(f"- {p.name}{rating_str}{note_str}（{p.address or '地址未知'}）")
             return "\n".join(lines)
 
         prefs = trip.preferences or {}
@@ -338,10 +440,10 @@ class GuideGenerator:
 可选餐饮：
 {fmt('meal')}
 
-可选住宿：
+可选住宿（已按新店/华住会/近地铁/好评率软排序，优先选靠前的）：
 {fmt('hotel')}
 
-请严格使用以上候选地点生成 {days_count} 天的 JSON 行程。优先安排高评分和地标性景点。{closing_hints}"""
+请严格使用以上候选地点生成 {days_count} 天的 JSON 行程。优先安排高评分和地标性景点；住宿优先选择列表靠前的酒店。{closing_hints}"""
 
     def _validate_and_enrich(
         self, item: dict[str, Any], pool: dict[str, list[Poi]], destination: str
@@ -517,9 +619,14 @@ class GuideGenerator:
 
         items_data = plan.get("items", [])
         prev_loc: str | None = None
+        # 估算时间：从 9:00 开始累加（停留+交通）
+        current_time_min = 9 * 60  # 9:00 = 540 分钟
         for seq, it in enumerate(items_data):
             loc = it.get("location") or {}
             loc_str = f"{loc.get('lng')},{loc.get('lat')}" if loc.get("lng") else None
+
+            # 估算出发时间（从上一站离开的时刻）
+            departure_time = current_time_min if prev_loc else None
 
             # 路线规划：上一站 -> 当前站，按距离自动选交通方式
             transport = None
@@ -533,7 +640,9 @@ class GuideGenerator:
                             "mode": "walking",
                             "distance_m": walk_seg.distance_m,
                             "duration_s": walk_seg.duration_s,
+                            "detail": None,
                         }
+                        current_time_min += walk_seg.duration_s // 60
                     else:
                         # 远距离：优先公交/地铁，失败则用驾车
                         seg = self.amap.plan_route(prev_loc, loc_str, mode="transit", city=city)
@@ -544,6 +653,7 @@ class GuideGenerator:
                                 "mode": seg.mode,
                                 "distance_m": seg.distance_m,
                                 "duration_s": seg.duration_s,
+                                "detail": seg.detail,
                             }
                         else:
                             # 兜底用步行数据
@@ -551,7 +661,13 @@ class GuideGenerator:
                                 "mode": "walking",
                                 "distance_m": walk_seg.distance_m,
                                 "duration_s": walk_seg.duration_s,
+                                "detail": None,
                             }
+                        current_time_min += seg.duration_s // 60 if seg else walk_seg.duration_s // 60
+                # 估算到达时间
+                if transport:
+                    transport["departure_time"] = _min_to_time(departure_time) if departure_time else None
+                    transport["arrival_time"] = _min_to_time(current_time_min)
 
             item = Item(
                 day_id=day.id,
@@ -571,6 +687,9 @@ class GuideGenerator:
             )
             db.add(item)
             prev_loc = loc_str
+            # 累加停留时间
+            stay = it.get("duration_min") or 90
+            current_time_min += stay
 
 
 # 模块级单例

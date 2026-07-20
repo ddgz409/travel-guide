@@ -9,6 +9,7 @@ import type { Day, Trip, PoiSearchResult } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
 import { ItemCard } from "@/components/item-card";
 import { ExternalRefsPanel } from "@/components/external-refs";
+import { HotelCandidatesPanel } from "@/components/hotel-candidates";
 
 const TYPE_LABEL: Record<string, string> = {
   attraction: "景点", meal: "餐饮", hotel: "住宿", transport: "交通",
@@ -146,6 +147,10 @@ export default function TripDetailPage() {
           </button>
         </div>
         <div className="w-full max-w-6xl mt-8 px-5">
+          <HotelCandidatesPanel
+            status={trip.hotel_fetch_status}
+            candidates={trip.hotel_candidates}
+          />
           <ExternalRefsPanel refs={trip.external_refs} />
         </div>
       </div>
@@ -214,6 +219,10 @@ export default function TripDetailPage() {
         </div>
       )}
 
+      <HotelCandidatesPanel
+        status={trip.hotel_fetch_status}
+        candidates={trip.hotel_candidates}
+      />
       <ExternalRefsPanel refs={trip.external_refs} />
 
       {days.length === 0 ? (
@@ -264,6 +273,7 @@ export default function TripDetailPage() {
                     key={it.id}
                     item={it}
                     index={idx}
+                    tripId={tripId}
                     onToggle={(selected) => toggleItem.mutate({ itemId: it.id, selected })}
                     onSwap={(altIndex) => swapItem.mutate({ itemId: it.id, altIndex })}
                     onReplace={(poi) => replaceItem.mutate({ itemId: it.id, poi })}

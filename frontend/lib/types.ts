@@ -22,10 +22,24 @@ export interface Location {
   address?: string;
 }
 
+export interface RouteStep {
+  type: "walk" | "bus";
+  instruction?: string;
+  distance_m?: number;
+  line_name?: string;
+  line_type?: string;
+  departure_stop?: string;
+  arrival_stop?: string;
+  via_stops?: number;
+}
+
 export interface TransportToNext {
   mode: string;
   distance_m: number;
   duration_s: number;
+  detail?: RouteStep[] | null;
+  departure_time?: string | null;
+  arrival_time?: string | null;
 }
 
 export interface Alternative {
@@ -87,6 +101,19 @@ export interface TripPreferences {
   [key: string]: unknown;
 }
 
+export interface HotelCandidate {
+  name: string;
+  url: string;
+  score?: number;
+  tags?: string[];
+  good_rate?: number | null;
+  open_year?: number | null;
+  is_huazhu?: boolean;
+  metro_distance_m?: number | null;
+}
+
+export type HotelFetchStatus = "ok" | "amap_only";
+
 export interface Trip {
   id: string;
   title: string;
@@ -97,6 +124,8 @@ export interface Trip {
   budget_total: number | null;
   preferences: TripPreferences;
   external_refs?: ExternalRefs;
+  hotel_fetch_status?: HotelFetchStatus;
+  hotel_candidates?: HotelCandidate[];
   status: TripStatus;
   error_msg: string | null;
   share_token: string | null;

@@ -8,6 +8,7 @@ import { tripsApi } from "@/lib/api";
 import type { Day, Item, Trip } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
 import { ExternalRefsPanel } from "@/components/external-refs";
+import { HotelCandidatesPanel } from "@/components/hotel-candidates";
 
 const SLOT_LABEL: Record<string, string> = {
   morning: "上午", afternoon: "下午", evening: "晚上",
@@ -66,6 +67,10 @@ export default function SharePage() {
         </p>
       </div>
 
+      <HotelCandidatesPanel
+        status={trip.hotel_fetch_status}
+        candidates={trip.hotel_candidates}
+      />
       <ExternalRefsPanel refs={trip.external_refs} />
 
       <div className="space-y-6">

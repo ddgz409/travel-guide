@@ -47,6 +47,7 @@ class Poi:
     address: str
     tel: str = ""
     rating: float | None = None  # 评分（如有）
+    note: str = ""  # 额外标注（如携程酒店标签）
 
 
 @dataclass
@@ -56,6 +57,7 @@ class RouteSegment:
     distance_m: int  # 距离（米）
     duration_s: int  # 时间（秒）
     mode: str  # driving / walking / transit
+    detail: list[dict] | None = None  # 换乘详情（仅 transit）
 
 
 class AmapError(Exception):
@@ -224,15 +226,42 @@ class AmapClient:
             self._check(data)
             route = data.get("route") or {}
             if mode == "transit":
-                # 公交/地铁：路径在 route.transits 里
+                # 公交/地铁：路径在 route.transits 里，解析换乘详情
                 transits = route.get("transits") or []
                 if not transits:
                     return None
                 t = transits[0]
+                # 解析换乘段 segments
+                detail: list[dict] = []
+                for seg in t.get("segments") or []:
+                    # 步行段
+                    walking = seg.get("walking") or {}
+                    walk_steps = walking.get("steps") or []
+                    if walk_steps:
+                        walk_instruction = walk_steps[0].get("instruction", "")
+                        walk_dist = sum(int(s.get("distance", 0)) for s in walk_steps)
+                        detail.append({
+                            "type": "walk",
+                            "instruction": walk_instruction[:100] if walk_instruction else f"步行{walk_dist}米",
+                            "distance_m": walk_dist,
+                        })
+                    # 公交/地铁段
+                    bus = seg.get("bus") or {}
+                    for bl in bus.get("buslines") or []:
+                        via_stops = bl.get("via_stops") or []
+                        detail.append({
+                            "type": "bus",
+                            "line_name": bl.get("name", ""),
+                            "line_type": bl.get("type", ""),
+                            "departure_stop": (bl.get("departure_stop") or {}).get("name", ""),
+                            "arrival_stop": (bl.get("arrival_stop") or {}).get("name", ""),
+                            "via_stops": len(via_stops),
+                        })
                 return RouteSegment(
                     distance_m=int(t.get("distance", 0)),
                     duration_s=int(t.get("duration", 0)),
                     mode=mode,
+                    detail=detail if detail else None,
                 )
             # 步行/驾车：路径在 route.paths 里
             paths = route.get("paths") or []

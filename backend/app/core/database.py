@@ -41,11 +41,22 @@ def ensure_sqlite_columns() -> None:
     if "trips" not in inspector.get_table_names():
         return
     cols = {c["name"] for c in inspector.get_columns("trips")}
+    alters: list[str] = []
     if "external_refs" not in cols:
+        alters.append(
+            "ALTER TABLE trips ADD COLUMN external_refs JSON "
+            "DEFAULT '{\"xiaohongshu\":[],\"ctrip\":[]}'"
+        )
+    if "hotel_fetch_status" not in cols:
+        alters.append(
+            "ALTER TABLE trips ADD COLUMN hotel_fetch_status VARCHAR(16) "
+            "DEFAULT 'amap_only'"
+        )
+    if "hotel_candidates" not in cols:
+        alters.append(
+            "ALTER TABLE trips ADD COLUMN hotel_candidates JSON DEFAULT '[]'"
+        )
+    if alters:
         with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE trips ADD COLUMN external_refs JSON "
-                    "DEFAULT '{\"xiaohongshu\":[],\"ctrip\":[]}'"
-                )
-            )
+            for sql in alters:
+                conn.execute(text(sql))

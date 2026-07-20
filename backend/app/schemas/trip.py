@@ -136,6 +136,8 @@ class TripOut(BaseModel):
     budget_total: float | None = None
     preferences: dict = {}
     external_refs: dict = Field(default_factory=lambda: {"xiaohongshu": [], "ctrip": []})
+    hotel_fetch_status: str = "amap_only"
+    hotel_candidates: list[dict] = Field(default_factory=list)
     status: TripStatus
     error_msg: str | None = None
     share_token: str | None = None
