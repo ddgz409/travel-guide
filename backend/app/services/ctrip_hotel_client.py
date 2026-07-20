@@ -1,7 +1,7 @@
 """携程酒店现爬 + 软打分排序。
 
 每次完整生成调用；不缓存。字段缺失只降权，不硬淘汰。
-直连失败时用 Bing site:hotels.ctrip.com 降级。
+列表页用城市 ID + hotelName/hotelId 解析；详情页补字段。
 """
 from __future__ import annotations
 
@@ -22,7 +22,33 @@ HUAZHU_KEYWORDS = (
     "华住", "禧玥", "CitiGO", "城际",
 )
 LIST_LIMIT = 20
-DETAIL_LIMIT = 10
+DETAIL_LIMIT = 8
+
+# 常用城市 ID（携程 hotels 列表页）
+CITY_IDS: dict[str, int] = {
+    "北京": 1, "上海": 2, "天津": 3, "重庆": 4, "哈尔滨": 5, "大连": 6,
+    "青岛": 7, "西安": 10, "南京": 12, "无锡": 13, "苏州": 14, "杭州": 17,
+    "宁波": 375, "厦门": 25, "福州": 258, "成都": 28, "深圳": 30, "广州": 32,
+    "桂林": 33, "昆明": 34, "丽江": 37, "海口": 42, "三亚": 43, "香港": 58,
+    "澳门": 59, "长沙": 206, "合肥": 278, "济南": 144, "沈阳": 451,
+    "武汉": 477, "郑州": 559, "南昌": 376, "南宁": 380, "贵阳": 33,
+    "太原": 105, "石家庄": 428, "长春": 158, "兰州": 100,
+}
+
+_BAD_NAMES = {
+    "酒店", "酒店预订", "携程", "携程旅行网", "携程旅行", "发布房源",
+    "首页", "登录", "注册", "更多", "查看更多",
+}
+
+_HOTEL_NAME = re.compile(r'hotelName">([^<]{4,80})</span>')
+_HOTEL_ID = re.compile(r'hotelId[=:\"]+(\d{4,})', re.I)
+_OPEN_YEAR = re.compile(r"(?:开业|装修)[^0-9]{0,8}(20\d{2})")
+_GOOD_RATE = re.compile(r"(?:好评率|好评)[^0-9]{0,6}(\d{2,3}(?:\.\d+)?)\s*%")
+_SCORE_4 = re.compile(r"(?:评分|点评分|用户评分)[^0-9]{0,6}([4-5]\.\d)")
+_SCORE_NEAR = re.compile(r'([4-5]\.\d)\s*(?:分|/5|/5分)?')
+_METRO_M = re.compile(r"(?:距|距离)?[^。；\n]{0,12}地铁[^。；\n]{0,20}?(\d{2,4})\s*米")
+_METRO_WALK = re.compile(r"地铁[^。；\n]{0,16}?步行\s*(\d{1,2})\s*分钟")
+_DETAIL_URL = re.compile(r"hotels\.ctrip\.com/hotel/(\d+)", re.I)
 
 
 @dataclass
@@ -30,7 +56,7 @@ class CtripHotel:
     name: str
     url: str
     open_year: int | None = None
-    good_rate: float | None = None  # 0-100
+    good_rate: float | None = None
     is_huazhu: bool = False
     metro_distance_m: int | None = None
     transport_hint: bool = False
@@ -51,15 +77,17 @@ class CtripHotel:
         }
 
 
-_HOTEL_LINK = re.compile(
-    r'href="(https?://[^"]*hotels\.ctrip\.com/[^"]+|https?://m\.ctrip\.com/webapp/hotel/[^"]+)"[^>]*>([^<]{2,80})',
-    re.I,
-)
-_OPEN_YEAR = re.compile(r"(?:开业|装修)[^0-9]{0,8}(20\d{2})")
-_GOOD_RATE = re.compile(r"(?:好评率|好评)[^0-9]{0,6}(\d{2,3}(?:\.\d+)?)\s*%")
-_SCORE_4 = re.compile(r"(?:评分|点评分)[^0-9]{0,6}([4-5]\.\d)")
-_METRO_M = re.compile(r"(?:距|距离)?[^。；\n]{0,12}地铁[^。；\n]{0,20}?(\d{2,4})\s*米")
-_METRO_WALK = re.compile(r"地铁[^。；\n]{0,16}?步行\s*(\d{1,2})\s*分钟")
+def resolve_city_id(destination: str) -> int | None:
+    """从目的地字符串解析携程城市 ID。"""
+    dest = (destination or "").strip()
+    if not dest:
+        return None
+    if dest in CITY_IDS:
+        return CITY_IDS[dest]
+    for name, cid in CITY_IDS.items():
+        if name in dest or dest in name:
+            return cid
+    return None
 
 
 def _detect_huazhu(name: str, text: str = "") -> bool:
@@ -68,11 +96,9 @@ def _detect_huazhu(name: str, text: str = "") -> bool:
 
 
 def _score_hotel(h: CtripHotel) -> float:
-    """软打分：越高越优先。缺字段给中低分。"""
     score = 0.0
     tags: list[str] = []
 
-    # 好评率（权重高）
     if h.good_rate is not None:
         if h.good_rate >= 90:
             score += 35
@@ -82,9 +108,8 @@ def _score_hotel(h: CtripHotel) -> float:
         else:
             score += 5
     else:
-        score += 10  # 未知
+        score += 10
 
-    # 5 年内新店
     if h.open_year is not None:
         age = CURRENT_YEAR - h.open_year
         if 0 <= age <= 5:
@@ -97,14 +122,12 @@ def _score_hotel(h: CtripHotel) -> float:
     else:
         score += 8
 
-    # 华住会
     if h.is_huazhu:
         score += 22
         tags.append("华住会")
     else:
         score += 4
 
-    # 地铁
     if h.metro_distance_m is not None:
         if h.metro_distance_m <= 500:
             score += 18
@@ -117,12 +140,14 @@ def _score_hotel(h: CtripHotel) -> float:
     else:
         score += 6
 
-    # 交通便利文案
     if h.transport_hint:
         score += 8
         tags.append("交通方便")
     else:
         score += 2
+
+    if _DETAIL_URL.search(h.url or ""):
+        score += 5
 
     h.tags = tags
     h.score = score
@@ -138,15 +163,14 @@ def _parse_detail_fields(html: str, hotel: CtripHotel) -> None:
     if m:
         hotel.good_rate = min(100.0, float(m.group(1)))
     elif (m := _SCORE_4.search(text)):
-        # 4.5 分约映射为 90% 量级软估计
         hotel.good_rate = min(100.0, float(m.group(1)) * 20)
     m = _METRO_M.search(text)
     if m:
         hotel.metro_distance_m = int(m.group(1))
     elif (m := _METRO_WALK.search(text)):
-        hotel.metro_distance_m = int(m.group(1)) * 80  # 步行分钟估米数
+        hotel.metro_distance_m = int(m.group(1)) * 80
     blob = text[:1500]
-    hotel.transport_hint = any(
+    hotel.transport_hint = hotel.transport_hint or any(
         k in blob for k in ("交通便利", "交通方便", "地铁站", "机场大巴", "高铁", "公交直达")
     )
     hotel.is_huazhu = hotel.is_huazhu or _detect_huazhu(hotel.name, text[:500])
@@ -155,19 +179,32 @@ def _parse_detail_fields(html: str, hotel: CtripHotel) -> None:
 
 
 def _parse_list_html(html: str, max_results: int) -> list[CtripHotel]:
+    """从列表页提取 hotelName + hotelId（按出现顺序对齐）。"""
+    if not html:
+        return []
+    names = _HOTEL_NAME.findall(html)
+    ids = _HOTEL_ID.findall(html)
+    # 评分按出现顺序尽量对齐
+    scores = [float(x) for x in _SCORE_NEAR.findall(html) if 4.0 <= float(x) <= 5.0]
+
     hotels: list[CtripHotel] = []
     seen: set[str] = set()
-    for url, title in _HOTEL_LINK.findall(html):
-        name = re.sub(r"\s+", " ", title).strip()
-        if not name or url in seen:
+    n = min(len(names), len(ids), max_results + 5)
+    for i in range(n):
+        name = re.sub(r"\s+", " ", names[i]).strip()
+        hid = ids[i]
+        if not name or name in _BAD_NAMES or hid in seen:
             continue
-        if "javascript" in url.lower():
-            continue
-        seen.add(url)
+        seen.add(hid)
+        url = f"https://hotels.ctrip.com/hotel/{hid}.html"
+        good_rate = None
+        if i < len(scores):
+            good_rate = min(100.0, scores[i] * 20)
         hotels.append(
             CtripHotel(
                 name=name[:120],
-                url=url if url.startswith("http") else f"https:{url}",
+                url=url,
+                good_rate=good_rate,
                 is_huazhu=_detect_huazhu(name),
             )
         )
@@ -176,52 +213,90 @@ def _parse_list_html(html: str, max_results: int) -> list[CtripHotel]:
     return hotels
 
 
+def _fetch_city_lists(city_id: int, destination: str, max_results: int) -> list[CtripHotel]:
+    """按城市 ID 拉列表，并追加华住品牌关键词检索。"""
+    keywords = ["", "全季", "汉庭", "桔子", "宜必思", "漫心"]
+    merged: list[CtripHotel] = []
+    seen: set[str] = set()
+    for kw in keywords:
+        if kw:
+            url = (
+                f"https://hotels.ctrip.com/hotels/list?city={city_id}"
+                f"&keyword={quote(kw)}"
+            )
+        else:
+            url = f"https://hotels.ctrip.com/hotels/list?city={city_id}"
+        html = fetch_text(url, retries=1)
+        batch = _parse_list_html(html or "", max_results)
+        # 无关键词的列表：优先保留店名含目的地的；有关键词的全收
+        for h in batch:
+            key = h.url
+            if key in seen:
+                continue
+            if not kw and destination and destination not in h.name:
+                # 仍保留华住品牌
+                if not h.is_huazhu:
+                    continue
+            seen.add(key)
+            merged.append(h)
+        if len(merged) >= max_results:
+            break
+    return merged[:max_results]
+
+
 def _from_bing(destination: str, max_results: int) -> list[CtripHotel]:
-    raw = bing_site_search(
-        "hotels.ctrip.com",
+    queries = [
+        f"{destination} 全季酒店",
+        f"{destination} 汉庭酒店",
         f"{destination} 酒店",
-        max_results=max_results,
-    )
+    ]
     hotels: list[CtripHotel] = []
-    for r in raw:
-        title = (r.get("title") or "").split("_")[0].split("-")[0].strip()
-        if not title or len(title) < 2:
-            continue
-        sn = r.get("snippet") or ""
-        h = CtripHotel(
-            name=title[:120],
-            url=r["url"],
-            snippet=sn[:300],
-            is_huazhu=_detect_huazhu(title, sn),
-            transport_hint=any(k in sn for k in ("地铁", "交通便利", "交通方便")),
-        )
-        # 尝试从摘要抠字段
-        _parse_detail_fields(f"<p>{sn}</p>", h)
-        hotels.append(h)
-    return hotels
+    seen: set[str] = set()
+    for q in queries:
+        raw = bing_site_search("hotels.ctrip.com", q, max_results=max_results)
+        for r in raw:
+            url = r.get("url") or ""
+            m = _DETAIL_URL.search(url)
+            if not m:
+                continue
+            name = re.split(r"[_|\-–—]", r.get("title") or "")[0].strip()[:120]
+            if not name or name in _BAD_NAMES or url in seen:
+                continue
+            seen.add(url)
+            sn = r.get("snippet") or ""
+            h = CtripHotel(
+                name=name,
+                url=f"https://hotels.ctrip.com/hotel/{m.group(1)}.html",
+                snippet=sn[:300],
+                is_huazhu=_detect_huazhu(name, sn),
+                transport_hint=any(k in sn for k in ("地铁", "交通便利", "交通方便")),
+            )
+            _parse_detail_fields(f"<p>{sn}</p>", h)
+            hotels.append(h)
+        if len(hotels) >= max_results:
+            break
+    return hotels[:max_results]
 
 
 def search_ctrip_hotels(destination: str, max_results: int = LIST_LIMIT) -> list[CtripHotel]:
     """现爬目的地酒店，软打分后返回（高分在前）。失败返回 []。"""
     hotels: list[CtripHotel] = []
-    # 携程酒店列表公开搜索页（结构常变，失败即 Bing）
-    list_url = (
-        f"https://hotels.ctrip.com/hotels/list?countryId=1"
-        f"&cityName={quote(destination)}&keyword={quote(destination)}"
-    )
-    html = fetch_text(list_url, retries=2)
-    if html:
-        hotels = _parse_list_html(html, max_results)
-        logger.info("ctrip hotels direct list: %d for %s", len(hotels), destination)
+    city_id = resolve_city_id(destination)
+    if city_id is not None:
+        hotels = _fetch_city_lists(city_id, destination, max_results)
+        logger.info(
+            "ctrip hotels city=%s id=%s count=%d", destination, city_id, len(hotels)
+        )
+    else:
+        logger.info("ctrip hotels unknown city id for %s", destination)
 
-    if not hotels:
-        logger.info("ctrip hotels fallback bing for %s", destination)
-        hotels = _from_bing(destination, max_results)
+    if len(hotels) < 3:
+        logger.info("ctrip hotels bing enrich for %s", destination)
+        for h in _from_bing(destination, max_results):
+            if h.url not in {x.url for x in hotels}:
+                hotels.append(h)
 
-    # 抽样详情补字段
     for h in hotels[:DETAIL_LIMIT]:
-        if not h.url:
-            continue
         detail = fetch_text(h.url, retries=1, timeout=8.0)
         if detail:
             _parse_detail_fields(detail, h)
