@@ -13,39 +13,24 @@ function TipList({ tips, empty }: { tips: ExternalTip[]; empty: string }) {
       </p>
     );
   }
-  const isPortal = tips.every((t) => t.meta && (t.meta as { portal?: boolean }).portal);
   return (
-    <div>
-      {isPortal ? (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1.5 mb-2">
-          未能抓取到公开笔记正文，已提供平台搜索入口（可点开查看）
-        </p>
-      ) : null}
-      <ul className="space-y-2">
-        {tips.map((t) => (
-          <li key={t.url} className="text-sm">
-            <a
-              href={t.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-orange-600 hover:underline"
-            >
-              {t.title}
-            </a>
-            {t.snippet ? (
-              <p className="text-gray-500 mt-0.5 line-clamp-2">{t.snippet}</p>
-            ) : null}
-            {t.meta && (t.meta.rating || t.meta.price || t.meta.likes) ? (
-              <p className="text-xs text-gray-400 mt-0.5">
-                {[t.meta.rating && `评分 ${t.meta.rating}`, t.meta.price && `参考价 ${t.meta.price}`, t.meta.likes && `热度 ${t.meta.likes}`]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="space-y-2">
+      {tips.map((t) => (
+        <li key={t.url} className="text-sm">
+          <a
+            href={t.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-orange-600 hover:underline"
+          >
+            {t.title}
+          </a>
+          {t.snippet ? (
+            <p className="text-gray-500 mt-0.5 line-clamp-2">{t.snippet}</p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 

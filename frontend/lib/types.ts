@@ -111,6 +111,7 @@ export interface HotelCandidate {
   open_year?: number | null;
   is_huazhu?: boolean;
   metro_distance_m?: number | null;
+  avg_dist_m?: number | null;
 }
 
 export type HotelFetchStatus = "ok" | "amap_only";
