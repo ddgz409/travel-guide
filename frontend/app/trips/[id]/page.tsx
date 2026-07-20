@@ -8,6 +8,7 @@ import { tripsApi } from "@/lib/api";
 import type { Day, Trip, PoiSearchResult } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
 import { ItemCard } from "@/components/item-card";
+import { ExternalRefsPanel } from "@/components/external-refs";
 
 const TYPE_LABEL: Record<string, string> = {
   attraction: "景点", meal: "餐饮", hotel: "住宿", transport: "交通",
@@ -144,6 +145,9 @@ export default function TripDetailPage() {
             返回列表
           </button>
         </div>
+        <div className="w-full max-w-6xl mt-8 px-5">
+          <ExternalRefsPanel refs={trip.external_refs} />
+        </div>
       </div>
     );
   }
@@ -209,6 +213,8 @@ export default function TripDetailPage() {
           ✏️ 编辑模式：已取消 {canceledCount} 个景点 · 可拖拽卡片调整顺序，点 🔄 换备选
         </div>
       )}
+
+      <ExternalRefsPanel refs={trip.external_refs} />
 
       {days.length === 0 ? (
         <div className="text-center py-20 text-gray-400">暂无行程数据</div>

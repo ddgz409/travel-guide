@@ -7,6 +7,7 @@ import Link from "next/link";
 import { tripsApi } from "@/lib/api";
 import type { Day, Item, Trip } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
+import { ExternalRefsPanel } from "@/components/external-refs";
 
 const SLOT_LABEL: Record<string, string> = {
   morning: "上午", afternoon: "下午", evening: "晚上",
@@ -64,6 +65,8 @@ export default function SharePage() {
           {trip.destination} · {trip.start_date} 至 {trip.end_date} · {trip.travelers} 人
         </p>
       </div>
+
+      <ExternalRefsPanel refs={trip.external_refs} />
 
       <div className="space-y-6">
         {days.map((day: Day) => (

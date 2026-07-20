@@ -61,6 +61,25 @@ export interface Day {
   items: Item[];
 }
 
+export type ExternalSource = "xiaohongshu" | "ctrip";
+
+export interface ExternalTip {
+  source: ExternalSource;
+  title: string;
+  snippet: string;
+  url: string;
+  meta?: {
+    rating?: string;
+    price?: string;
+    likes?: string;
+  } | null;
+}
+
+export interface ExternalRefs {
+  xiaohongshu: ExternalTip[];
+  ctrip: ExternalTip[];
+}
+
 export interface TripPreferences {
   interests?: string[];
   budget_level?: string;
@@ -77,6 +96,7 @@ export interface Trip {
   travelers: number;
   budget_total: number | null;
   preferences: TripPreferences;
+  external_refs?: ExternalRefs;
   status: TripStatus;
   error_msg: string | null;
   share_token: string | null;
