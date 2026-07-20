@@ -50,7 +50,7 @@ def bing_site_search(site: str, query: str, max_results: int = 6) -> list[dict[s
     """Bing site: 搜索，返回 [{title, snippet, url}]。"""
     q = f"site:{site} {query}"
     url = f"https://www.bing.com/search?q={quote(q)}&count={max_results}"
-    html = fetch_text(url, retries=2, timeout=10.0)
+    html = fetch_text(url, retries=2, timeout=8.0)
     if not html:
         return []
     results: list[dict[str, str]] = []

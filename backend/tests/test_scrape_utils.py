@@ -9,7 +9,9 @@ def test_strip_html_removes_tags():
 
 
 def test_fetch_text_retries_then_none():
-    with patch("app.services.scrape_utils.httpx.Client") as Client:
+    with patch("app.services.scrape_utils.httpx.Client") as Client, patch(
+        "app.services.scrape_utils.time.sleep"
+    ):
         client = MagicMock()
         Client.return_value.__enter__.return_value = client
         client.get.side_effect = Exception("boom")
