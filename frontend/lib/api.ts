@@ -2,6 +2,8 @@
 
 import type {
   GenerateRequest,
+  LlmSettings,
+  LlmSettingsUpdate,
   PoiSearchResult,
   Token,
   Trip,
@@ -39,7 +41,7 @@ export class ApiError extends Error {
 /** 核心请求函数：自动加 token、处理 JSON 与错误。 */
 async function request<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -48,7 +50,12 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const { timeoutMs = 15000, ...fetchOpts } = options;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...fetchOpts,
+    headers,
+    signal: fetchOpts.signal ?? AbortSignal.timeout(timeoutMs),
+  });
 
   // 401 处理：有 token 说明是过期，无 token 说明是登录失败
   if (res.status === 401) {
@@ -91,6 +98,14 @@ export const authApi = {
     }),
 
   me: () => request<User>("/auth/me"),
+
+  getLlmSettings: () => request<LlmSettings>("/auth/me/llm"),
+
+  updateLlmSettings: (payload: LlmSettingsUpdate) =>
+    request<LlmSettings>("/auth/me/llm", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ---------------- 攻略 ----------------
@@ -155,12 +170,56 @@ export const tripsApi = {
       body: JSON.stringify({ items }),
     }),
 
+  /** 当天各景点间真实路线（地图绘制用）。 */
+  getDayRoutes: (tripId: string, dayId: string, mode: string) =>
+    request<{
+      mode: string;
+      day_id: string;
+      segments: Array<{
+        from_item_id: string;
+        to_item_id: string;
+        from_name: string;
+        to_name: string;
+        mode: string;
+        distance_m: number;
+        duration_s: number;
+        polyline: number[][];
+        fallback?: boolean;
+      }>;
+      polyline?: number[][];
+      stop_count?: number;
+      segment_count?: number;
+      expected_segments?: number;
+      total_duration_s: number;
+      total_distance_m: number;
+    }>(
+      `/trips/${tripId}/map-routes/${dayId}?mode=${encodeURIComponent(mode)}`,
+      { timeoutMs: 90000 },
+    ),
+
   /** 获取条目到下一站的详细路线（换乘方案）。 */
-  getItemRoute: (tripId: string, itemId: string) =>
-    request<Record<string, unknown>>(`/trips/${tripId}/items/${itemId}/route`),
+  getItemRoute: (tripId: string, itemId: string, mode?: string) =>
+    request<Record<string, unknown>>(
+      `/trips/${tripId}/items/${itemId}/route${mode ? `?mode=${encodeURIComponent(mode)}` : ""}`,
+    ),
+
+  updateItemRoute: (
+    tripId: string,
+    itemId: string,
+    payload: { mode: string; scheme_index?: number },
+  ) =>
+    request<Record<string, unknown>>(`/trips/${tripId}/items/${itemId}/route`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   regenerateDay: (tripId: string, dayIndex: number) =>
     request<Trip>(`/trips/${tripId}/regenerate-day/${dayIndex}`, { method: "POST" }),
+
+  selectRoute: (tripId: string, routeId: string) =>
+    request<Trip>(`/trips/${tripId}/select-route/${encodeURIComponent(routeId)}`, {
+      method: "POST",
+    }),
 
   createShare: (tripId: string) =>
     request<Trip>(`/trips/${tripId}/share`, { method: "POST" }),

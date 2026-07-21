@@ -20,7 +20,7 @@ from app.schemas import (
     TripUpdate,
 )
 from app.services.generator import GeneratorError, get_generator
-from app.services.amap_client import get_amap_client
+from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
@@ -77,6 +77,14 @@ def generate(
     return trip
 
 
+def _llm_for_trip(db: Session, trip: Trip):
+    """按攻略所属用户加载 LLM（未配置则用服务器默认智谱 glm-4）。"""
+    from app.services.llm_client import LLMClient
+
+    user = db.get(User, trip.user_id)
+    return LLMClient.for_user(user)
+
+
 def _run_generate(trip_id: str, generator) -> None:
     """后台任务：生成攻略。使用独立数据库会话。"""
     from app.core.database import SessionLocal
@@ -86,7 +94,7 @@ def _run_generate(trip_id: str, generator) -> None:
         trip = db.get(Trip, trip_id)
         if trip is None:
             return
-        generator.generate(trip, db)
+        generator.generate(trip, db, llm=_llm_for_trip(db, trip))
     finally:
         db.close()
 
@@ -156,19 +164,62 @@ def search_pois(
     limit: int = 10,
     db: Session = Depends(get_db),
 ):
-    """搜索景点（供前端搜索框使用）。
-
-    通过高德关键词搜索 POI，返回景点列表含评分。
-    """
+    """搜索景点（供前端搜索框使用）。强制按城市限定，避免串到故宫/长城。"""
     if not q.strip():
         return []
     amap = get_amap_client()
+    city_s = city.strip()
+    keyword = q.strip()
     try:
+        # 多取一些再按名称相关度重排：高德常把热门公园（天坛等）排在「故宫」前面
+        fetch_n = min(max(limit * 3, 15), 25)
         results = amap.search_poi_by_keyword(
-            keyword=q.strip(),
-            city=city.strip() or None,
-            limit=min(limit, 20),
+            keyword=keyword,
+            city=city_s or None,
+            limit=fetch_n,
+            city_limit=bool(city_s),
+            poi_type=POI_TYPES["attraction"],
         )
+        # 无结果时放宽类型再搜一次（仍限城市）
+        if not results and city_s:
+            results = amap.search_poi_by_keyword(
+                keyword=keyword,
+                city=city_s,
+                limit=fetch_n,
+                city_limit=True,
+            )
+
+        def _name_score(name: str) -> int:
+            n = (name or "").strip()
+            if not n:
+                return -1
+            if n == keyword:
+                return 1000
+            if n.startswith(keyword) or keyword.startswith(n):
+                return 900
+            if keyword in n:
+                return 800
+            if n in keyword:
+                return 700
+            # 核心词（去常见后缀）命中
+            core = (
+                keyword.replace("博物院", "")
+                .replace("博物馆", "")
+                .replace("风景名胜区", "")
+                .replace("风景区", "")
+                .replace("公园", "")
+                .replace("广场", "")
+                .strip()
+            )
+            if core and len(core) >= 2 and core in n:
+                return 650
+            return 0
+
+        ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
+        # 有名称命中时丢掉完全不相关的热门串项
+        relevant = [p for p in ranked if _name_score(p.name) > 0]
+        final = (relevant or ranked)[: min(limit, 20)]
+
         return [
             {
                 "poi_id": p.id,
@@ -182,10 +233,19 @@ def search_pois(
                 "type": p.type,
                 "address": p.address,
             }
-            for p in results
+            for p in final
         ]
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
+
+
+@router.get("/pois/suggest")
+def suggest_pois(city: str = ""):
+    """返回目的地热门必去景点名称（本地库，供搜索框推荐芯片）。"""
+    from app.services.destination_landmarks import landmarks_for
+
+    names = landmarks_for(city.strip())
+    return {"city": city.strip(), "landmarks": names[:12]}
 
 
 @router.get("", response_model=list[TripListItem])
@@ -255,52 +315,302 @@ def update_item(
     return trip
 
 
+def _plan_and_save_transport(
+    item: Item,
+    next_item: Item,
+    trip: Trip,
+    mode: str,
+    db: Session,
+    scheme_index: int = 0,
+) -> dict:
+    """按指定模式规划并写回 transport_to_next。"""
+    if not item.location or not next_item.location:
+        raise HTTPException(status_code=400, detail="缺少坐标，无法规划路线")
+    origin = f"{item.location['lng']},{item.location['lat']}"
+    dest = f"{next_item.location['lng']},{next_item.location['lat']}"
+    amap = get_amap_client()
+    if mode == "transit":
+        seg = amap.plan_route(origin, dest, mode="transit", city=trip.destination)
+    else:
+        seg = amap.plan_route(origin, dest, mode=mode)
+    if not seg:
+        raise HTTPException(status_code=502, detail="路线规划失败，请稍后重试")
+
+    detail = seg.detail
+    distance_m = seg.distance_m
+    duration_s = seg.duration_s
+    polyline = getattr(seg, "polyline", None) or None
+    schemes = getattr(seg, "schemes", None) or None
+    if mode == "transit" and schemes:
+        idx = max(0, min(scheme_index, len(schemes) - 1))
+        chosen = schemes[idx]
+        detail = chosen.get("detail") or detail
+        distance_m = int(chosen.get("distance_m") or distance_m)
+        duration_s = int(chosen.get("duration_s") or duration_s)
+        polyline = chosen.get("polyline") or polyline
+
+    from_loc = {
+        "lng": float(item.location["lng"]),
+        "lat": float(item.location["lat"]),
+        "name": item.name,
+    }
+    to_loc = {
+        "lng": float(next_item.location["lng"]),
+        "lat": float(next_item.location["lat"]),
+        "name": next_item.name,
+    }
+
+    transport = dict(item.transport_to_next or {})
+    transport.update(
+        {
+            "mode": mode,
+            "distance_m": distance_m,
+            "duration_s": duration_s,
+            "detail": detail,
+            "schemes": schemes,
+            "scheme_index": scheme_index if mode == "transit" else 0,
+            "polyline": polyline,
+            "from_location": from_loc,
+            "to_location": to_loc,
+        }
+    )
+    item.transport_to_next = transport
+    db.commit()
+    db.refresh(item)
+    return transport
+
+
 @router.get("/{trip_id}/items/{item_id}/route")
 def get_item_route(
     trip_id: str,
     item_id: str,
+    mode: str | None = None,
     current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    """获取条目到下一站的详细路线（换乘方案+时间）。
-
-    如果已存储 detail 则直接返回；否则实时调高德 API 规划。
-    """
+    """获取条目到下一站的详细路线（换乘方案+时间）。"""
     trip = _trip_or_404(trip_id, db, current.id if current else None)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
 
-    transport = item.transport_to_next
-    if not transport:
-        return {"detail": None, "mode": None}
-
-    # 如果已有 detail，直接返回
-    if transport.get("detail"):
-        return transport
-
-    # 没有 detail，实时规划（旧数据或步行/驾车模式）
-    # 找下一站
+    transport = item.transport_to_next or {}
     next_item = db.scalar(
         select(Item).where(Item.day_id == item.day_id, Item.seq == item.seq + 1)
     )
-    if not next_item or not item.location or not next_item.location:
-        return transport
+    if not next_item:
+        return {**transport, "detail": transport.get("detail"), "to_name": None}
 
-    origin = f"{item.location['lng']},{item.location['lat']}"
-    dest = f"{next_item.location['lng']},{next_item.location['lat']}"
+    want_mode = mode or transport.get("mode") or "transit"
+    # 已有同模式详情+折线则直接返回；缺折线时重规划以便地图可视化
+    if (
+        transport.get("detail")
+        and transport.get("mode") == want_mode
+        and transport.get("polyline")
+        and (want_mode != "transit" or transport.get("schemes"))
+    ):
+        return {
+            **transport,
+            "to_name": next_item.name,
+            "from_name": item.name,
+            "from_location": transport.get("from_location")
+            or {
+                "lng": item.location["lng"],
+                "lat": item.location["lat"],
+                "name": item.name,
+            },
+            "to_location": transport.get("to_location")
+            or {
+                "lng": next_item.location["lng"],
+                "lat": next_item.location["lat"],
+                "name": next_item.name,
+            },
+        }
+
+    try:
+        transport = _plan_and_save_transport(item, next_item, trip, want_mode, db)
+    except HTTPException:
+        if transport:
+            return {**transport, "to_name": next_item.name, "from_name": item.name}
+        raise
+    return {**transport, "to_name": next_item.name, "from_name": item.name}
+
+
+@router.post("/{trip_id}/items/{item_id}/route")
+def update_item_route(
+    trip_id: str,
+    item_id: str,
+    payload: dict,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """修改交通方式或选用某套公交方案。payload: {mode, scheme_index?}"""
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    item = db.get(Item, item_id)
+    if item is None or item.day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    next_item = db.scalar(
+        select(Item).where(Item.day_id == item.day_id, Item.seq == item.seq + 1)
+    )
+    if not next_item:
+        raise HTTPException(status_code=400, detail="已是当天最后一站")
+
+    mode = (payload or {}).get("mode") or "transit"
+    if mode not in ("walking", "transit", "driving"):
+        raise HTTPException(status_code=400, detail="不支持的交通方式")
+    scheme_index = int((payload or {}).get("scheme_index") or 0)
+    transport = _plan_and_save_transport(
+        item, next_item, trip, mode, db, scheme_index=scheme_index
+    )
+    return {**transport, "to_name": next_item.name, "from_name": item.name}
+
+
+@router.get("/{trip_id}/map-routes/{day_id}")
+def get_day_routes(
+    trip_id: str,
+    day_id: str,
+    mode: str = "transit",
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """规划当天全部景点间路线（逐段串联成完整一日线）。
+
+    公交模式对过近点位常失败，自动降级为步行，保证地图能画出全程。
+    """
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    day = db.get(Day, day_id)
+    if day is None or day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="日程不存在")
+    if mode not in ("walking", "transit", "driving"):
+        raise HTTPException(status_code=400, detail="不支持的交通方式")
+
+    items = list(
+        db.scalars(select(Item).where(Item.day_id == day.id).order_by(Item.seq)).all()
+    )
+    located: list[Item] = []
+    for it in items:
+        if it.selected is False or it.selected == 0:
+            continue
+        loc = it.location or {}
+        if loc.get("lng") is None or loc.get("lat") is None:
+            continue
+        located.append(it)
+
     amap = get_amap_client()
-    mode = transport.get("mode", "walking")
-    if mode == "transit":
-        seg = amap.plan_route(origin, dest, mode="transit", city=trip.destination)
-    else:
-        seg = amap.plan_route(origin, dest, mode=mode)
-    if seg and seg.detail:
-        transport["detail"] = seg.detail
-        # 更新数据库
-        item.transport_to_next = transport
-        db.commit()
-    return transport
+    segments: list[dict] = []
+    expected = max(0, len(located) - 1)
+
+    def _haversine_m(a: Item, b: Item) -> float:
+        from math import asin, cos, radians, sin, sqrt
+
+        lng1, lat1 = float(a.location["lng"]), float(a.location["lat"])
+        lng2, lat2 = float(b.location["lng"]), float(b.location["lat"])
+        dlat = radians(lat2 - lat1)
+        dlng = radians(lng2 - lng1)
+        x = (
+            sin(dlat / 2) ** 2
+            + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+        )
+        return 2 * 6371000 * asin(sqrt(x))
+
+    def _plan_pair(a: Item, b: Item, prefer: str) -> tuple[object | None, str]:
+        origin = f"{a.location['lng']},{a.location['lat']}"
+        dest = f"{b.location['lng']},{b.location['lat']}"
+        dist = _haversine_m(a, b)
+        # 公交对过近点位经常无方案，优先改步行
+        order: list[str]
+        if prefer == "transit" and dist < 900:
+            order = ["walking", "transit", "driving"]
+        elif prefer == "transit":
+            order = ["transit", "walking", "driving"]
+        elif prefer == "driving":
+            order = ["driving", "walking"]
+        else:
+            order = ["walking", "driving"]
+
+        for m in order:
+            try:
+                if m == "transit":
+                    seg = amap.plan_route(
+                        origin, dest, mode="transit", city=trip.destination
+                    )
+                else:
+                    seg = amap.plan_route(origin, dest, mode=m)
+            except Exception:
+                seg = None
+            if not seg:
+                continue
+            poly = getattr(seg, "polyline", None) or []
+            if m == "transit" and seg.schemes:
+                poly = seg.schemes[0].get("polyline") or poly
+            if len(poly) >= 2:
+                # 挂到 seg 上方便读取
+                seg.polyline = poly  # type: ignore[attr-defined]
+                return seg, m
+        return None, prefer
+
+    for i in range(len(located) - 1):
+        a, b = located[i], located[i + 1]
+        seg, used_mode = _plan_pair(a, b, mode)
+        if not seg:
+            # 最后兜底：起终点连线，保证全程不断档
+            segments.append(
+                {
+                    "from_item_id": a.id,
+                    "to_item_id": b.id,
+                    "from_name": a.name,
+                    "to_name": b.name,
+                    "mode": "direct",
+                    "distance_m": int(_haversine_m(a, b)),
+                    "duration_s": 0,
+                    "polyline": [
+                        [float(a.location["lng"]), float(a.location["lat"])],
+                        [float(b.location["lng"]), float(b.location["lat"])],
+                    ],
+                    "fallback": True,
+                }
+            )
+            continue
+        polyline = getattr(seg, "polyline", None) or []
+        segments.append(
+            {
+                "from_item_id": a.id,
+                "to_item_id": b.id,
+                "from_name": a.name,
+                "to_name": b.name,
+                "mode": used_mode,
+                "distance_m": seg.distance_m,
+                "duration_s": seg.duration_s,
+                "polyline": polyline,
+                "fallback": used_mode != mode,
+            }
+        )
+
+    # 拼成一条总折线，方便前端一次画完整日路线
+    full_polyline: list[list[float]] = []
+    for s in segments:
+        pts = s.get("polyline") or []
+        if not pts:
+            continue
+        if not full_polyline:
+            full_polyline.extend(pts)
+        else:
+            # 跳过与上一段尾点重复的首点
+            full_polyline.extend(pts[1:] if pts[0] == full_polyline[-1] else pts)
+
+    total_s = sum(int(s.get("duration_s") or 0) for s in segments)
+    total_m = sum(int(s.get("distance_m") or 0) for s in segments)
+    return {
+        "mode": mode,
+        "day_id": day_id,
+        "segments": segments,
+        "polyline": full_polyline,
+        "stop_count": len(located),
+        "segment_count": len(segments),
+        "expected_segments": expected,
+        "total_duration_s": total_s,
+        "total_distance_m": total_m,
+    }
 
 
 @router.post("/{trip_id}/items/{item_id}/swap", response_model=TripOut)
@@ -372,6 +682,26 @@ def reorder_items(
     return trip
 
 
+@router.post("/{trip_id}/select-route/{route_id}", response_model=TripOut)
+def select_route(
+    trip_id: str,
+    route_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """切换到已生成的某条路线方案（经典/人文/美食等）。"""
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    if trip.status != "ready":
+        raise HTTPException(status_code=400, detail="攻略尚未生成完成")
+    generator = get_generator()
+    try:
+        generator.apply_route(trip, route_id, db)
+    except GeneratorError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.refresh(trip)
+    return trip
+
+
 @router.post("/{trip_id}/regenerate-day/{day_index}", response_model=TripOut)
 def regenerate_day(
     trip_id: str,
@@ -402,7 +732,9 @@ def _run_regen_day(trip_id: str, day_index: int, generator) -> None:
         if trip is None:
             return
         try:
-            generator.regenerate_day(trip, day_index, db)
+            generator.regenerate_day(
+                trip, day_index, db, llm=_llm_for_trip(db, trip)
+            )
         except GeneratorError as e:
             # 标记失败但不影响其他天
             from app.core.database import SessionLocal as _SL

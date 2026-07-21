@@ -1,42 +1,131 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #333333;
-  --brand: #ff9d00;
-  --brand-hover: #ff8a00;
-  --promo: #ff6155;
+  --background: #f7f5f2;
+  --foreground: #2b2b2b;
+  --muted: #7a7a7a;
+  --brand: #ff6d00;
+  --brand-hot: #e85d00;
+  --brand-soft: #fff1e6;
+  --ink: #1a1a1a;
+  --line: #ebe6df;
+  --card: #ffffff;
+  --shadow: 0 10px 30px rgba(26, 26, 26, 0.08);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "PingFang SC", "Microsoft YaHei", Arial, system-ui, sans-serif;
+  --color-brand: var(--brand);
+  --color-brand-hot: var(--brand-hot);
+  --color-ink: var(--ink);
+  --color-line: var(--line);
+  --color-card: var(--card);
+  --font-sans: var(--font-app-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-display: var(--font-app-display), "Songti SC", serif;
 }
 
 body {
-  background: #ffffff;
-  color: #666666;
+  background: var(--background);
+  color: var(--muted);
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3,
+h4 {
+  color: var(--ink);
   font-weight: 700;
-  color: #333333;
   letter-spacing: 0;
 }
 
 a {
-  color: #333333;
-  transition: color 0.15s;
-}
-a:hover {
-  color: var(--brand);
+  color: inherit;
+  transition: color 0.15s ease;
 }
 
-input, select, textarea, button {
+input,
+select,
+textarea,
+button {
   font-family: inherit;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.site-container {
+  width: 100%;
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.btn-brand {
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.btn-brand:hover {
+  background: var(--brand-hot);
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  transition: all 0.15s ease;
+}
+.chip:hover,
+.chip-active {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.deal-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(26, 26, 26, 0.05);
+}
+
+.deal-card:hover {
+  border-color: rgba(255, 109, 0, 0.35);
+  box-shadow: 0 10px 28px rgba(255, 109, 0, 0.1);
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-fade-up {
+  animation: fade-up 0.55s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up {
+    animation: none;
+  }
 }

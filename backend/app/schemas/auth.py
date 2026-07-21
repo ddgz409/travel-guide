@@ -34,3 +34,24 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class LlmSettingsOut(BaseModel):
+    """用户 LLM 设置（不返回完整 API Key）。"""
+
+    provider: str
+    model: str
+    has_api_key: bool
+    api_key_hint: str | None = None
+    using_server_default: bool = True
+    available_providers: list[dict[str, str]] = Field(default_factory=list)
+    suggested_models: dict[str, list[str]] = Field(default_factory=dict)
+    defaults: dict[str, str] = Field(default_factory=dict)
+
+
+class LlmSettingsUpdate(BaseModel):
+    """更新 LLM 设置。api_key 为 null 表示不改；空字符串表示清除（改回服务器默认）。"""
+
+    provider: str | None = Field(default=None, max_length=32)
+    model: str | None = Field(default=None, max_length=64)
+    api_key: str | None = Field(default=None, max_length=256)

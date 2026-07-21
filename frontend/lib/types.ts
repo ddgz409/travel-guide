@@ -6,6 +6,29 @@ export interface User {
   created_at: string;
 }
 
+export interface LlmProviderOption {
+  id: string;
+  label: string;
+}
+
+export interface LlmSettings {
+  provider: string;
+  model: string;
+  has_api_key: boolean;
+  api_key_hint?: string | null;
+  using_server_default: boolean;
+  available_providers: LlmProviderOption[];
+  suggested_models: Record<string, string[]>;
+  defaults: { provider: string; model: string };
+}
+
+export interface LlmSettingsUpdate {
+  provider?: string | null;
+  model?: string | null;
+  /** null=不改；""=清除改用服务器默认 */
+  api_key?: string | null;
+}
+
 export interface Token {
   access_token: string;
   token_type: string;
@@ -23,7 +46,7 @@ export interface Location {
 }
 
 export interface RouteStep {
-  type: "walk" | "bus";
+  type: "walk" | "bus" | "drive";
   instruction?: string;
   distance_m?: number;
   line_name?: string;
@@ -31,6 +54,7 @@ export interface RouteStep {
   departure_stop?: string;
   arrival_stop?: string;
   via_stops?: number;
+  road?: string;
 }
 
 export interface TransportToNext {
@@ -40,6 +64,20 @@ export interface TransportToNext {
   detail?: RouteStep[] | null;
   departure_time?: string | null;
   arrival_time?: string | null;
+  schemes?: Array<{
+    distance_m: number;
+    duration_s: number;
+    cost?: number;
+    walking_distance_m?: number;
+    detail: RouteStep[];
+    polyline?: number[][];
+  }> | null;
+  scheme_index?: number;
+  polyline?: number[][] | null;
+  from_location?: { lng: number; lat: number; name?: string } | null;
+  to_location?: { lng: number; lat: number; name?: string } | null;
+  to_name?: string;
+  from_name?: string;
 }
 
 export interface Alternative {
@@ -95,10 +133,22 @@ export interface ExternalRefs {
   ctrip: ExternalTip[];
 }
 
+export interface RouteOption {
+  id: string;
+  title: string;
+  theme: string;
+  tagline?: string;
+  highlights?: string[];
+  estimated_cost?: number;
+  days?: Day[];
+}
+
 export interface TripPreferences {
   interests?: string[];
   budget_level?: string;
   transport?: string;
+  selected_route_id?: string;
+  route_options?: RouteOption[];
   [key: string]: unknown;
 }
 

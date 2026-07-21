@@ -1,5 +1,12 @@
 """Schemas 包。"""
-from app.schemas.auth import Token, UserCreate, UserLogin, UserOut
+from app.schemas.auth import (
+    LlmSettingsOut,
+    LlmSettingsUpdate,
+    Token,
+    UserCreate,
+    UserLogin,
+    UserOut,
+)
 from app.schemas.trip import (
     DayOut,
     ItemOut,
@@ -17,6 +24,8 @@ __all__ = [
     "UserCreate",
     "UserLogin",
     "UserOut",
+    "LlmSettingsOut",
+    "LlmSettingsUpdate",
     "DayOut",
     "ItemOut",
     "ItemUpdate",

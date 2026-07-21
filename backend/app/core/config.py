@@ -32,9 +32,19 @@ class Settings(BaseSettings):
     # 高德地图
     AMAP_API_KEY: str = ""
 
-    # 智谱 GLM
+    # LLM 服务器默认：智谱 glm-4（用户可在设置页覆盖自己的 key/模型）
+    # LLM_PROVIDER: zhipu | doubao | mimo | deepseek | openai
+    LLM_PROVIDER: str = "zhipu"
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""  # 空则用提供商默认
+    LLM_MODEL: str = "glm-4"
+
+    # 各提供商服务器级 Key（用户未自填时回退）
     ZHIPU_API_KEY: str = ""
     ZHIPU_MODEL: str = "glm-4"
+    DOUBAO_API_KEY: str = ""  # 火山方舟
+    MIMO_API_KEY: str = ""  # 小米 MiMo
+    DEEPSEEK_API_KEY: str = ""
 
     @field_validator("CORS_ORIGINS")
     @classmethod

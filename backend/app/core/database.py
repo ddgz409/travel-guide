@@ -38,24 +38,35 @@ def ensure_sqlite_columns() -> None:
     if not settings.is_sqlite:
         return
     inspector = inspect(engine)
-    if "trips" not in inspector.get_table_names():
-        return
-    cols = {c["name"] for c in inspector.get_columns("trips")}
+    tables = inspector.get_table_names()
     alters: list[str] = []
-    if "external_refs" not in cols:
-        alters.append(
-            "ALTER TABLE trips ADD COLUMN external_refs JSON "
-            "DEFAULT '{\"xiaohongshu\":[],\"ctrip\":[]}'"
-        )
-    if "hotel_fetch_status" not in cols:
-        alters.append(
-            "ALTER TABLE trips ADD COLUMN hotel_fetch_status VARCHAR(16) "
-            "DEFAULT 'amap_only'"
-        )
-    if "hotel_candidates" not in cols:
-        alters.append(
-            "ALTER TABLE trips ADD COLUMN hotel_candidates JSON DEFAULT '[]'"
-        )
+
+    if "trips" in tables:
+        cols = {c["name"] for c in inspector.get_columns("trips")}
+        if "external_refs" not in cols:
+            alters.append(
+                "ALTER TABLE trips ADD COLUMN external_refs JSON "
+                "DEFAULT '{\"xiaohongshu\":[],\"ctrip\":[]}'"
+            )
+        if "hotel_fetch_status" not in cols:
+            alters.append(
+                "ALTER TABLE trips ADD COLUMN hotel_fetch_status VARCHAR(16) "
+                "DEFAULT 'amap_only'"
+            )
+        if "hotel_candidates" not in cols:
+            alters.append(
+                "ALTER TABLE trips ADD COLUMN hotel_candidates JSON DEFAULT '[]'"
+            )
+
+    if "users" in tables:
+        ucols = {c["name"] for c in inspector.get_columns("users")}
+        if "llm_provider" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN llm_provider VARCHAR(32)")
+        if "llm_api_key" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN llm_api_key VARCHAR(256)")
+        if "llm_model" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN llm_model VARCHAR(64)")
+
     if alters:
         with engine.begin() as conn:
             for sql in alters:

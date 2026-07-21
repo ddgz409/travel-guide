@@ -29,39 +29,45 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md bg-white rounded-lg border border-gray-200/80 shadow-sm p-8">
-        <h1 className="text-2xl font-extrabold mb-1">创建账号 ✨</h1>
-        <p className="text-gray-600 mb-6 text-sm">开始生成你的专属旅行攻略</p>
+    <div className="flex-1 flex items-center justify-center px-4 py-14">
+      <div className="w-full max-w-md bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] p-8">
+        <div className="font-display text-[26px] font-semibold text-[var(--ink)] mb-1">
+          创建账号
+        </div>
+        <p className="text-[var(--muted)] mb-6 text-sm">加入旅迹，开始定制行程</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-bold mb-2">用户名</label>
+            <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
+              用户名
+            </label>
             <input
               type="text"
               required
               minLength={2}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
+              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder="2-64 位用户名"
             />
           </div>
           <div>
-            <label className="block text-sm font-bold mb-2">密码</label>
+            <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
+              密码
+            </label>
             <input
               type="password"
               required
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded border-[1.5px] border-gray-200 px-4 py-3 text-[15px] font-medium focus:outline-none focus:border-orange-400 transition-colors"
+              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder="至少 6 位"
             />
           </div>
 
           {error && (
-            <div className="rounded bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+            <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
               {error}
             </div>
           )}
@@ -69,15 +75,18 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-gradient-to-r from-orange-400 to-orange-500 text-white rounded py-3 font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="w-full btn-brand rounded-xl py-3 disabled:opacity-50"
           >
-            {submitting ? "注册中..." : "注册"}
+            {submitting ? "注册中…" : "注册"}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-6">
+        <p className="text-center text-sm text-[var(--muted)] mt-6">
           已有账号？{" "}
-          <Link href="/login" className="text-#ff8a00 hover:underline font-semibold">
+          <Link
+            href="/login"
+            className="text-[var(--brand)] hover:underline font-semibold"
+          >
             去登录
           </Link>
         </p>

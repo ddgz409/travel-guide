@@ -24,49 +24,72 @@ from app.schemas.trip import EMPTY_EXTERNAL_REFS
 from app.services.amap_client import AmapClient, AmapError, Poi, POI_TYPES, get_amap_client
 from app.services.ctrip_client import search_ctrip
 from app.services.ctrip_hotel_client import CtripHotel, search_ctrip_hotels
-from app.services.web_search import search_travel_tips
+from app.services.destination_landmarks import (
+    is_micro_poi,
+    landmark_boost,
+    landmarks_for,
+)
 from app.services.xiaohongshu_client import search_xiaohongshu
-from app.services.zhipu_client import LLMError, ZhipuClient, get_zhipu_client
+from app.services.llm_client import LLMClient, LLMError, get_llm_client
 
 logger = logging.getLogger(__name__)
 
-# 系统提示词：约束 LLM 角色与输出格式
-SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供的真实景点数据为用户规划行程。
+# 系统提示词：一次输出多条可选路线（类似马蜂窝当地玩法）
+SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供的真实景点数据，一次规划【3 条风格不同】的完整行程供用户选择。
 
 核心原则：
-1. 优先选择高评分（★4.0以上）和地标性景点，确保覆盖目的地最著名的必去之处
-2. 如果用户指定了"必去景点"，必须全部包含在行程中
-3. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
-4. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
-5. 同一区域的景点安排在同一天，路线合理不绕路
-6. 为每个条目提供简短描述和实用贴士
-7. 合理估算每个条目的费用（cost，单位：元）
-8. 必须返回 JSON 对象，格式如下：
+1. 必须返回恰好 3 条路线（routes），主题分别对应：经典必去 / 人文慢游 / 美食轻松；景点组合要明显不同，不要三条雷同
+2. 优先安排「热门必去」地标（列表靠前、带【必去】标注），不要选冷门打卡点、门廊子点、观景栏杆等微点
+3. 评分仅作参考；地标性与知名度权重大于评分
+4. 如果用户指定了"必去景点"，每条路线都应尽量包含（至少经典路线必须全部包含）
+5. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
+6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
+7. 同一区域的景点安排在同一天，路线合理不绕路
+8. 为每个条目提供简短描述和实用贴士，合理估算 cost（元）
+9. 住宿：三条路线尽量共用同一家靠前酒店；全程同一家
+10. 必须返回 JSON 对象，格式如下：
 {
-  "days": [
+  "routes": [
     {
-      "day_index": 1,
-      "summary": "当日行程概述",
-      "items": [
+      "id": "classic",
+      "title": "短标题，如：皇城经典3日",
+      "theme": "经典必去",
+      "tagline": "一句话卖点",
+      "highlights": ["亮点1", "亮点2", "亮点3"],
+      "days": [
         {
-          "time_slot": "morning",
-          "type": "attraction",
-          "name": "景点名（须来自候选列表）",
-          "duration_min": 120,
-          "description": "简短描述与贴士",
-          "cost": 0
+          "day_index": 1,
+          "summary": "当日概述",
+          "items": [
+            {
+              "time_slot": "morning",
+              "type": "attraction",
+              "name": "景点名（须来自候选列表）",
+              "duration_min": 120,
+              "description": "简短描述与贴士",
+              "cost": 0
+            }
+          ]
         }
       ]
     }
   ]
 }
+id 固定为 classic / culture / food（对应三主题）
 type 取值: attraction / meal / hotel / transport
-time_slot 取值: morning / afternoon / evening
-9. 若提供了小红书/携程参考链接，地点名称仍必须来自候选列表
-10. 住宿极其重要：必须从住宿候选列表靠前的酒店中选择（已按「靠近主要景点、总交通最短」排序）；全程尽量住同一家，减少往返；勿选远离景点的酒店"""
+time_slot 取值: morning / afternoon / evening"""
 
 # 单类 POI 候选数量上限
-POI_LIMIT = 25
+POI_LIMIT = 30
+# 热门地标关键词搜索条数
+LANDMARK_SEARCH_LIMIT = 12
+# 一次生成的路线方案数
+ROUTE_COUNT = 3
+ROUTE_META = (
+    ("classic", "经典必去", "地标打卡，覆盖最出名景点"),
+    ("culture", "人文慢游", "园林街区与博物馆深度体验"),
+    ("food", "美食轻松", "少赶路，多吃当地特色"),
+)
 # 路线规划：步行上限（米），超过则改用公交/地铁
 WALK_MAX_DISTANCE_M = 1500
 
@@ -88,16 +111,19 @@ class GuideGenerator:
     def __init__(
         self,
         amap: AmapClient | None = None,
-        llm: ZhipuClient | None = None,
+        llm: LLMClient | None = None,
     ) -> None:
         self.amap = amap or get_amap_client()
-        self.llm = llm or get_zhipu_client()
+        self.llm = llm or get_llm_client()
 
-    def generate(self, trip: Trip, db: Session) -> None:
+    def generate(
+        self, trip: Trip, db: Session, llm: LLMClient | None = None
+    ) -> None:
         """生成完整攻略并写入数据库。失败时标记 status=failed。
 
-        在后台任务中调用。
+        在后台任务中调用。llm 为用户自定义客户端时优先使用。
         """
+        active_llm = llm or self.llm
         try:
             days_count = (trip.end_date - trip.start_date).days + 1
             if days_count < 1:
@@ -127,9 +153,8 @@ class GuideGenerator:
                 len(hotel_cands),
             )
 
-            # 2.5 网页搜索：获取公开的旅游攻略摘要作为 LLM 参考
-            web_results = search_travel_tips(trip.destination, max_results=8)
-            logger.info("网页搜索 %s: %d 条摘要", trip.destination, len(web_results))
+            # 2.5 网页搜索已关闭（Bing 常验证码且拖慢 5–15s）；小红书/携程改为即时链接
+            web_results: list[dict[str, Any]] = []
 
             external_refs = self._fetch_external_refs(trip.destination)
             trip.external_refs = external_refs
@@ -141,28 +166,56 @@ class GuideGenerator:
                 len(external_refs.get("ctrip") or []),
             )
 
-            # 3 & 4. LLM 生成 + 解析校验
+            # 3 & 4. LLM 一次生成多条路线 + 解析校验
             try:
-                day_plans = self._generate_via_llm(
-                    pool, trip, days_count, web_results, external_refs
+                routes = self._generate_routes_via_llm(
+                    pool, trip, days_count, web_results, external_refs, llm=active_llm
                 )
             except LLMError as e:
                 logger.warning("LLM 生成失败，降级处理: %s", e)
-                day_plans = self._fallback_plan(pool, trip, days_count)
+                routes = self._fallback_routes(pool, trip, days_count)
 
-            # 4.5 强制选用「离行程景点总距离最短」的酒店
-            self._assign_nearest_hotel(day_plans, pool)
+            for route in routes:
+                self._assign_nearest_hotel(route.get("days") or [], pool)
 
-            # 5 & 6. 持久化
+            selected = routes[0]
+            prefs = dict(trip.preferences or {})
+            prefs["route_options"] = [
+                {
+                    "id": r.get("id"),
+                    "title": r.get("title"),
+                    "theme": r.get("theme"),
+                    "tagline": r.get("tagline"),
+                    "highlights": r.get("highlights") or [],
+                    "estimated_cost": sum(
+                        it.get("cost", 0) or 0
+                        for d in (r.get("days") or [])
+                        for it in d.get("items") or []
+                    ),
+                    "days": r.get("days") or [],
+                }
+                for r in routes
+            ]
+            prefs["selected_route_id"] = selected.get("id")
+            trip.preferences = prefs
+            if selected.get("title"):
+                trip.title = str(selected["title"])[:128]
+
+            day_plans = selected.get("days") or []
+            self._clear_days(trip, db)
             self._persist(trip, day_plans, db)
 
-            # 计算预算总额
             total = sum(it.get("cost", 0) or 0 for d in day_plans for it in d.get("items", []))
             trip.budget_total = float(total) * trip.travelers
             trip.status = "ready"
             trip.error_msg = None
             db.commit()
-            logger.info("攻略 %s 生成完成，%d 天", trip.id, len(day_plans))
+            logger.info(
+                "攻略 %s 生成完成，%d 条路线可选，已应用 %s",
+                trip.id,
+                len(routes),
+                selected.get("id"),
+            )
 
         except Exception as e:
             logger.exception("攻略生成失败 trip=%s", trip.id)
@@ -170,8 +223,15 @@ class GuideGenerator:
             trip.error_msg = str(e)[:500]
             db.commit()
 
-    def regenerate_day(self, trip: Trip, day_index: int, db: Session) -> None:
+    def regenerate_day(
+        self,
+        trip: Trip,
+        day_index: int,
+        db: Session,
+        llm: LLMClient | None = None,
+    ) -> None:
         """重新生成指定某一天。"""
+        active_llm = llm or self.llm
         try:
             geo = self.amap.geocode(trip.destination)
             must_include = (trip.preferences or {}).get("must_include") or []
@@ -179,8 +239,14 @@ class GuideGenerator:
             if not pool:
                 raise GeneratorError(f"未找到 {trip.destination} 的景点数据")
 
-            web_results = search_travel_tips(trip.destination, max_results=8)
-            day_plans = self._generate_via_llm(pool, trip, (trip.end_date - trip.start_date).days + 1, web_results)
+            web_results: list[dict[str, Any]] = []
+            day_plans = self._generate_via_llm(
+                pool,
+                trip,
+                (trip.end_date - trip.start_date).days + 1,
+                web_results,
+                llm=active_llm,
+            )
             target = next((d for d in day_plans if d.get("day_index") == day_index), None)
             if not target:
                 raise GeneratorError(f"未生成第 {day_index} 天的行程")
@@ -202,40 +268,106 @@ class GuideGenerator:
     # ------------------------------------------------------------------
 
     def _fetch_poi_pool(self, geo, destination: str, must_include: list[dict] | None = None) -> dict[str, list[Poi]]:
-        """获取三类 POI 候选池。扩大半径，按评分排序，确保必去景点在列。"""
+        """获取三类 POI 候选池：周边搜 + 热门地标关键词，过滤微点后按知名度重排。"""
         must_include = must_include or []
-        pool: dict[str, list[Poi]] = {}
-        for kind, type_code in POI_TYPES.items():
+        pool: dict[str, list[Poi]] = {k: [] for k in POI_TYPES}
+        city_landmarks = landmarks_for(destination)
+
+        def _one(kind: str, type_code: str) -> tuple[str, list[Poi]]:
             try:
                 pois = self.amap.search_poi_around(
                     location=geo.location,
                     poi_type=type_code,
-                    radius=50000,      # 扩大到 50km
+                    radius=50000,
                     limit=POI_LIMIT,
                     city=geo.city,
                 )
-                # 按评分降序排序
-                pois.sort(key=lambda p: p.rating or 0, reverse=True)
-                pool[kind] = pois
-                logger.info("POI 检索 %s: %d 条 (top评分: %.1f)", kind, len(pois), pois[0].rating if pois else 0)
+                logger.info(
+                    "POI 检索 %s: %d 条 (top评分: %.1f)",
+                    kind, len(pois), pois[0].rating if pois else 0,
+                )
+                return kind, pois
             except AmapError as e:
                 logger.warning("POI 检索 %s 失败: %s", kind, e)
-                pool[kind] = []
+                return kind, []
 
-        # 确保 must_include 景点在候选池中（如果高德没搜到，用关键词搜索补）
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futs = [ex.submit(_one, k, c) for k, c in POI_TYPES.items()]
+            for fut in as_completed(futs):
+                kind, pois = fut.result()
+                pool[kind] = pois
+
+        # 关键词补热门景点（比纯周边搜更稳）
+        keyword_hits: list[Poi] = []
+        for kw in (f"{destination}风景名胜", f"{destination}旅游景点", f"{destination}必去"):
+            try:
+                keyword_hits.extend(
+                    self.amap.search_poi_by_keyword(kw, city=geo.city or destination, limit=10)
+                )
+            except AmapError:
+                pass
+
+        # 注入城市热门地标 + 用户必去
+        inject_names: list[str] = []
         for mi in must_include:
-            name = mi.get("name", "")
-            if not name:
+            name = (mi.get("name") or "").strip()
+            if name:
+                inject_names.append(name)
+        inject_names.extend(city_landmarks[:LANDMARK_SEARCH_LIMIT])
+
+        def _inject(name: str) -> None:
+            try:
+                results = self.amap.search_poi_by_keyword(
+                    name, city=geo.city or destination, limit=1
+                )
+                if results:
+                    keyword_hits.append(results[0])
+                    logger.info("地标补入候选池: %s -> %s", name, results[0].name)
+            except AmapError:
+                pass
+
+        # 并行补地标，控制并发
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            list(ex.map(_inject, inject_names))
+
+        # 合并景点：去重、过滤微点、知名度排序
+        merged_attr: list[Poi] = []
+        seen_ids: set[str] = set()
+        seen_names: set[str] = set()
+        for p in keyword_hits + pool.get("attraction", []):
+            if not p.name or is_micro_poi(p.name):
                 continue
-            found = any(name in p.name or p.name in name for p in pool.get("attraction", []))
-            if not found:
-                try:
-                    results = self.amap.search_poi_by_keyword(name, city=geo.city, limit=1)
-                    if results:
-                        pool["attraction"].insert(0, results[0])  # 插到最前面
-                        logger.info("must_include 补入候选池: %s", name)
-                except AmapError:
-                    pass
+            key = p.id or p.name
+            norm = re.sub(r"\s+", "", p.name)
+            if key in seen_ids or norm in seen_names:
+                continue
+            seen_ids.add(key)
+            seen_names.add(norm)
+            boost = landmark_boost(p.name, city_landmarks)
+            if boost:
+                p.note = (p.note + " " if p.note else "") + "必去"
+            merged_attr.append(p)
+
+        merged_attr.sort(
+            key=lambda p: (
+                landmark_boost(p.name, city_landmarks),
+                p.rating or 0,
+                -len(p.name),  # 同热度下偏好主名称（更短）
+            ),
+            reverse=True,
+        )
+        pool["attraction"] = merged_attr[:POI_LIMIT]
+        logger.info(
+            "景点候选重排后 %d 条，前5: %s",
+            len(pool["attraction"]),
+            [p.name for p in pool["attraction"][:5]],
+        )
+
+        # 餐饮/酒店仍按评分，去掉明显附属名
+        for kind in ("meal", "hotel"):
+            cleaned = [p for p in pool.get(kind, []) if not is_micro_poi(p.name)]
+            cleaned.sort(key=lambda p: p.rating or 0, reverse=True)
+            pool[kind] = cleaned[:POI_LIMIT]
 
         return pool
 
@@ -268,13 +400,18 @@ class GuideGenerator:
             logger.warning("ctrip hotel scrape failed: %s", e)
             ctrip_hotels = []
 
+        ctrip_by_name: dict[str, CtripHotel] = {
+            self._norm_hotel_name(h.name): h for h in ctrip_hotels
+        }
+        # 并行补坐标，最多 10 家，避免串行打满高德 QPS
         ctrip_pois: list[Poi] = []
-        ctrip_by_name: dict[str, CtripHotel] = {}
-        for h in ctrip_hotels:
-            poi = self._ctrip_hotel_to_poi(h, destination)
-            if poi:
-                ctrip_pois.append(poi)
-                ctrip_by_name[self._norm_hotel_name(h.name)] = h
+        to_enrich = ctrip_hotels[:10]
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futs = [ex.submit(self._ctrip_hotel_to_poi, h, destination) for h in to_enrich]
+            for fut in as_completed(futs):
+                poi = fut.result()
+                if poi:
+                    ctrip_pois.append(poi)
 
         status = "ok" if ctrip_pois else "amap_only"
         seen = {self._norm_hotel_name(p.name) for p in ctrip_pois}
@@ -500,26 +637,238 @@ class GuideGenerator:
             note=note,
         )
 
+    def apply_route(self, trip: Trip, route_id: str, db: Session) -> None:
+        """切换到已生成的某条路线方案并重写 days。"""
+        prefs = dict(trip.preferences or {})
+        options = prefs.get("route_options") or []
+        route = next((r for r in options if r.get("id") == route_id), None)
+        if not route:
+            raise GeneratorError(f"路线方案不存在: {route_id}")
+        day_plans = route.get("days") or []
+        if not day_plans:
+            raise GeneratorError("该路线无行程数据")
+
+        self._clear_days(trip, db)
+        self._persist(trip, day_plans, db)
+        prefs["selected_route_id"] = route_id
+        trip.preferences = prefs
+        if route.get("title"):
+            trip.title = str(route["title"])[:128]
+        total = sum(it.get("cost", 0) or 0 for d in day_plans for it in d.get("items", []))
+        trip.budget_total = float(total) * trip.travelers
+        db.commit()
+
+    def _clear_days(self, trip: Trip, db: Session) -> None:
+        for d in list(trip.days or []):
+            db.delete(d)
+        db.flush()
+
+    def _generate_routes_via_llm(
+        self,
+        pool: dict[str, list[Poi]],
+        trip: Trip,
+        days_count: int,
+        web_results: list[dict[str, Any]] | None = None,
+        external_refs: dict | None = None,
+        llm: LLMClient | None = None,
+    ) -> list[dict[str, Any]]:
+        """一次 LLM 调用生成多条路线。"""
+        user_prompt = self._build_user_prompt(
+            pool, trip, days_count, web_results, external_refs
+        )
+        client = llm or self.llm
+        result = client.chat_json(SYSTEM_PROMPT, user_prompt)
+        routes = self._parse_routes_payload(result, pool, trip)
+        if len(routes) < 1:
+            raise LLMError("LLM 未返回有效路线")
+        return routes[:ROUTE_COUNT]
+
     def _generate_via_llm(
         self, pool: dict[str, list[Poi]], trip: Trip, days_count: int,
         web_results: list[dict[str, Any]] | None = None,
         external_refs: dict | None = None,
+        llm: LLMClient | None = None,
     ) -> list[dict[str, Any]]:
-        """调用 LLM 生成行程，解析并校验。"""
-        user_prompt = self._build_user_prompt(
-            pool, trip, days_count, web_results, external_refs
+        """兼容旧调用：返回首条路线的 days。"""
+        routes = self._generate_routes_via_llm(
+            pool, trip, days_count, web_results, external_refs, llm=llm
         )
-        result = self.llm.chat_json(SYSTEM_PROMPT, user_prompt)
+        return routes[0].get("days") or []
 
-        days = result.get("days")
-        if not isinstance(days, list) or not days:
-            raise LLMError("LLM 返回的 days 字段为空或格式错误")
+    def _parse_routes_payload(
+        self, result: dict[str, Any], pool: dict[str, list[Poi]], trip: Trip
+    ) -> list[dict[str, Any]]:
+        """解析 LLM JSON：支持 routes[] 或多退回单条 days。"""
+        raw_routes = result.get("routes")
+        routes: list[dict[str, Any]] = []
 
-        # 校验并补全每个条目
+        if isinstance(raw_routes, list) and raw_routes:
+            for i, r in enumerate(raw_routes):
+                if not isinstance(r, dict):
+                    continue
+                meta_id, meta_theme, meta_tag = ROUTE_META[min(i, len(ROUTE_META) - 1)]
+                days = r.get("days")
+                if not isinstance(days, list) or not days:
+                    continue
+                for d in days:
+                    for item in d.get("items") or []:
+                        self._validate_and_enrich(item, pool, trip.destination)
+                routes.append(
+                    {
+                        "id": r.get("id") or meta_id,
+                        "title": r.get("title")
+                        or f"{trip.destination}·{meta_theme}",
+                        "theme": r.get("theme") or meta_theme,
+                        "tagline": r.get("tagline") or meta_tag,
+                        "highlights": r.get("highlights")
+                        or self._route_highlights(days),
+                        "days": days,
+                    }
+                )
+        elif isinstance(result.get("days"), list) and result["days"]:
+            days = result["days"]
+            for d in days:
+                for item in d.get("items") or []:
+                    self._validate_and_enrich(item, pool, trip.destination)
+            routes.append(
+                {
+                    "id": "classic",
+                    "title": trip.title or f"{trip.destination}经典之旅",
+                    "theme": "经典必去",
+                    "tagline": "系统生成的主路线",
+                    "highlights": self._route_highlights(days),
+                    "days": days,
+                }
+            )
+
+        # 不足 3 条时用降级方案补齐
+        if len(routes) < ROUTE_COUNT:
+            for fb in self._fallback_routes(pool, trip, (trip.end_date - trip.start_date).days + 1):
+                if len(routes) >= ROUTE_COUNT:
+                    break
+                if any(r["id"] == fb["id"] for r in routes):
+                    continue
+                routes.append(fb)
+        return routes
+
+    def _route_highlights(self, days: list[dict[str, Any]], limit: int = 4) -> list[str]:
+        names: list[str] = []
         for d in days:
-            for item in d.get("items", []):
-                self._validate_and_enrich(item, pool, trip.destination)
+            for it in d.get("items") or []:
+                if it.get("type") == "attraction" and it.get("name"):
+                    names.append(it["name"])
+                if len(names) >= limit:
+                    return names
+        return names
 
+    def _fallback_routes(
+        self, pool: dict[str, list[Poi]], trip: Trip, days_count: int
+    ) -> list[dict[str, Any]]:
+        """无 LLM 时按主题切片候选池，拼出多条路线。"""
+        attractions = list(pool.get("attraction") or [])
+        meals = list(pool.get("meal") or [])
+        hotels = list(pool.get("hotel") or [])
+        routes: list[dict[str, Any]] = []
+        for idx, (rid, theme, tag) in enumerate(ROUTE_META):
+            # 错开起点，让三条路线景点不同
+            offset = idx * max(1, len(attractions) // ROUTE_COUNT)
+            rotated = attractions[offset:] + attractions[:offset]
+            days = self._fallback_plan_from_lists(
+                rotated, meals, hotels, trip, days_count, theme
+            )
+            routes.append(
+                {
+                    "id": rid,
+                    "title": f"{trip.destination}·{theme}",
+                    "theme": theme,
+                    "tagline": tag,
+                    "highlights": self._route_highlights(days),
+                    "days": days,
+                }
+            )
+        return routes
+
+    def _fallback_plan_from_lists(
+        self,
+        attractions: list[Poi],
+        meals: list[Poi],
+        hotels: list[Poi],
+        trip: Trip,
+        days_count: int,
+        theme: str,
+    ) -> list[dict[str, Any]]:
+        """从给定列表贪心排天。"""
+        days: list[dict[str, Any]] = []
+        ai = 0
+        mi = 0
+        hotel = hotels[0] if hotels else None
+        for d in range(1, days_count + 1):
+            items: list[dict[str, Any]] = []
+            for slot in ("morning", "afternoon"):
+                if ai < len(attractions):
+                    p = attractions[ai]
+                    ai += 1
+                    items.append(
+                        {
+                            "time_slot": slot,
+                            "type": "attraction",
+                            "name": p.name,
+                            "duration_min": 120,
+                            "description": f"{theme}推荐",
+                            "cost": 0,
+                            "poi_id": p.id,
+                            "location": {
+                                "lng": p.lng,
+                                "lat": p.lat,
+                                "address": p.address,
+                            },
+                            "rating": p.rating,
+                            "alternatives": [],
+                        }
+                    )
+            if mi < len(meals):
+                p = meals[mi]
+                mi += 1
+                items.append(
+                    {
+                        "time_slot": "evening",
+                        "type": "meal",
+                        "name": p.name,
+                        "duration_min": 90,
+                        "description": "当地餐饮",
+                        "cost": 80,
+                        "poi_id": p.id,
+                        "location": {
+                            "lng": p.lng,
+                            "lat": p.lat,
+                            "address": p.address,
+                        },
+                        "rating": p.rating,
+                        "alternatives": [],
+                    }
+                )
+            if hotel:
+                items.append(
+                    {
+                        "time_slot": "evening",
+                        "type": "hotel",
+                        "name": hotel.name,
+                        "duration_min": 0,
+                        "description": hotel.note or "推荐住宿",
+                        "cost": 0,
+                        "poi_id": hotel.id,
+                        "location": {
+                            "lng": hotel.lng,
+                            "lat": hotel.lat,
+                            "address": hotel.address,
+                        },
+                        "rating": hotel.rating,
+                        "alternatives": [],
+                    }
+                )
+            days.append(
+                {"day_index": d, "summary": f"{theme} · Day {d}", "items": items}
+            )
         return days
 
     def _build_user_prompt(
@@ -528,12 +877,16 @@ class GuideGenerator:
         external_refs: dict | None = None,
     ) -> str:
         """构造用户提示词，注入候选 POI（含评分）+ 网页摘要。"""
+        city_landmarks = landmarks_for(trip.destination)
+
         def fmt(kind: str) -> str:
             lines = []
-            for p in pool.get(kind, [])[:20]:
+            for i, p in enumerate(pool.get(kind, [])[:22]):
                 rating_str = f" ★{p.rating}" if p.rating else ""
                 note_str = f" [{p.note}]" if getattr(p, "note", "") else ""
-                lines.append(f"- {p.name}{rating_str}{note_str}（{p.address or '地址未知'}）")
+                rank = f"#{i + 1} "
+                mark = "【必去】" if (kind == "attraction" and landmark_boost(p.name, city_landmarks)) else ""
+                lines.append(f"- {rank}{mark}{p.name}{rating_str}{note_str}（{p.address or '地址未知'}）")
             return "\n".join(lines)
 
         prefs = trip.preferences or {}
@@ -548,6 +901,11 @@ class GuideGenerator:
             names = [m.get("name", "") for m in must_include if m.get("name")]
             if names:
                 must_section = f"\n⚠️ 用户指定的必去景点（必须全部安排！）：\n" + "\n".join(f"- {n}" for n in names)
+        if city_landmarks:
+            must_section += (
+                f"\n⭐ 目的地热门必去参考（行程应尽量覆盖其中大部分，尤其靠前的）：\n"
+                + "\n".join(f"- {n}" for n in city_landmarks[:10])
+            )
 
         # 网页搜索摘要 + 正文
         web_section = ""
@@ -605,7 +963,7 @@ class GuideGenerator:
 人数：{trip.travelers} 人
 偏好：兴趣 {interests}；预算等级 {budget_level}；交通方式 {transport}{must_section}{web_section}{ext_section}
 
-可选景点（按评分降序，优先选前面高分景点）：
+可选景点（已按「热门必去 > 评分」排序，越靠前越应优先安排；带【必去】的必须多选）：
 {fmt('attraction')}
 
 可选餐饮：
@@ -614,7 +972,9 @@ class GuideGenerator:
 可选住宿（已按「靠近主要景点、总交通最短」排序，越靠前越好；请全程优先选第 1 家）：
 {fmt('hotel')}
 
-请严格使用以上候选地点生成 {days_count} 天的 JSON 行程。优先安排高评分和地标性景点；住宿必须选列表最靠前且靠近景点的酒店，全程同一家以减少交通时间。{closing_hints}"""
+请严格使用以上候选地点，一次生成恰好 3 条风格不同的 {days_count} 日路线（routes），id 分别为 classic / culture / food。
+硬性要求：三条路线的景点组合要有明显差异；以热门地标为主，不要打卡点子点；
+住宿选列表靠前酒店且三条尽量同一家。{closing_hints}"""
 
     def _validate_and_enrich(
         self, item: dict[str, Any], pool: dict[str, list[Poi]], destination: str
@@ -799,44 +1159,29 @@ class GuideGenerator:
             # 估算出发时间（从上一站离开的时刻）
             departure_time = current_time_min if prev_loc else None
 
-            # 路线规划：上一站 -> 当前站，按距离自动选交通方式
+            # 路线：生成阶段用坐标估算（避免每段 2–3 次高德规划拖慢/限流）
+            # 详细换乘可在详情页按需调用 /items/{id}/route
             transport = None
-            if prev_loc and loc_str:
-                # 先步行规划拿距离
-                walk_seg = self.amap.plan_route(prev_loc, loc_str, mode="walking")
-                if walk_seg:
-                    if walk_seg.distance_m <= WALK_MAX_DISTANCE_M:
-                        # 近距离：步行
-                        transport = {
-                            "mode": "walking",
-                            "distance_m": walk_seg.distance_m,
-                            "duration_s": walk_seg.duration_s,
-                            "detail": None,
-                        }
-                        current_time_min += walk_seg.duration_s // 60
+            if prev_loc and loc_str and loc.get("lng") and loc.get("lat"):
+                try:
+                    olng, olat = (float(x) for x in prev_loc.split(","))
+                    dist_m = int(self._haversine_m(olng, olat, float(loc["lng"]), float(loc["lat"])))
+                except (TypeError, ValueError):
+                    dist_m = 0
+                if dist_m > 0:
+                    if dist_m <= WALK_MAX_DISTANCE_M:
+                        duration_s = max(60, int(dist_m / 1.2))  # ~1.2 m/s 步行
+                        mode = "walking"
                     else:
-                        # 远距离：优先公交/地铁，失败则用驾车
-                        seg = self.amap.plan_route(prev_loc, loc_str, mode="transit", city=city)
-                        if seg is None:
-                            seg = self.amap.plan_route(prev_loc, loc_str, mode="driving")
-                        if seg:
-                            transport = {
-                                "mode": seg.mode,
-                                "distance_m": seg.distance_m,
-                                "duration_s": seg.duration_s,
-                                "detail": seg.detail,
-                            }
-                        else:
-                            # 兜底用步行数据
-                            transport = {
-                                "mode": "walking",
-                                "distance_m": walk_seg.distance_m,
-                                "duration_s": walk_seg.duration_s,
-                                "detail": None,
-                            }
-                        current_time_min += seg.duration_s // 60 if seg else walk_seg.duration_s // 60
-                # 估算到达时间
-                if transport:
+                        duration_s = max(180, int(dist_m / 6.0))  # 公交/地铁粗估
+                        mode = "transit"
+                    transport = {
+                        "mode": mode,
+                        "distance_m": dist_m,
+                        "duration_s": duration_s,
+                        "detail": None,
+                    }
+                    current_time_min += duration_s // 60
                     transport["departure_time"] = _min_to_time(departure_time) if departure_time else None
                     transport["arrival_time"] = _min_to_time(current_time_min)
 

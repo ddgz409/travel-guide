@@ -5,6 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useAuthStore } from "@/stores/auth";
 
+const LINKS = [
+  { href: "/", label: "首页" },
+  { href: "/generate", label: "去旅行" },
+  { href: "/trips", label: "我的攻略", auth: true },
+  { href: "/settings", label: "设置", auth: true },
+];
+
 export function Navbar() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
@@ -16,59 +23,69 @@ export function Navbar() {
   };
 
   return (
-    <header className="bg-white border-b border-[#e5e5e5] sticky top-0 z-50">
-      <div className="max-w-[1200px] mx-auto px-5 flex items-center" style={{ height: 60 }}>
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-1.5 mr-8">
-          <span className="text-2xl">🐝</span>
-          <span className="text-[20px] font-bold text-[#ff9d00]">旅行攻略</span>
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-[var(--line)]">
+      <div className="site-container flex items-center h-[62px] gap-6">
+        <Link href="/" className="flex items-center gap-2 shrink-0 mr-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--brand)] text-white text-sm font-bold">
+            迹
+          </span>
+          <span className="font-display text-[22px] font-semibold text-[var(--ink)] tracking-wide">
+            旅迹
+          </span>
         </Link>
 
-        {/* 菜单 */}
-        <nav className="flex items-center gap-1 text-[15px]">
-          <Link
-            href="/"
-            className={`px-4 py-2 transition-colors ${pathname === "/" ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
-          >
-            首页
-          </Link>
-          <Link
-            href="/generate"
-            className={`px-4 py-2 transition-colors ${pathname === "/generate" ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
-          >
-            生成攻略
-          </Link>
-          {user && (
-            <Link
-              href="/trips"
-              className={`px-4 py-2 transition-colors ${pathname.startsWith("/trips") ? "text-[#ff9d00] font-medium" : "text-[#333] hover:text-[#ff9d00]"}`}
-            >
-              我的攻略
-            </Link>
-          )}
+        <nav className="hidden md:flex items-center gap-1 text-[15px]">
+          {LINKS.filter((l) => !l.auth || user).map((l) => {
+            const active =
+              l.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(l.href);
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`px-3.5 py-2 rounded-md transition-colors ${
+                  active
+                    ? "text-[var(--brand)] font-semibold"
+                    : "text-[var(--ink)]/80 hover:text-[var(--brand)]"
+                }`}
+              >
+                {l.label}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* 右侧用户区 */}
-        <div className="ml-auto flex items-center gap-4 text-sm">
+        <div className="ml-auto flex items-center gap-3 text-sm">
+          <Link
+            href="/generate"
+            className="hidden sm:inline-flex btn-brand rounded-full px-4 py-1.5 text-[13px]"
+          >
+            写攻略 / AI 生成
+          </Link>
           {user ? (
             <>
-              <span className="text-[#666] hidden sm:inline">{user.username}</span>
+              <span className="text-[var(--muted)] hidden sm:inline max-w-[100px] truncate">
+                {user.username}
+              </span>
               <button
                 onClick={handleLogout}
-                className="text-[#999] hover:text-[#ff9d00] transition-colors"
+                className="text-[var(--muted)] hover:text-[var(--brand)]"
               >
                 退出
               </button>
             </>
           ) : (
             <>
-              <span className="text-[#999] text-[13px] hidden sm:inline">游客模式</span>
-              <Link href="/login" className="text-[#666] hover:text-[#ff9d00] transition-colors">
+              <Link
+                href="/login"
+                className="text-[var(--ink)]/80 hover:text-[var(--brand)]"
+              >
                 登录
               </Link>
               <Link
                 href="/register"
-                className="bg-[#ff9d00] text-white px-4 py-1.5 rounded hover:bg-[#ff8a00] transition-colors text-[13px]"
+                className="btn-brand rounded-full px-4 py-1.5 text-[13px]"
               >
                 注册
               </Link>

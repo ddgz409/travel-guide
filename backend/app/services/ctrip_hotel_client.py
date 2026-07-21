@@ -22,7 +22,8 @@ HUAZHU_KEYWORDS = (
     "华住", "禧玥", "CitiGO", "城际",
 )
 LIST_LIMIT = 20
-DETAIL_LIMIT = 8
+# 详情页很慢；列表页已有评分，默认不抓详情以加速生成
+DETAIL_LIMIT = 0
 
 # 常用城市 ID（携程 hotels 列表页）
 CITY_IDS: dict[str, int] = {
@@ -214,8 +215,8 @@ def _parse_list_html(html: str, max_results: int) -> list[CtripHotel]:
 
 
 def _fetch_city_lists(city_id: int, destination: str, max_results: int) -> list[CtripHotel]:
-    """按城市 ID 拉列表，并追加华住品牌关键词检索。"""
-    keywords = ["", "全季", "汉庭", "桔子", "宜必思", "漫心"]
+    """按城市 ID 拉列表（最多 2 页：综合 + 全季），控制耗时。"""
+    keywords = ["", "全季"]  # 再多品牌会显著拖慢生成
     merged: list[CtripHotel] = []
     seen: set[str] = set()
     for kw in keywords:
@@ -228,13 +229,11 @@ def _fetch_city_lists(city_id: int, destination: str, max_results: int) -> list[
             url = f"https://hotels.ctrip.com/hotels/list?city={city_id}"
         html = fetch_text(url, retries=1)
         batch = _parse_list_html(html or "", max_results)
-        # 无关键词的列表：优先保留店名含目的地的；有关键词的全收
         for h in batch:
             key = h.url
             if key in seen:
                 continue
             if not kw and destination and destination not in h.name:
-                # 仍保留华住品牌
                 if not h.is_huazhu:
                     continue
             seen.add(key)
@@ -290,16 +289,18 @@ def search_ctrip_hotels(destination: str, max_results: int = LIST_LIMIT) -> list
     else:
         logger.info("ctrip hotels unknown city id for %s", destination)
 
+    # 有城市列表结果时跳过 Bing（慢且常被验证码）
     if len(hotels) < 3:
         logger.info("ctrip hotels bing enrich for %s", destination)
         for h in _from_bing(destination, max_results):
             if h.url not in {x.url for x in hotels}:
                 hotels.append(h)
 
-    for h in hotels[:DETAIL_LIMIT]:
-        detail = fetch_text(h.url, retries=1, timeout=8.0)
-        if detail:
-            _parse_detail_fields(detail, h)
+    if DETAIL_LIMIT > 0:
+        for h in hotels[:DETAIL_LIMIT]:
+            detail = fetch_text(h.url, retries=0, timeout=5.0)
+            if detail:
+                _parse_detail_fields(detail, h)
 
     for h in hotels:
         h.is_huazhu = h.is_huazhu or _detect_huazhu(h.name, h.snippet)

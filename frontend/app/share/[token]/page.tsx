@@ -84,7 +84,12 @@ export default function SharePage() {
                 📝 {day.summary}
               </p>
             )}
-            <TripMap items={day.items} height="300px" />
+            <TripMap
+              items={day.items.filter((it) => it.selected)}
+              tripId={trip.id}
+              dayId={day.id}
+              height="300px"
+            />
             <div className="space-y-2 mt-3">
               {day.items.map((it: Item, idx: number) => (
                 <div key={it.id} className="flex gap-3 text-sm">

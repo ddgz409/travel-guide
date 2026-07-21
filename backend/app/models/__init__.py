@@ -24,6 +24,10 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 用户自填 LLM：为空则回退服务器 .env 默认（智谱 glm-4）
+    llm_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_api_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )
