@@ -3,6 +3,7 @@
 import type {
   DayRoutesResult,
   GenerateRequest,
+  AndroidUpdateInfo,
   LlmSettings,
   LlmSettingsUpdate,
   PoiSearchResult,
@@ -92,6 +93,10 @@ export function createApiClient(opts: CreateApiClientOptions) {
 
   return {
     request,
+    app: {
+      androidUpdate: () =>
+        request<AndroidUpdateInfo>("/app/android-update"),
+    },
     auth: {
       register: (username: string, password: string) =>
         request<Token>("/auth/register", {

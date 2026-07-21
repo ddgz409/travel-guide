@@ -1,0 +1,7 @@
+{
+  "versionCode": 3,
+  "versionName": "1.0.1",
+  "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
+  "notes": "修复正式包无法联网；支持应用内检查更新",
+  "force": false
+}

@@ -59,12 +59,25 @@ def test_placeholder_key_not_available():
     assert not client.available
 
 
-def test_unknown_provider():
+def test_unknown_provider_requires_base_url():
     try:
         LLMClient(provider="nope", api_key="x")
         assert False, "should raise"
     except LLMError as e:
-        assert "未知" in str(e)
+        assert "Base URL" in str(e)
+
+
+def test_custom_provider_with_base_url():
+    client = LLMClient(
+        provider="moonshot",
+        api_key="sk-test",
+        model="moonshot-v1-8k",
+        base_url="https://api.moonshot.cn/v1",
+    )
+    assert client.provider == "moonshot"
+    assert client.base_url == "https://api.moonshot.cn/v1"
+    assert client.model == "moonshot-v1-8k"
+    assert client.available
 
 
 def test_for_user_overrides_key_and_model():
@@ -72,10 +85,24 @@ def test_for_user_overrides_key_and_model():
         llm_provider="zhipu",
         llm_api_key="user-secret-key-123456",
         llm_model="glm-4-flash",
+        llm_base_url=None,
     )
     client = LLMClient.for_user(user)
     assert client.api_key == "user-secret-key-123456"
     assert client.model == "glm-4-flash"
+
+
+def test_for_user_custom_provider():
+    user = SimpleNamespace(
+        llm_provider="qwen",
+        llm_api_key="sk-qwen",
+        llm_model="qwen-plus",
+        llm_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    client = LLMClient.for_user(user)
+    assert client.provider == "qwen"
+    assert "dashscope" in client.base_url
+    assert client.model == "qwen-plus"
 
 
 def test_for_user_none_uses_server():
@@ -89,9 +116,11 @@ def test_mask_and_effective_settings():
         llm_provider="zhipu",
         llm_api_key="abcdefghijklmnop",
         llm_model="glm-4",
+        llm_base_url=None,
     )
     data = effective_llm_settings(user)
     assert data["has_api_key"] is True
     assert data["using_server_default"] is False
     assert data["api_key_hint"] == "abcd****mnop"
     assert data["model"] == "glm-4"
+    assert data["base_url"] in (None, "")

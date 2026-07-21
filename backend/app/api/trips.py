@@ -72,6 +72,7 @@ def generate(
             "provider": (payload.llm.get("provider") or "").strip() or None,
             "model": (payload.llm.get("model") or "").strip() or None,
             "api_key": payload.llm.get("api_key").strip(),
+            "base_url": (payload.llm.get("base_url") or "").strip() or None,
         }
 
     days_count = (payload.end_date - payload.start_date).days + 1
@@ -130,6 +131,7 @@ def _llm_for_trip(db: Session, trip: Trip):
             provider=override.get("provider"),
             api_key=override.get("api_key"),
             model=override.get("model"),
+            base_url=override.get("base_url"),
         )
 
     user = db.get(User, trip.user_id)
@@ -204,6 +206,7 @@ def guest_generate(
             "provider": (payload.llm.get("provider") or "").strip() or None,
             "model": (payload.llm.get("model") or "").strip() or None,
             "api_key": payload.llm.get("api_key").strip(),
+            "base_url": (payload.llm.get("base_url") or "").strip() or None,
         }
 
     days_count = (payload.end_date - payload.start_date).days + 1

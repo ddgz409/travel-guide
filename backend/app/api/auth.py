@@ -72,13 +72,13 @@ def update_llm_settings(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """更新 LLM 提供商 / 模型 / API Key。留空 Key 则清除，改用服务器默认。"""
+    """更新 LLM 提供商 / 模型 / API Key / Base URL。留空 Key 则清除，改用服务器默认。"""
     if payload.provider is not None:
         p = payload.provider.strip().lower()
-        if p and p not in PROVIDER_PRESETS:
+        if p and not all(c.isalnum() or c in "-_" for c in p):
             raise HTTPException(
                 status_code=400,
-                detail=f"不支持的提供商，可选: {', '.join(PROVIDER_PRESETS)}",
+                detail="提供商 ID 仅允许字母、数字、连字符与下划线",
             )
         current.llm_provider = p or None
 
@@ -90,6 +90,23 @@ def update_llm_settings(
     if payload.api_key is not None:
         key = payload.api_key.strip()
         current.llm_api_key = key or None
+
+    # base_url: None=不改；""=清除；非空=写入
+    if payload.base_url is not None:
+        bu = payload.base_url.strip().rstrip("/")
+        if bu and not (bu.startswith("http://") or bu.startswith("https://")):
+            raise HTTPException(
+                status_code=400, detail="Base URL 需以 http:// 或 https:// 开头"
+            )
+        current.llm_base_url = bu or None
+
+    provider = (current.llm_provider or "").strip().lower()
+    base = (current.llm_base_url or "").strip()
+    if provider and provider not in PROVIDER_PRESETS and not base:
+        raise HTTPException(
+            status_code=400,
+            detail="自定义提供商需填写 Base URL（OpenAI 兼容接口地址）",
+        )
 
     db.add(current)
     db.commit()

@@ -57,11 +57,31 @@ export function DayMap({
     [markers],
   );
 
+  const markerKey = useMemo(
+    () => mapMarkers.map((m) => `${m.lng},${m.lat}`).join("|"),
+    [mapMarkers],
+  );
+
   useEffect(() => {
     if (!dayId || markers.length < 2) {
       setPolyline([]);
       return;
     }
+    // 先用条目自带折线拼一条，地图立刻能画；后台再拉完整规划
+    const cached = markers
+      .slice(0, -1)
+      .flatMap((m, i) => {
+        const poly = m.transport_to_next?.polyline;
+        if (poly && poly.length >= 2) {
+          return i === 0 ? poly : poly.slice(1);
+        }
+        const next = markers[i + 1];
+        const a = [m.location!.lng, m.location!.lat];
+        const b = [next.location!.lng, next.location!.lat];
+        return i === 0 ? [a, b] : [b];
+      });
+    if (cached.length >= 2) setPolyline(cached);
+
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -72,11 +92,9 @@ export function DayMap({
           data.polyline && data.polyline.length
             ? data.polyline
             : data.segments.flatMap((s) => s.polyline || []);
-        setPolyline(pts);
+        if (pts.length >= 2) setPolyline(pts);
       } catch {
-        if (!cancelled) {
-          setPolyline(markers.map((m) => [m.location!.lng, m.location!.lat]));
-        }
+        /* keep cached */
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,7 +102,9 @@ export function DayMap({
     return () => {
       cancelled = true;
     };
-  }, [tripId, dayId, mode, markers]);
+    // markerKey 稳定时不因 items 引用变化重复请求
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, dayId, mode, markerKey]);
 
   function openFull() {
     if (!mapMarkers.length) return;

@@ -41,6 +41,7 @@ class LlmSettingsOut(BaseModel):
 
     provider: str
     model: str
+    base_url: str | None = None
     has_api_key: bool
     api_key_hint: str | None = None
     using_server_default: bool = True
@@ -52,6 +53,8 @@ class LlmSettingsOut(BaseModel):
 class LlmSettingsUpdate(BaseModel):
     """更新 LLM 设置。api_key 为 null 表示不改；空字符串表示清除（改回服务器默认）。"""
 
-    provider: str | None = Field(default=None, max_length=32)
-    model: str | None = Field(default=None, max_length=64)
+    provider: str | None = Field(default=None, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
     api_key: str | None = Field(default=None, max_length=256)
+    # null=不改；""=清除（改用预设默认端点）
+    base_url: str | None = Field(default=None, max_length=512)

@@ -29,6 +29,9 @@ module.exports = {
     ...appJson.expo,
     extra: {
       ...(appJson.expo.extra || {}),
+      eas: {
+        ...((appJson.expo.extra && appJson.expo.extra.eas) || {}),
+      },
       amapJsKey,
       apiBase,
     },

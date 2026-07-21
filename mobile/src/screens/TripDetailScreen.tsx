@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  InteractionManager,
   Linking,
   Platform,
   Pressable,
@@ -14,7 +15,6 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
-import * as WebBrowser from "expo-web-browser";
 import type {
   ExternalRefs,
   HotelCandidate,
@@ -28,32 +28,10 @@ import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { DayMap } from "../components/DayMap";
 import { TransportRouteSheet } from "../components/TransportRouteSheet";
+import { FadeSlideIn, FadeSwitch, PressScale } from "../motion";
+import { openExternal } from "../openExternal";
 import { colors } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
-
-function normalizeExternalUrl(url: string, title?: string): string {
-  let u = (url || "").trim();
-  if (!u) return "";
-  // 兼容旧版无效小红书 search_result 链接
-  if (
-    u.includes("xiaohongshu.com/search_result") &&
-    !u.includes("type=")
-  ) {
-    const kw = encodeURIComponent((title || "旅游攻略").trim());
-    u = `https://www.xiaohongshu.com/search_result?keyword=${kw}&type=51&source=web_search_result_notes`;
-  }
-  return u;
-}
-
-async function openExternal(url: string, title?: string) {
-  const u = normalizeExternalUrl(url, title);
-  if (!u) return;
-  try {
-    await WebBrowser.openBrowserAsync(u);
-  } catch {
-    await Linking.openURL(u);
-  }
-}
 
 const GRID_GAP = 10;
 type Props = NativeStackScreenProps<AppStackParamList, "TripDetail">;
@@ -94,7 +72,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return output;
 }
 
-function ItemBlock({
+const ItemBlock = memo(function ItemBlock({
   item,
   tripId,
   canEdit,
@@ -192,7 +170,7 @@ function ItemBlock({
       ) : null}
     </View>
   );
-}
+});
 
 export function TripDetailScreen({ route, navigation }: Props) {
   const { tripId } = route.params;
@@ -204,12 +182,24 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [activeDay, setActiveDay] = useState(0);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await api.trips.get(tripId);
-      setTrip(data);
+      setTrip((prev) => {
+        // 生成中轮询：内容未变则跳过，减少无谓重渲
+        if (
+          prev &&
+          prev.status === data.status &&
+          prev.updated_at === data.updated_at &&
+          prev.status === "generating"
+        ) {
+          return prev;
+        }
+        return data;
+      });
       setError(null);
       return data;
     } catch (e) {
@@ -230,7 +220,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
-        }, 2500);
+        }, 4000);
       }
     })();
     return () => {
@@ -242,7 +232,27 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const days = trip?.days || [];
   const currentDay = days[activeDay] || days[0];
   const dayItems = currentDay?.items || [];
-  const selectedItems = dayItems.filter((it) => it.selected);
+  const selectedItems = useMemo(
+    () => dayItems.filter((it) => it.selected),
+    [dayItems],
+  );
+
+  // 推迟挂载地图 WebView，减轻首屏卡顿
+  useEffect(() => {
+    setMapReady(false);
+    let cleared = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      timeoutId = setTimeout(() => {
+        if (!cleared) setMapReady(true);
+      }, 280);
+    });
+    return () => {
+      cleared = true;
+      handle.cancel?.();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [currentDay?.id]);
 
   const budgetByType = useMemo(() => {
     const map: Record<string, number> = {};
@@ -435,110 +445,129 @@ export function TripDetailScreen({ route, navigation }: Props) {
           {routeOptions.map((opt) => {
             const on = opt.id === selectedRouteId;
             return (
-              <Pressable
+              <PressScale
                 key={opt.id}
-                style={[styles.routeCard, on && styles.routeCardOn]}
-                onPress={() => onSelectRoute(opt.id)}
                 disabled={!canEdit || actionBusy}
+                onPress={() => onSelectRoute(opt.id)}
+                style={[styles.routeCard, on && styles.routeCardOn]}
               >
                 <Text style={styles.routeTitle}>{opt.title}</Text>
                 <Text style={styles.routeTheme}>{opt.theme}</Text>
                 {opt.tagline ? (
                   <Text style={styles.routeTag}>{opt.tagline}</Text>
                 ) : null}
-              </Pressable>
+                {on ? (
+                  <Text style={styles.routeOnHint}>当前方案</Text>
+                ) : null}
+              </PressScale>
             );
           })}
         </View>
       ) : null}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.dayTabs}
-        contentContainerStyle={{ gap: 8 }}
+      <FadeSwitch
+        switchKey={`${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
       >
-        {days.map((d, i) => (
-          <Pressable
-            key={d.id}
-            style={[styles.dayTab, i === activeDay && styles.dayTabOn]}
-            onPress={() => setActiveDay(i)}
-          >
-            <Text
-              style={[styles.dayTabText, i === activeDay && styles.dayTabTextOn]}
-            >
-              Day {d.day_index} · {d.date.slice(5)}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      {canEdit && currentDay ? (
-        <Pressable
-          style={styles.regen}
-          onPress={onRegenDay}
-          disabled={actionBusy}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.dayTabs}
+          contentContainerStyle={{ gap: 8 }}
         >
-          <Text style={styles.regenText}>
-            {actionBusy ? "处理中…" : "重新生成当天"}
-          </Text>
-        </Pressable>
-      ) : null}
+          {days.map((d, i) => (
+            <PressScale
+              key={d.id}
+              scaleTo={0.96}
+              onPress={() => setActiveDay(i)}
+              style={[styles.dayTab, i === activeDay && styles.dayTabOn]}
+            >
+              <Text
+                style={[
+                  styles.dayTabText,
+                  i === activeDay && styles.dayTabTextOn,
+                ]}
+              >
+                Day {d.day_index} · {d.date.slice(5)}
+              </Text>
+            </PressScale>
+          ))}
+        </ScrollView>
 
-      {currentDay?.summary ? (
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryLabel}>当日亮点</Text>
-          <Text style={styles.summaryText}>{currentDay.summary}</Text>
-        </View>
-      ) : null}
+        {canEdit && currentDay ? (
+          <PressScale
+            style={styles.regen}
+            onPress={onRegenDay}
+            disabled={actionBusy}
+          >
+            <Text style={styles.regenText}>
+              {actionBusy ? "处理中…" : "重新生成当天"}
+            </Text>
+          </PressScale>
+        ) : null}
 
-      <Text style={styles.sectionTitle}>
-        精选行程 · {selectedItems.length} 个安排
-      </Text>
-      {dayItems.map((item) => (
-        <ItemBlock
-          key={item.id}
-          item={item}
-          tripId={trip.id}
-          canEdit={canEdit}
-          onChanged={setTrip}
-        />
-      ))}
+        {currentDay?.summary ? (
+          <FadeSlideIn delay={40} style={styles.summaryBox}>
+            <Text style={styles.summaryLabel}>当日亮点</Text>
+            <Text style={styles.summaryText}>{currentDay.summary}</Text>
+          </FadeSlideIn>
+        ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>当日路线地图</Text>
-        <DayMap
-          tripId={trip.id}
-          dayId={currentDay?.id}
-          items={selectedItems}
-          title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
-        />
-      </View>
-
-      <View style={styles.budget}>
-        <Text style={styles.sectionTitle}>预算估算</Text>
-        {Object.entries(budgetByType).map(([type, cost]) => (
-          <View key={type} style={styles.budgetRow}>
-            <Text style={styles.budgetLabel}>{TYPE_LABEL[type] || type}</Text>
-            <Text style={styles.budgetVal}>¥{cost}</Text>
-          </View>
+        <Text style={styles.sectionTitle}>
+          精选行程 · {selectedItems.length} 个安排
+        </Text>
+        {dayItems.map((item, i) => (
+          <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
+            <ItemBlock
+              item={item}
+              tripId={trip.id}
+              canEdit={canEdit}
+              onChanged={setTrip}
+            />
+          </FadeSlideIn>
         ))}
-        <View style={[styles.budgetRow, styles.budgetTotal]}>
-          <Text style={styles.budgetHint}>
-            人均 ¥{Math.round(totalCost)} × {trip.travelers}
-          </Text>
-          <Text style={styles.budgetTotalVal}>
-            ¥{Math.round(totalBudget)}
-          </Text>
-        </View>
-      </View>
 
-      <HotelNotesRow
-        destination={trip.destination}
-        status={trip.hotel_fetch_status}
-        candidates={trip.hotel_candidates}
-        refs={trip.external_refs}
-      />
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>当日路线地图</Text>
+          {mapReady ? (
+            <DayMap
+              tripId={trip.id}
+              dayId={currentDay?.id}
+              items={selectedItems}
+              title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
+            />
+          ) : (
+            <View style={styles.mapPlaceholder}>
+              <ActivityIndicator color={colors.brand} />
+              <Text style={styles.mapPlaceholderText}>地图加载中…</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.budget}>
+          <Text style={styles.sectionTitle}>预算估算</Text>
+          {Object.entries(budgetByType).map(([type, cost]) => (
+            <View key={type} style={styles.budgetRow}>
+              <Text style={styles.budgetLabel}>{TYPE_LABEL[type] || type}</Text>
+              <Text style={styles.budgetVal}>¥{cost}</Text>
+            </View>
+          ))}
+          <View style={[styles.budgetRow, styles.budgetTotal]}>
+            <Text style={styles.budgetHint}>
+              人均 ¥{Math.round(totalCost)} × {trip.travelers}
+            </Text>
+            <Text style={styles.budgetTotalVal}>
+              ¥{Math.round(totalBudget)}
+            </Text>
+          </View>
+        </View>
+
+        <HotelNotesRow
+          destination={trip.destination}
+          status={trip.hotel_fetch_status}
+          candidates={trip.hotel_candidates}
+          refs={trip.external_refs}
+        />
+      </FadeSwitch>
     </ScrollView>
   );
 }
@@ -606,18 +635,22 @@ function HotelNotesRow({
           <Text style={styles.parallelTitle}>参考笔记</Text>
           {tips.length ? (
             tips.map((t, i) => {
-              const source = (refs?.xiaohongshu || []).some((x) => x.url === t.url)
-                ? "小红书"
-                : "携程";
+              const isXhs = (refs?.xiaohongshu || []).some((x) => x.url === t.url);
               return (
                 <Pressable
                   key={`${t.url}-${i}`}
                   style={styles.compactCard}
                   onPress={() => {
-                    if (t.url) void openExternal(t.url, t.title);
+                    if (t.url)
+                      void openExternal(t.url, t.title, t.meta as {
+                        keyword?: string;
+                        app_url?: string;
+                      } | null);
                   }}
                 >
-                  <Text style={styles.compactSource}>{source}</Text>
+                  <Text style={styles.compactSource}>
+                    {isXhs ? "小红书" : "携程"}
+                  </Text>
                   <Text style={styles.compactTitle} numberOfLines={2}>
                     {t.title}
                   </Text>
@@ -662,6 +695,17 @@ const styles = StyleSheet.create({
   actionPrimaryText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   shareMsg: { marginTop: 8, fontSize: 12, color: colors.ready },
   section: { marginTop: 22 },
+  mapPlaceholder: {
+    height: 220,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  mapPlaceholderText: { fontSize: 12, color: colors.muted },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "800",
@@ -683,6 +727,12 @@ const styles = StyleSheet.create({
   routeTitle: { fontWeight: "700", color: colors.ink, fontSize: 15 },
   routeTheme: { marginTop: 2, fontSize: 12, color: colors.brand },
   routeTag: { marginTop: 4, fontSize: 12, color: colors.muted },
+  routeOnHint: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.brandHot,
+  },
   dayTabs: { marginTop: 16, marginBottom: 8 },
   dayTab: {
     backgroundColor: colors.card,

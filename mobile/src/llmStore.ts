@@ -8,12 +8,14 @@ export type LocalLlmConfig = {
   provider: string;
   model: string;
   apiKey: string;
+  baseUrl: string;
 };
 
 export const DEFAULT_LOCAL_LLM: LocalLlmConfig = {
   provider: "zhipu",
   model: "glm-4",
   apiKey: "",
+  baseUrl: "",
 };
 
 export const LOCAL_PROVIDERS = [
@@ -41,6 +43,7 @@ export async function loadLocalLlm(): Promise<LocalLlmConfig> {
       provider: parsed.provider || DEFAULT_LOCAL_LLM.provider,
       model: parsed.model || DEFAULT_LOCAL_LLM.model,
       apiKey: parsed.apiKey || "",
+      baseUrl: parsed.baseUrl || "",
     };
   } catch {
     return { ...DEFAULT_LOCAL_LLM };
@@ -61,6 +64,7 @@ export async function localLlmOverride(): Promise<{
   provider: string;
   model: string;
   api_key: string;
+  base_url?: string;
 } | null> {
   const cfg = await loadLocalLlm();
   if (!cfg.apiKey.trim()) return null;
@@ -68,5 +72,6 @@ export async function localLlmOverride(): Promise<{
     provider: cfg.provider,
     model: cfg.model,
     api_key: cfg.apiKey.trim(),
+    ...(cfg.baseUrl.trim() ? { base_url: cfg.baseUrl.trim() } : {}),
   };
 }

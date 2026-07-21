@@ -61,11 +61,13 @@ def ensure_sqlite_columns() -> None:
     if "users" in tables:
         ucols = {c["name"] for c in inspector.get_columns("users")}
         if "llm_provider" not in ucols:
-            alters.append("ALTER TABLE users ADD COLUMN llm_provider VARCHAR(32)")
+            alters.append("ALTER TABLE users ADD COLUMN llm_provider VARCHAR(64)")
         if "llm_api_key" not in ucols:
             alters.append("ALTER TABLE users ADD COLUMN llm_api_key VARCHAR(256)")
         if "llm_model" not in ucols:
-            alters.append("ALTER TABLE users ADD COLUMN llm_model VARCHAR(64)")
+            alters.append("ALTER TABLE users ADD COLUMN llm_model VARCHAR(128)")
+        if "llm_base_url" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN llm_base_url VARCHAR(512)")
 
     if alters:
         with engine.begin() as conn:

@@ -3,9 +3,11 @@
 启动: uvicorn app.main:app --reload --port 8000
 """
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
 from app.core.config import get_settings
@@ -31,6 +33,12 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# 侧载 APK / 版本文件：/static/android/...
+_static_dir = Path(__file__).resolve().parent.parent / "static"
+_static_dir.mkdir(parents=True, exist_ok=True)
+(_static_dir / "android").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
 @app.on_event("startup")

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { createApiClient } from "@travel-guide/shared";
+import { getApiBase } from "./config";
 
 const TOKEN_KEY = "travel_guide_token";
 
@@ -8,11 +9,16 @@ const TOKEN_KEY = "travel_guide_token";
  * 与 Web 共用同一 FastAPI。
  * - Expo Web / iOS 模拟器：127.0.0.1
  * - Android 模拟器：10.0.2.2（指向电脑本机）
- * - 真机：必须设 EXPO_PUBLIC_API_BASE=http://<电脑局域网IP>:8000/api/v1
+ * - 真机 / 正式包：必须设 EXPO_PUBLIC_API_BASE（或 app.config extra.apiBase）
  */
 function defaultApiBase(): string {
-  if (process.env.EXPO_PUBLIC_API_BASE) {
-    return process.env.EXPO_PUBLIC_API_BASE.replace(/\/$/, "");
+  const fromEnvOrExtra = (
+    process.env.EXPO_PUBLIC_API_BASE ||
+    getApiBase() ||
+    ""
+  ).trim();
+  if (fromEnvOrExtra) {
+    return fromEnvOrExtra.replace(/\/$/, "");
   }
   if (Platform.OS === "android") {
     return "http://10.0.2.2:8000/api/v1";

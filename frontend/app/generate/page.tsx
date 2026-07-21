@@ -493,13 +493,25 @@ function GenerateContent() {
                                 href={t.url}
                                 target="_blank"
                                 rel="noreferrer"
+                                onClick={(e) => {
+                                  if (label !== "小红书") return;
+                                  const app = t.meta?.app_url;
+                                  if (!app) return;
+                                  e.preventDefault();
+                                  window.location.href = app;
+                                  window.setTimeout(() => {
+                                    if (document.visibilityState === "visible") {
+                                      window.open(t.url, "_blank", "noopener,noreferrer");
+                                    }
+                                  }, 1200);
+                                }}
                                 className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] px-3 py-2.5 hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
                               >
                                 <span className="text-[14px] font-medium text-[var(--ink)] truncate">
                                   {t.title}
                                 </span>
                                 <span className="shrink-0 text-[12px] font-semibold text-[var(--brand)]">
-                                  打开 →
+                                  {label === "小红书" ? "App / 网页 →" : "打开 →"}
                                 </span>
                               </a>
                             </li>

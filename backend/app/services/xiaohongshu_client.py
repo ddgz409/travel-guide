@@ -1,23 +1,23 @@
-"""小红书参考：返回可在浏览器打开的搜索入口（不做笔记爬取）。
+"""小红书参考：返回网页搜索入口 + App 深链（客户端优先唤起 App）。"""
 
-官方 search_result 在 App 外经常无效，改用「网页搜索 + 站内关键字」双保险链接。
-"""
 from typing import Any
 from urllib.parse import quote
 
 
-def _xhs_search_url(keyword: str) -> str:
-    """尽量兼容手机浏览器打开的小红书搜索页。"""
+def _xhs_web_url(keyword: str) -> str:
+    """官网搜索页（系统浏览器打开；内置 WebView 常被拦成空白）。"""
     kw = quote(keyword.strip())
-    # type=51 笔记；附带 source，降低直接 404/空白概率
-    return (
-        f"https://www.xiaohongshu.com/search_result"
-        f"?keyword={kw}&type=51&source=web_search_result_notes"
-    )
+    return f"https://www.xiaohongshu.com/search_result?keyword={kw}"
+
+
+def _xhs_app_url(keyword: str) -> str:
+    """小红书 App 搜索结果深链。"""
+    kw = quote(keyword.strip())
+    return f"xhsdiscover://search/result?keyword={kw}"
 
 
 def search_xiaohongshu(destination: str, max_results: int = 6) -> list[dict[str, Any]]:
-    """返回目的地相关的小红书搜索入口链接。"""
+    """返回目的地相关的小红书搜索入口（网页 url + app 深链）。"""
     dest = (destination or "").strip() or "旅游"
     queries = [
         (f"{dest}旅游攻略", f"{dest} 旅游攻略", f"小红书上关于{dest}的行程与避坑笔记"),
@@ -33,7 +33,11 @@ def search_xiaohongshu(destination: str, max_results: int = 6) -> list[dict[str,
             "source": "xiaohongshu",
             "title": title,
             "snippet": sn,
-            "url": _xhs_search_url(kw),
-            "meta": {"portal": True},
+            "url": _xhs_web_url(kw),
+            "meta": {
+                "portal": True,
+                "keyword": kw,
+                "app_url": _xhs_app_url(kw),
+            },
         })
     return tips

@@ -14,6 +14,7 @@ export interface LlmProviderOption {
 export interface LlmSettings {
   provider: string;
   model: string;
+  base_url?: string | null;
   has_api_key: boolean;
   api_key_hint?: string | null;
   using_server_default: boolean;
@@ -27,6 +28,8 @@ export interface LlmSettingsUpdate {
   model?: string | null;
   /** null=不改；""=清除改用服务器默认 */
   api_key?: string | null;
+  /** null=不改；""=清除 */
+  base_url?: string | null;
 }
 
 export interface Token {
@@ -125,6 +128,8 @@ export interface ExternalTip {
     price?: string;
     likes?: string;
     portal?: boolean;
+    keyword?: string;
+    app_url?: string;
   } | null;
 }
 

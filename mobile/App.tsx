@@ -1,10 +1,11 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
+import { maybePromptUpdateOnLaunch } from "./src/appUpdate";
 import type { AppStackParamList } from "./src/navigation/types";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -92,6 +93,14 @@ function RootNavigator() {
 
 function Root() {
   const { loading } = useAuth();
+
+  useEffect(() => {
+    if (loading) return;
+    const t = setTimeout(() => {
+      void maybePromptUpdateOnLaunch();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   if (loading) {
     return (

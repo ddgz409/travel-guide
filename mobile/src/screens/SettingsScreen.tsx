@@ -14,6 +14,11 @@ import type { LlmSettings } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import * as Location from "expo-location";
 import { api } from "../api";
+import {
+  currentVersionCode,
+  currentVersionName,
+  promptCheckUpdate,
+} from "../appUpdate";
 import { useAuth } from "../auth/AuthContext";
 import {
   LOCAL_MODELS,
@@ -37,6 +42,8 @@ export function SettingsScreen({ navigation }: Props) {
   const [settings, setSettings] = useState<LlmSettings | null>(null);
   const [provider, setProvider] = useState("zhipu");
   const [model, setModel] = useState("glm-4");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [customProvider, setCustomProvider] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [hasSavedKey, setHasSavedKey] = useState(false);
@@ -47,6 +54,7 @@ export function SettingsScreen({ navigation }: Props) {
   const [ok, setOk] = useState<string | null>(null);
   const [locationConsent, setLocationConsent] =
     useState<LocationConsent>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,15 +66,22 @@ export function SettingsScreen({ navigation }: Props) {
           const data = await api.auth.getLlmSettings();
           if (cancelled) return;
           setSettings(data);
-          setProvider(data.provider || "zhipu");
+          const p = data.provider || "zhipu";
+          const known = (data.available_providers || []).some((x) => x.id === p);
+          setProvider(p);
           setModel(data.model || "glm-4");
+          setBaseUrl(data.base_url || "");
+          setCustomProvider(!known);
           setHasSavedKey(data.has_api_key);
           setKeyHint(data.api_key_hint || null);
         } else {
           const local = await loadLocalLlm();
           if (cancelled) return;
+          const known = LOCAL_PROVIDERS.some((x) => x.id === local.provider);
           setProvider(local.provider);
           setModel(local.model);
+          setBaseUrl(local.baseUrl || "");
+          setCustomProvider(!known);
           setHasSavedKey(Boolean(local.apiKey));
           setKeyHint(local.apiKey ? `****${local.apiKey.slice(-4)}` : null);
         }
@@ -106,15 +121,32 @@ export function SettingsScreen({ navigation }: Props) {
     return LOCAL_PROVIDERS;
   }, [settings]);
 
-  const modelOptions = useMemo(() => {
-    const list =
+  const presetModels = useMemo(() => {
+    return (
       settings?.suggested_models?.[provider] ||
       LOCAL_MODELS[provider] ||
-      ["glm-4"];
-    return model && !list.includes(model) ? [model, ...list] : list;
-  }, [settings, provider, model]);
+      ["glm-4"]
+    );
+  }, [settings, provider]);
+
+  const isCustomModel = Boolean(model) && !presetModels.includes(model);
 
   async function onSave() {
+    const modelName = model.trim();
+    const providerId = provider.trim().toLowerCase();
+    const bu = baseUrl.trim().replace(/\/+$/, "");
+    if (!providerId) {
+      setError("请选择提供商，或输入自定义提供商 ID");
+      return;
+    }
+    if (customProvider && !bu) {
+      setError("自定义提供商需填写 Base URL");
+      return;
+    }
+    if (!modelName) {
+      setError("请选择或输入模型名称");
+      return;
+    }
     setSaving(true);
     setError(null);
     setOk(null);
@@ -123,14 +155,20 @@ export function SettingsScreen({ navigation }: Props) {
         const payload: {
           provider: string;
           model: string;
+          base_url: string;
           api_key?: string;
-        } = { provider, model };
+        } = {
+          provider: providerId,
+          model: modelName,
+          base_url: customProvider ? bu : "",
+        };
         if (clearKey) payload.api_key = "";
         else if (apiKey.trim()) payload.api_key = apiKey.trim();
         const data = await api.auth.updateLlmSettings(payload);
         setSettings(data);
         setHasSavedKey(data.has_api_key);
         setKeyHint(data.api_key_hint || null);
+        setBaseUrl(data.base_url || "");
         setApiKey("");
         setClearKey(false);
         setOk("已保存到账号。之后生成将使用你的 LLM API。");
@@ -140,9 +178,10 @@ export function SettingsScreen({ navigation }: Props) {
         if (clearKey) nextKey = "";
         else if (apiKey.trim()) nextKey = apiKey.trim();
         const next: LocalLlmConfig = {
-          provider,
-          model,
+          provider: providerId,
+          model: modelName,
           apiKey: nextKey,
+          baseUrl: customProvider ? bu : "",
         };
         await saveLocalLlm(next);
         setHasSavedKey(Boolean(next.apiKey));
@@ -208,6 +247,31 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
       </View>
 
+      <View style={styles.locCard}>
+        <Text style={styles.locTitle}>应用更新</Text>
+        <Text style={styles.locSub}>
+          当前版本 {currentVersionName()}（{currentVersionCode() || "—"}
+          ）。有新版本时可下载安装包更新。
+        </Text>
+        <View style={styles.locRow}>
+          <Text style={styles.locStatus}>检查服务器版本</Text>
+          <Pressable
+            style={[styles.locBtn, checkingUpdate && { opacity: 0.7 }]}
+            disabled={checkingUpdate}
+            onPress={() => {
+              setCheckingUpdate(true);
+              void promptCheckUpdate().finally(() => setCheckingUpdate(false));
+            }}
+          >
+            {checkingUpdate ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.locBtnText}>检查更新</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+
       <Text style={styles.title}>LLM / 模型设置</Text>
       <Text style={styles.sub}>
         {user
@@ -229,13 +293,15 @@ export function SettingsScreen({ navigation }: Props) {
       <Text style={styles.label}>提供商</Text>
       <View style={styles.chips}>
         {providers.map((p) => {
-          const on = provider === p.id;
+          const on = !customProvider && provider === p.id;
           return (
             <Pressable
               key={p.id}
               style={[styles.chip, on && styles.chipOn]}
               onPress={() => {
+                setCustomProvider(false);
                 setProvider(p.id);
+                setBaseUrl("");
                 const first =
                   settings?.suggested_models?.[p.id]?.[0] ||
                   LOCAL_MODELS[p.id]?.[0];
@@ -248,11 +314,50 @@ export function SettingsScreen({ navigation }: Props) {
             </Pressable>
           );
         })}
+        <Pressable
+          style={[styles.chip, customProvider && styles.chipOn]}
+          onPress={() => {
+            setCustomProvider(true);
+            if (!customProvider) {
+              setProvider("");
+              setModel("");
+            }
+          }}
+        >
+          <Text style={[styles.chipText, customProvider && styles.chipTextOn]}>
+            自定义
+          </Text>
+        </Pressable>
       </View>
+      {customProvider ? (
+        <>
+          <TextInput
+            style={[styles.input, { marginTop: 10 }]}
+            value={provider}
+            onChangeText={setProvider}
+            placeholder="提供商 ID，如 moonshot / qwen"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            style={[styles.input, { marginTop: 10 }]}
+            value={baseUrl}
+            onChangeText={setBaseUrl}
+            placeholder="Base URL，如 https://api.moonshot.cn/v1"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={styles.hint}>
+            需为 OpenAI 兼容的 Chat Completions 接口地址
+          </Text>
+        </>
+      ) : null}
 
       <Text style={styles.label}>模型</Text>
       <View style={styles.chips}>
-        {modelOptions.map((m) => {
+        {presetModels.map((m) => {
           const on = model === m;
           return (
             <Pressable
@@ -264,7 +369,29 @@ export function SettingsScreen({ navigation }: Props) {
             </Pressable>
           );
         })}
+        <Pressable
+          style={[styles.chip, isCustomModel && styles.chipOn]}
+          onPress={() => {
+            if (!isCustomModel) setModel("");
+          }}
+        >
+          <Text style={[styles.chipText, isCustomModel && styles.chipTextOn]}>
+            自定义
+          </Text>
+        </Pressable>
       </View>
+      <TextInput
+        style={[styles.input, { marginTop: 10 }]}
+        value={model}
+        onChangeText={setModel}
+        placeholder="自定义模型名，如 glm-4.5 / deepseek-reasoner"
+        placeholderTextColor={colors.muted}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <Text style={styles.hint}>
+        可点选上方预设，或直接输入提供商文档中的模型 ID
+      </Text>
 
       <Text style={styles.label}>API Key</Text>
       <TextInput

@@ -83,6 +83,32 @@ export function FadeSlideIn({ children, delay = 0, style }: FadeSlideProps) {
   );
 }
 
+/** 内容切换时淡出旧块、淡入新块（路线方案 / 日期切换） */
+export function FadeSwitch({
+  switchKey,
+  children,
+  style,
+  durationIn = 380,
+  durationOut = 220,
+}: {
+  switchKey: string | number;
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  durationIn?: number;
+  durationOut?: number;
+}) {
+  return (
+    <Animated.View
+      key={String(switchKey)}
+      entering={FadeIn.duration(durationIn).easing(EASE_OUT)}
+      exiting={FadeOut.duration(durationOut).easing(EASE_OUT)}
+      style={style}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 /** Hero 交叉淡入：当前图 opacity 1，其它 0，切换时 timing */
 export function CrossfadeImage({
   active,

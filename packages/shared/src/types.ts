@@ -14,6 +14,7 @@ export interface LlmProviderOption {
 export interface LlmSettings {
   provider: string;
   model: string;
+  base_url?: string | null;
   has_api_key: boolean;
   api_key_hint?: string | null;
   using_server_default: boolean;
@@ -26,12 +27,24 @@ export interface LlmSettingsUpdate {
   provider?: string | null;
   model?: string | null;
   api_key?: string | null;
+  /** null=不改；""=清除 */
+  base_url?: string | null;
 }
 
 export interface Token {
   access_token: string;
   token_type: string;
   user: User;
+}
+
+/** Android 侧载包版本检查 */
+export interface AndroidUpdateInfo {
+  versionCode: number;
+  versionName: string;
+  apkUrl: string;
+  notes: string;
+  force: boolean;
+  apkAvailable: boolean;
 }
 
 export type TimeSlot = "morning" | "afternoon" | "evening";
@@ -124,6 +137,8 @@ export interface ExternalTip {
     price?: string;
     likes?: string;
     portal?: boolean;
+    keyword?: string;
+    app_url?: string;
   } | null;
 }
 
@@ -222,6 +237,7 @@ export interface GenerateRequest {
     provider?: string | null;
     model?: string | null;
     api_key?: string | null;
+    base_url?: string | null;
   } | null;
 }
 

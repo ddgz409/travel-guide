@@ -14,6 +14,9 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<LlmSettings | null>(null);
   const [provider, setProvider] = useState("zhipu");
   const [model, setModel] = useState("glm-4");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [customProvider, setCustomProvider] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -33,8 +36,15 @@ export default function SettingsPage() {
         const data = await authApi.getLlmSettings();
         if (cancelled) return;
         setSettings(data);
-        setProvider(data.provider || "zhipu");
-        setModel(data.model || "glm-4");
+        const p = data.provider || "zhipu";
+        const m = data.model || "glm-4";
+        const known = (data.available_providers || []).some((x) => x.id === p);
+        setProvider(p);
+        setModel(m);
+        setBaseUrl(data.base_url || "");
+        setCustomProvider(!known);
+        const presets = data.suggested_models?.[p] || [];
+        setCustomMode(Boolean(m) && !presets.includes(m));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "加载失败");
@@ -48,22 +58,42 @@ export default function SettingsPage() {
     };
   }, [authLoading, user, router]);
 
-  const modelOptions = useMemo(() => {
-    const list = settings?.suggested_models?.[provider] || ["glm-4"];
-    return model && !list.includes(model) ? [model, ...list] : list;
-  }, [settings, provider, model]);
+  const presetModels = useMemo(() => {
+    if (customProvider) return [];
+    return settings?.suggested_models?.[provider] || ["glm-4"];
+  }, [settings, provider, customProvider]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setOk(null);
+    const modelName = model.trim();
+    const providerId = provider.trim().toLowerCase();
+    const bu = baseUrl.trim().replace(/\/+$/, "");
+    if (!providerId) {
+      setError("请选择提供商，或输入自定义提供商 ID");
+      return;
+    }
+    if (customProvider && !bu) {
+      setError("自定义提供商需填写 Base URL");
+      return;
+    }
+    if (!modelName) {
+      setError("请选择预设模型，或输入自定义模型名");
+      return;
+    }
     setSaving(true);
     try {
       const payload: {
         provider: string;
         model: string;
+        base_url: string;
         api_key?: string;
-      } = { provider, model };
+      } = {
+        provider: providerId,
+        model: modelName,
+        base_url: customProvider ? bu : "",
+      };
       if (clearKey) {
         payload.api_key = "";
       } else if (apiKey.trim()) {
@@ -73,6 +103,13 @@ export default function SettingsPage() {
       setSettings(data);
       setApiKey("");
       setClearKey(false);
+      setBaseUrl(data.base_url || "");
+      const known = (data.available_providers || []).some(
+        (x) => x.id === data.provider,
+      );
+      setCustomProvider(!known);
+      const presets = data.suggested_models?.[data.provider] || [];
+      setCustomMode(!presets.includes(modelName));
       setOk("已保存。之后生成攻略将使用此配置。");
     } catch (err) {
       const msg =
@@ -102,8 +139,7 @@ export default function SettingsPage() {
           LLM 设置
         </h1>
         <p className="text-[var(--muted)] mb-6 text-sm">
-          默认智谱 <span className="font-semibold text-[var(--ink)]">glm-4</span>
-          ，也可自填 Key，切换智谱 / 豆包 / MiMo / DeepSeek。
+          可选预设提供商与模型，也可自定义 OpenAI 兼容接口。
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -111,46 +147,134 @@ export default function SettingsPage() {
             <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
               提供商
             </label>
-            <select
-              value={provider}
-              onChange={(e) => {
-                const p = e.target.value;
-                setProvider(p);
-                const first = settings?.suggested_models?.[p]?.[0];
-                if (first) setModel(first);
-              }}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)] bg-white"
-            >
-              {(settings?.available_providers || []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(settings?.available_providers || []).map((p) => {
+                const on = !customProvider && provider === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setCustomProvider(false);
+                      setProvider(p.id);
+                      setBaseUrl("");
+                      const first = settings?.suggested_models?.[p.id]?.[0];
+                      if (first) {
+                        setModel(first);
+                        setCustomMode(false);
+                      }
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-[13px] border transition-colors ${
+                      on
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)] font-semibold"
+                        : "border-[var(--line)] bg-[var(--background)] text-[var(--ink)] hover:border-[var(--brand)]/50"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomProvider(true);
+                  if (!customProvider) {
+                    setProvider("");
+                    setModel("");
+                    setCustomMode(true);
+                  }
+                }}
+                className={`rounded-full px-3 py-1.5 text-[13px] border transition-colors ${
+                  customProvider
+                    ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)] font-semibold"
+                    : "border-[var(--line)] bg-[var(--background)] text-[var(--ink)] hover:border-[var(--brand)]/50"
+                }`}
+              >
+                自定义
+              </button>
+            </div>
+            {customProvider && (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+                  placeholder="提供商 ID，如 moonshot / qwen"
+                  autoComplete="off"
+                />
+                <input
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+                  placeholder="Base URL，如 https://api.moonshot.cn/v1"
+                  autoComplete="off"
+                />
+                <p className="text-[12px] text-[var(--muted)]">
+                  需为 OpenAI 兼容的 Chat Completions 接口地址
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
               模型
             </label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)] bg-white mb-2"
-            >
-              {modelOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+            {presetModels.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {presetModels.map((m) => {
+                  const on = !customMode && model === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setCustomMode(false);
+                        setModel(m);
+                      }}
+                      className={`rounded-full px-3 py-1.5 text-[13px] border transition-colors ${
+                        on
+                          ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)] font-semibold"
+                          : "border-[var(--line)] bg-[var(--background)] text-[var(--ink)] hover:border-[var(--brand)]/50"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomMode(true);
+                    if (presetModels.includes(model)) setModel("");
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-[13px] border transition-colors ${
+                    customMode
+                      ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)] font-semibold"
+                      : "border-[var(--line)] bg-[var(--background)] text-[var(--ink)] hover:border-[var(--brand)]/50"
+                  }`}
+                >
+                  自定义
+                </button>
+              </div>
+            )}
             <input
               type="text"
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={(e) => {
+                setModel(e.target.value);
+                setCustomMode(true);
+              }}
+              onFocus={() => setCustomMode(true)}
               className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
-              placeholder="或手动输入，如 glm-5.2"
+              placeholder="自定义模型名，如 glm-4.5 / deepseek-reasoner"
+              autoComplete="off"
             />
+            <p className="mt-2 text-[12px] text-[var(--muted)]">
+              点选预设，或在输入框填写任意模型 ID（需与提供商一致）
+            </p>
           </div>
 
           <div>
@@ -189,7 +313,7 @@ export default function SettingsPage() {
               {settings?.using_server_default
                 ? "当前：使用服务器默认 Key"
                 : "当前：使用你保存的 Key"}
-              {provider === "zhipu" && (
+              {!customProvider && provider === "zhipu" && (
                 <>
                   {" · "}
                   <a
@@ -202,7 +326,7 @@ export default function SettingsPage() {
                   </a>
                 </>
               )}
-              {provider === "doubao" && (
+              {!customProvider && provider === "doubao" && (
                 <>
                   {" · "}
                   <a
@@ -215,7 +339,7 @@ export default function SettingsPage() {
                   </a>
                 </>
               )}
-              {provider === "mimo" && (
+              {!customProvider && provider === "mimo" && (
                 <>
                   {" · "}
                   <a
@@ -228,7 +352,7 @@ export default function SettingsPage() {
                   </a>
                 </>
               )}
-              {provider === "deepseek" && (
+              {!customProvider && provider === "deepseek" && (
                 <>
                   {" · "}
                   <a

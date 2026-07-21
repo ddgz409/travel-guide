@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   Image,
@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { citiesGrouped } from "../cities";
 import { loadLocalLlm } from "../llmStore";
 import {
   AnimatedDot,
@@ -130,9 +131,13 @@ export function HomeScreen({ navigation }: Props) {
   const { user, isGuest, enterGuest } = useAuth();
   const [slide, setSlide] = useState(0);
   const [q, setQ] = useState("");
+  const [searchFocus, setSearchFocus] = useState(false);
   const [llmStatus, setLlmStatus] = useState("检测 LLM 配置…");
   const heroRef = useRef<ScrollView>(null);
   const pauseAutoUntil = useRef(0);
+
+  const cityGroups = useMemo(() => citiesGrouped(q), [q]);
+  const showCityPanel = searchFocus || q.trim().length > 0;
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -277,7 +282,12 @@ export function HomeScreen({ navigation }: Props) {
               style={styles.searchInput}
               value={q}
               onChangeText={setQ}
-              placeholder="搜目的地，如：北京、大理"
+              onFocus={() => setSearchFocus(true)}
+              onBlur={() => {
+                // 稍延后，方便点选城市
+                setTimeout(() => setSearchFocus(false), 180);
+              }}
+              placeholder="搜目的地，或从下方选城市"
               placeholderTextColor={colors.muted}
               returnKeyType="search"
               onSubmitEditing={() => {
@@ -293,6 +303,53 @@ export function HomeScreen({ navigation }: Props) {
               <Text style={styles.searchBtnText}>搜索</Text>
             </Pressable>
           </View>
+
+          {showCityPanel ? (
+            <View style={styles.cityPanel}>
+              <Text style={styles.cityPanelTitle}>快捷城市 · 按首字母</Text>
+              <ScrollView
+                style={styles.cityScroll}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
+                {cityGroups.length === 0 ? (
+                  <Text style={styles.cityEmpty}>没有匹配城市，可直接搜索</Text>
+                ) : (
+                  cityGroups.map(([letter, cities]) => (
+                    <View key={letter} style={styles.cityGroup}>
+                      <Text style={styles.cityLetter}>{letter}</Text>
+                      <View style={styles.cityChips}>
+                        {cities.map((name) => (
+                          <PressScale
+                            key={name}
+                            scaleTo={0.96}
+                            style={[
+                              styles.cityChip,
+                              q.trim() === name && styles.cityChipOn,
+                            ]}
+                            onPress={() => {
+                              setQ(name);
+                              setSearchFocus(false);
+                              void goGenerate(name);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.cityChipText,
+                                q.trim() === name && styles.cityChipTextOn,
+                              ]}
+                            >
+                              {name}
+                            </Text>
+                          </PressScale>
+                        ))}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          ) : null}
         </FadeSlideIn>
 
         <FadeSlideIn delay={140} style={styles.shortcuts}>
@@ -496,6 +553,45 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   searchBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  cityPanel: {
+    marginTop: 10,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 12,
+    maxHeight: 280,
+  },
+  cityPanelTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted,
+    marginBottom: 8,
+  },
+  cityScroll: { maxHeight: 230 },
+  cityEmpty: { fontSize: 13, color: colors.muted, paddingVertical: 8 },
+  cityGroup: { marginBottom: 10 },
+  cityLetter: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.brandHot,
+    marginBottom: 6,
+  },
+  cityChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  cityChip: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cityChipOn: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
+  cityChipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
+  cityChipTextOn: { color: colors.brandHot },
   shortcuts: {
     marginTop: 16,
     marginHorizontal: 20,

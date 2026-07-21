@@ -130,7 +130,7 @@ class TripGenerateRequest(BaseModel):
     )
     llm: dict | None = Field(
         default=None,
-        description="可选：本次生成使用的 LLM {provider, model, api_key}（游客自带 Key）",
+        description="可选：本次生成使用的 LLM {provider, model, api_key, base_url}（游客自带 Key）",
     )
 
     model_config = ConfigDict(json_schema_extra={

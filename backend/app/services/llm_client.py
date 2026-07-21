@@ -115,12 +115,27 @@ class LLMClient:
         base_url: str | None = None,
     ) -> None:
         self.provider = (provider or settings.LLM_PROVIDER or DEFAULT_PROVIDER).strip().lower()
-        if self.provider not in PROVIDER_PRESETS:
-            raise LLMError(
-                f"未知 LLM_PROVIDER={self.provider!r}，可选: {', '.join(PROVIDER_PRESETS)}"
-            )
+        explicit_base = (base_url or "").strip().rstrip("/")
+        is_preset = self.provider in PROVIDER_PRESETS
 
-        preset = PROVIDER_PRESETS[self.provider]
+        if is_preset:
+            preset = PROVIDER_PRESETS[self.provider]
+            self.label = preset["label"]
+            self.base_url = (
+                explicit_base
+                or (settings.LLM_BASE_URL or "").strip().rstrip("/")
+                or preset["base_url"]
+            ).rstrip("/")
+        else:
+            # 自定义 OpenAI 兼容提供商：必须提供 base_url
+            if not explicit_base:
+                raise LLMError(
+                    f"自定义提供商 {self.provider!r} 需填写 Base URL（OpenAI 兼容接口）"
+                )
+            preset = {"model": "gpt-4o-mini", "label": self.provider}
+            self.label = f"自定义（{self.provider}）"
+            self.base_url = explicit_base
+
         # api_key 显式传入非空 → 用用户 key；否则回退服务器 .env
         if api_key and api_key.strip():
             self.api_key = api_key.strip()
@@ -131,7 +146,7 @@ class LLMClient:
         server_provider = (settings.LLM_PROVIDER or DEFAULT_PROVIDER).strip().lower()
         if explicit_model:
             self.model = explicit_model
-        elif self.provider == server_provider:
+        elif is_preset and self.provider == server_provider:
             # 仅当与服务器默认提供商一致时，才用 .env 的 LLM_MODEL
             self.model = (
                 (settings.LLM_MODEL or "").strip()
@@ -142,11 +157,6 @@ class LLMClient:
         else:
             self.model = preset["model"]
 
-        self.base_url = (
-            (base_url or settings.LLM_BASE_URL or preset["base_url"]).rstrip("/")
-        )
-        self.label = preset["label"]
-
     @classmethod
     def for_user(cls, user: "User | None") -> "LLMClient":
         """按用户设置构造客户端；无用户或未配置则用服务器默认。"""
@@ -155,7 +165,8 @@ class LLMClient:
         provider = (getattr(user, "llm_provider", None) or "").strip() or None
         model = (getattr(user, "llm_model", None) or "").strip() or None
         key = (getattr(user, "llm_api_key", None) or "").strip() or None
-        return cls(provider=provider, api_key=key, model=model)
+        base = (getattr(user, "llm_base_url", None) or "").strip() or None
+        return cls(provider=provider, api_key=key, model=model, base_url=base)
 
     def _resolve_server_api_key(self) -> str:
         if settings.LLM_API_KEY:
@@ -275,9 +286,13 @@ def effective_llm_settings(user: "User | None") -> dict[str, Any]:
     """供设置页展示的有效配置（不返回完整 key）。"""
     client = LLMClient.for_user(user)
     user_key = (getattr(user, "llm_api_key", None) or "").strip() if user else ""
+    user_base = (getattr(user, "llm_base_url", None) or "").strip() if user else ""
     return {
         "provider": client.provider,
         "model": client.model,
+        "base_url": user_base or (
+            None if client.provider in PROVIDER_PRESETS else client.base_url
+        ),
         "has_api_key": bool(user_key),
         "api_key_hint": mask_api_key(user_key) if user_key else None,
         "using_server_default": not bool(user_key),

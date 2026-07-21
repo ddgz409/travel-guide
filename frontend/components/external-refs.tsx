@@ -2,13 +2,40 @@
 
 import type { ExternalRefs, ExternalTip } from "@/lib/types";
 
+function openTip(t: ExternalTip, e: React.MouseEvent) {
+  e.preventDefault();
+  const web = t.url;
+  const app = t.meta?.app_url;
+  const keyword = t.meta?.keyword || t.title;
+  const isXhs =
+    t.source === "xiaohongshu" || /xiaohongshu\.com/i.test(web || "");
+
+  if (isXhs && app) {
+    // 先尝试唤起 App；仍留在浏览器再打开网页
+    window.location.href = app;
+    window.setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        window.open(
+          web ||
+            `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      }
+    }, 1200);
+    return;
+  }
+
+  if (web) window.open(web, "_blank", "noopener,noreferrer");
+}
+
 function TipList({ tips, empty }: { tips: ExternalTip[]; empty: string }) {
   if (!tips?.length) {
     return (
       <p className="text-sm text-gray-400">
         {empty}
         <span className="block mt-1 text-xs">
-          站点反爬较强时可能抓不到公开笔记，可稍后重新生成重试。
+          可点链接打开小红书 App 或网页搜索。
         </span>
       </p>
     );
@@ -21,6 +48,7 @@ function TipList({ tips, empty }: { tips: ExternalTip[]; empty: string }) {
             href={t.url}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => openTip(t, e)}
             className="font-medium text-orange-600 hover:underline"
           >
             {t.title}

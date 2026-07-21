@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,11 +20,12 @@ import type {
   QuickRecommendCard,
 } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import * as WebBrowser from "expo-web-browser";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { landmarksFor } from "../landmarks";
 import { localLlmOverride } from "../llmStore";
+import { FadeSlideIn, FadeSwitch, PressScale } from "../motion";
+import { openExternal } from "../openExternal";
 import { colors } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
 
@@ -33,13 +33,6 @@ type Props = NativeStackScreenProps<AppStackParamList, "Generate">;
 type DateField = "start" | "end";
 type GenMode = "quick" | "custom";
 
-async function openTip(url: string) {
-  try {
-    await WebBrowser.openBrowserAsync(url);
-  } catch {
-    await Linking.openURL(url);
-  }
-}
 
 const INTERESTS = [
   "文化",
@@ -127,7 +120,9 @@ export function GenerateScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quickCards, setQuickCards] = useState<QuickRecommendCard[]>([]);
+  const [keyboardPad, setKeyboardPad] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const daysCount = useMemo(() => {
     if (!startDate || !endDate || endDate < startDate) return 0;
@@ -141,27 +136,47 @@ export function GenerateScreen({ navigation, route }: Props) {
     [destination],
   );
 
+  function scrollPoiIntoView() {
+    // 只轻微滚动，避免把搜索框顶出可视区
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+  }
+
+  useEffect(() => {
+    const showEvt =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardPad(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardPad(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // 输入关键字即搜索地点（防抖）
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!poiQuery.trim() || poiQuery.trim().length < 2) {
+    const q = poiQuery.trim();
+    if (!q) {
       setPoiResults([]);
       return;
     }
     debounceRef.current = setTimeout(async () => {
       setPoiSearching(true);
       try {
-        const list = await api.trips.searchPois(
-          poiQuery.trim(),
-          destination.trim(),
-          8,
-        );
+        const list = await api.trips.searchPois(q, destination.trim(), 8);
         setPoiResults(list);
       } catch {
         setPoiResults([]);
       } finally {
         setPoiSearching(false);
       }
-    }, 350);
+    }, 280);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -302,16 +317,23 @@ export function GenerateScreen({ navigation, route }: Props) {
       <View style={styles.tipBlock}>
         <Text style={styles.tipBlockTitle}>{title}</Text>
         {tips.map((t) => (
-          <Pressable
+          <PressScale
             key={t.url}
+            scaleTo={0.98}
             style={styles.tipRow}
-            onPress={() => void openTip(t.url)}
+            onPress={() =>
+              void openExternal(
+                t.url,
+                t.title,
+                t.meta as { keyword?: string; app_url?: string } | null,
+              )
+            }
           >
             <Text style={styles.tipTitle} numberOfLines={1}>
               {t.title}
             </Text>
             <Text style={styles.tipGo}>打开 →</Text>
-          </Pressable>
+          </PressScale>
         ))}
       </View>
     );
@@ -320,16 +342,22 @@ export function GenerateScreen({ navigation, route }: Props) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
       <ScrollView
+        ref={scrollRef}
         style={styles.root}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 48 + Math.max(keyboardPad - 40, 0) },
+        ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <Text style={styles.modeLabel}>选择模式</Text>
         <View style={styles.modeRow}>
-          <Pressable
+          <PressScale
             style={[styles.modeCard, genMode === "quick" && styles.modeCardOn]}
             onPress={() => {
               setGenMode("quick");
@@ -345,8 +373,8 @@ export function GenerateScreen({ navigation, route }: Props) {
               快速模式
             </Text>
             <Text style={styles.modeDesc}>秒出小红书 / 携程参考链接</Text>
-          </Pressable>
-          <Pressable
+          </PressScale>
+          <PressScale
             style={[styles.modeCard, genMode === "custom" && styles.modeCardOn]}
             onPress={() => {
               setGenMode("custom");
@@ -362,30 +390,8 @@ export function GenerateScreen({ navigation, route }: Props) {
               专属定制
             </Text>
             <Text style={styles.modeDesc}>AI 生成每日行程与路线</Text>
-          </Pressable>
+          </PressScale>
         </View>
-
-        {genMode === "custom" ? (
-          !user ? (
-            <View style={styles.note}>
-              <Text style={styles.noteText}>
-                可在「设置」填写自己的 LLM API Key；未填则用服务器默认模型。
-              </Text>
-              <Pressable onPress={() => navigation.navigate("Settings")}>
-                <Text style={styles.noteLink}>去配置 LLM API →</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              style={styles.note}
-              onPress={() => navigation.navigate("Settings")}
-            >
-              <Text style={styles.noteText}>
-                已登录：生成优先用账号里的 LLM Key。点此管理 →
-              </Text>
-            </Pressable>
-          )
-        ) : null}
 
         <Text style={styles.label}>目的地</Text>
         <TextInput
@@ -400,251 +406,343 @@ export function GenerateScreen({ navigation, route }: Props) {
         />
         <View style={styles.chips}>
           {QUICK_CITIES.map((c) => (
-            <Pressable
+            <PressScale
               key={c}
+              scaleTo={0.96}
               style={[styles.chip, destination === c && styles.chipOn]}
               onPress={() => {
                 setDestination(c);
                 setQuickCards([]);
               }}
             >
-              <Text style={[styles.chipText, destination === c && styles.chipTextOn]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  destination === c && styles.chipTextOn,
+                ]}
+              >
                 {c}
               </Text>
-            </Pressable>
+            </PressScale>
           ))}
         </View>
 
-        {genMode === "quick" ? (
-          <>
-            <Text style={styles.hint}>
-              不调用模型，立刻给你两套可打开的攻略入口。
-            </Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <Pressable
-              style={[styles.primaryBtn, busy && styles.btnDisabled]}
-              onPress={onQuickRecommend}
-              disabled={busy}
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryBtnText}>查看参考</Text>
-              )}
-            </Pressable>
-            {quickCards.map((card) => (
-              <View key={card.id} style={styles.quickCard}>
-                <Text style={styles.quickCardTitle}>{card.title}</Text>
-                {card.tagline ? (
-                  <Text style={styles.quickCardTag}>{card.tagline}</Text>
-                ) : null}
-                {renderTipList("小红书", card.external_refs?.xiaohongshu || [])}
-                {renderTipList("携程", card.external_refs?.ctrip || [])}
-              </View>
-            ))}
-          </>
-        ) : (
-          <>
-        <Text style={styles.label}>开始日期</Text>
-        <Pressable
-          style={styles.dateBtn}
-          onPress={() => setDatePicker("start")}
-        >
-          <Text style={styles.dateBtnText}>{formatDisplayDate(startDate)}</Text>
-          <Text style={styles.dateBtnHint}>日历选择</Text>
-        </Pressable>
-        <Text style={styles.label}>结束日期</Text>
-        <Pressable style={styles.dateBtn} onPress={() => setDatePicker("end")}>
-          <Text style={styles.dateBtnText}>{formatDisplayDate(endDate)}</Text>
-          <Text style={styles.dateBtnHint}>日历选择</Text>
-        </Pressable>
-        {daysCount > 0 ? (
-          <Text style={styles.hint}>{daysCount} 天行程</Text>
-        ) : null}
-        {datePicker ? (
-          <View style={styles.pickerWrap}>
-            {Platform.OS === "ios" ? (
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>
-                  {datePicker === "start" ? "选择开始日期" : "选择结束日期"}
-                </Text>
-                <Pressable onPress={() => setDatePicker(null)}>
-                  <Text style={styles.pickerDone}>完成</Text>
-                </Pressable>
-              </View>
-            ) : null}
-            <DateTimePicker
-              value={parseISODate(
-                datePicker === "start" ? startDate : endDate,
-              )}
-              mode="date"
-              display={Platform.OS === "ios" ? "inline" : "calendar"}
-              onChange={onDateChange}
-              minimumDate={
-                datePicker === "end" ? parseISODate(startDate) : undefined
-              }
-            />
-          </View>
-        ) : null}
-
-        <Text style={styles.label}>人数</Text>
-        <TextInput
-          style={styles.input}
-          value={travelers}
-          onChangeText={setTravelers}
-          keyboardType="number-pad"
-          placeholderTextColor={colors.muted}
-        />
-
-        <Text style={styles.label}>兴趣偏好</Text>
-        <View style={styles.chips}>
-          {INTERESTS.map((name) => {
-            const on = selected.includes(name);
-            return (
-              <Pressable
-                key={name}
-                style={[styles.chip, on && styles.chipOn]}
-                onPress={() => toggleInterest(name)}
+        <FadeSwitch switchKey={genMode}>
+          {genMode === "quick" ? (
+            <View>
+              <Text style={styles.hint}>
+                不调用模型，立刻给你两套可打开的攻略入口。
+              </Text>
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <PressScale
+                style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                onPress={onQuickRecommend}
+                disabled={busy}
               >
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                  {name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={styles.label}>预算档位</Text>
-        <View style={styles.chips}>
-          {BUDGET_LEVELS.map((b) => {
-            const on = budgetLevel === b.id;
-            return (
-              <Pressable
-                key={b.id}
-                style={[styles.chip, on && styles.chipOn]}
-                onPress={() => setBudgetLevel(b.id)}
-              >
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                  {b.id}
-                </Text>
-                <Text style={styles.chipDesc}>{b.desc}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={styles.label}>交通方式</Text>
-        <View style={styles.chips}>
-          {TRANSPORTS.map((t) => {
-            const on = transport === t;
-            return (
-              <Pressable
-                key={t}
-                style={[styles.chip, on && styles.chipOn]}
-                onPress={() => setTransport(t)}
-              >
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                  {t}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={styles.label}>必去景点（可选）</Text>
-        <Text style={styles.hint}>
-          {destination.trim()
-            ? `点选${destination.trim()}热门景点，或自行搜索`
-            : "先选目的地，再点热门词条添加"}
-        </Text>
-        {localLandmarks.length > 0 ? (
-          <View style={styles.chips}>
-            {localLandmarks.map((name) => {
-              const added = isLandmarkAdded(name);
-              return (
-                <Pressable
-                  key={name}
-                  style={[styles.chip, added && styles.chipOn]}
-                  disabled={added || poiSearching}
-                  onPress={() => pickSuggestedLandmark(name)}
-                >
-                  <Text
-                    style={[styles.chipText, added && styles.chipTextOn]}
-                  >
-                    {added ? `✓ ${name}` : `+ ${name}`}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
-        <View style={[styles.poiRow, { marginTop: 10 }]}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginBottom: 0 }]}
-            value={poiQuery}
-            onChangeText={setPoiQuery}
-            placeholder="搜索其他景点"
-            placeholderTextColor={colors.muted}
-          />
-          <Pressable style={styles.poiAdd} onPress={addFromQuery}>
-            {poiSearching ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.poiAddText}>添加</Text>
-            )}
-          </Pressable>
-        </View>
-        {poiResults.length > 0 ? (
-          <View style={styles.poiList}>
-            {poiResults.map((p) => (
-              <Pressable
-                key={p.poi_id}
-                style={styles.poiItem}
-                onPress={() => addPoi(p)}
-              >
-                <Text style={styles.poiName}>{p.name}</Text>
-                <Text style={styles.poiAddr} numberOfLines={1}>
-                  {p.address}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-        {mustInclude.length > 0 ? (
-          <View style={[styles.chips, { marginTop: 10 }]}>
-            {mustInclude.map((p) => (
-              <Pressable
-                key={p.poi_id}
-                style={[styles.chip, styles.chipOn]}
-                onPress={() =>
-                  setMustInclude((prev) =>
-                    prev.filter((x) => x.poi_id !== p.poi_id),
-                  )
-                }
-              >
-                <Text style={[styles.chipText, styles.chipTextOn]}>
-                  {p.name} ×
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Pressable
-          style={[styles.primaryBtn, busy && styles.btnDisabled]}
-          onPress={onSubmit}
-          disabled={busy}
-        >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
+                {busy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>查看参考</Text>
+                )}
+              </PressScale>
+              {quickCards.map((card, i) => (
+                <FadeSlideIn key={card.id} delay={i * 80}>
+                  <View style={styles.quickCard}>
+                    <Text style={styles.quickCardTitle}>{card.title}</Text>
+                    {card.tagline ? (
+                      <Text style={styles.quickCardTag}>{card.tagline}</Text>
+                    ) : null}
+                    {renderTipList(
+                      "小红书",
+                      card.external_refs?.xiaohongshu || [],
+                    )}
+                    {renderTipList("携程", card.external_refs?.ctrip || [])}
+                  </View>
+                </FadeSlideIn>
+              ))}
+            </View>
           ) : (
-            <Text style={styles.primaryBtnText}>开始专属定制</Text>
+            <View>
+              {user ? (
+                <PressScale
+                  style={styles.note}
+                  onPress={() => navigation.navigate("Settings")}
+                >
+                  <Text style={styles.noteText}>
+                    已登录：生成优先用账号里的 LLM Key。点此管理 →
+                  </Text>
+                </PressScale>
+              ) : (
+                <View style={styles.note}>
+                  <Text style={styles.noteText}>
+                    可在「设置」填写自己的 LLM API Key；未填则用服务器默认模型。
+                  </Text>
+                  <PressScale onPress={() => navigation.navigate("Settings")}>
+                    <Text style={styles.noteLink}>去配置 LLM API →</Text>
+                  </PressScale>
+                </View>
+              )}
+
+              <Text style={styles.label}>开始日期</Text>
+              <PressScale
+                style={styles.dateBtn}
+                onPress={() => setDatePicker("start")}
+              >
+                <Text style={styles.dateBtnText}>
+                  {formatDisplayDate(startDate)}
+                </Text>
+                <Text style={styles.dateBtnHint}>日历选择</Text>
+              </PressScale>
+              <Text style={styles.label}>结束日期</Text>
+              <PressScale
+                style={styles.dateBtn}
+                onPress={() => setDatePicker("end")}
+              >
+                <Text style={styles.dateBtnText}>
+                  {formatDisplayDate(endDate)}
+                </Text>
+                <Text style={styles.dateBtnHint}>日历选择</Text>
+              </PressScale>
+              {daysCount > 0 ? (
+                <Text style={styles.hint}>{daysCount} 天行程</Text>
+              ) : null}
+              {datePicker ? (
+                <View style={styles.pickerWrap}>
+                  {Platform.OS === "ios" ? (
+                    <View style={styles.pickerHeader}>
+                      <Text style={styles.pickerTitle}>
+                        {datePicker === "start"
+                          ? "选择开始日期"
+                          : "选择结束日期"}
+                      </Text>
+                      <PressScale onPress={() => setDatePicker(null)}>
+                        <Text style={styles.pickerDone}>完成</Text>
+                      </PressScale>
+                    </View>
+                  ) : null}
+                  <DateTimePicker
+                    value={parseISODate(
+                      datePicker === "start" ? startDate : endDate,
+                    )}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "inline" : "calendar"}
+                    onChange={onDateChange}
+                    minimumDate={
+                      datePicker === "end"
+                        ? parseISODate(startDate)
+                        : undefined
+                    }
+                  />
+                </View>
+              ) : null}
+
+              <Text style={styles.label}>人数</Text>
+              <TextInput
+                style={styles.input}
+                value={travelers}
+                onChangeText={setTravelers}
+                keyboardType="number-pad"
+                placeholderTextColor={colors.muted}
+              />
+
+              <Text style={styles.label}>兴趣偏好</Text>
+              <View style={styles.chips}>
+                {INTERESTS.map((name) => {
+                  const on = selected.includes(name);
+                  return (
+                    <PressScale
+                      key={name}
+                      scaleTo={0.96}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => toggleInterest(name)}
+                    >
+                      <Text
+                        style={[styles.chipText, on && styles.chipTextOn]}
+                      >
+                        {name}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>预算档位</Text>
+              <View style={styles.chips}>
+                {BUDGET_LEVELS.map((b) => {
+                  const on = budgetLevel === b.id;
+                  return (
+                    <PressScale
+                      key={b.id}
+                      scaleTo={0.96}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setBudgetLevel(b.id)}
+                    >
+                      <Text
+                        style={[styles.chipText, on && styles.chipTextOn]}
+                      >
+                        {b.id}
+                      </Text>
+                      <Text style={styles.chipDesc}>{b.desc}</Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>交通方式</Text>
+              <View style={styles.chips}>
+                {TRANSPORTS.map((t) => {
+                  const on = transport === t;
+                  return (
+                    <PressScale
+                      key={t}
+                      scaleTo={0.96}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setTransport(t)}
+                    >
+                      <Text
+                        style={[styles.chipText, on && styles.chipTextOn]}
+                      >
+                        {t}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
+
+              <View>
+                <Text style={styles.label}>必去景点（可选）</Text>
+                <Text style={styles.hint}>
+                  {destination.trim()
+                    ? `点选${destination.trim()}热门，或输入关键字即时搜索`
+                    : "先选目的地，再搜索当地景点"}
+                </Text>
+                {localLandmarks.length > 0 ? (
+                  <View style={styles.chips}>
+                    {localLandmarks.map((name) => {
+                      const added = isLandmarkAdded(name);
+                      return (
+                        <PressScale
+                          key={name}
+                          scaleTo={0.96}
+                          style={[styles.chip, added && styles.chipOn]}
+                          disabled={added || poiSearching}
+                          onPress={() => void pickSuggestedLandmark(name)}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              added && styles.chipTextOn,
+                            ]}
+                          >
+                            {added ? `✓ ${name}` : `+ ${name}`}
+                          </Text>
+                        </PressScale>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                {mustInclude.length > 0 ? (
+                  <View style={[styles.chips, { marginTop: 10, marginBottom: 4 }]}>
+                    {mustInclude.map((p, i) => (
+                      <FadeSlideIn key={p.poi_id} delay={Math.min(i, 5) * 40}>
+                        <PressScale
+                          scaleTo={0.96}
+                          style={[styles.chip, styles.chipOn]}
+                          onPress={() =>
+                            setMustInclude((prev) =>
+                              prev.filter((x) => x.poi_id !== p.poi_id),
+                            )
+                          }
+                        >
+                          <Text style={[styles.chipText, styles.chipTextOn]}>
+                            {p.name} ×
+                          </Text>
+                        </PressScale>
+                      </FadeSlideIn>
+                    ))}
+                  </View>
+                ) : null}
+
+                <View
+                  style={[
+                    styles.poiSearchBlock,
+                    poiResults.length > 0 ? { marginBottom: 220 } : null,
+                  ]}
+                >
+                  <View style={styles.poiRow}>
+                    <TextInput
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      value={poiQuery}
+                      onChangeText={setPoiQuery}
+                      onFocus={scrollPoiIntoView}
+                      placeholder="输入关键字搜索景点"
+                      placeholderTextColor={colors.muted}
+                      returnKeyType="search"
+                      onSubmitEditing={() => void addFromQuery()}
+                    />
+                    <PressScale style={styles.poiAdd} onPress={addFromQuery}>
+                      {poiSearching ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.poiAddText}>添加</Text>
+                      )}
+                    </PressScale>
+                  </View>
+
+                  {poiQuery.trim() && poiSearching ? (
+                    <Text style={styles.searchHint}>正在搜索地点…</Text>
+                  ) : null}
+                  {poiQuery.trim() &&
+                  !poiSearching &&
+                  poiResults.length === 0 ? (
+                    <Text style={styles.searchHint}>
+                      未找到匹配地点，换个词试试
+                    </Text>
+                  ) : null}
+
+                  {poiResults.length > 0 ? (
+                    <View style={styles.poiDropdown}>
+                      <ScrollView
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled
+                        style={styles.poiDropdownScroll}
+                      >
+                        {poiResults.map((p) => (
+                          <PressScale
+                            key={p.poi_id}
+                            scaleTo={0.98}
+                            style={styles.poiItem}
+                            onPress={() => addPoi(p)}
+                          >
+                            <Text style={styles.poiName}>{p.name}</Text>
+                            <Text style={styles.poiAddr} numberOfLines={1}>
+                              {p.address || "点击添加"}
+                            </Text>
+                          </PressScale>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <PressScale
+                style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                onPress={onSubmit}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>开始专属定制</Text>
+                )}
+              </PressScale>
+            </View>
           )}
-        </Pressable>
-          </>
-        )}
+        </FadeSwitch>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -652,7 +750,12 @@ export function GenerateScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { padding: 20 },
+  searchHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: colors.muted,
+  },
   modeLabel: {
     fontSize: 13,
     color: colors.muted,
@@ -787,6 +890,28 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: "center",
   },
+  poiSearchBlock: {
+    marginTop: 10,
+    position: "relative",
+    zIndex: 30,
+  },
+  poiDropdown: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 56,
+    zIndex: 40,
+    elevation: 12,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  poiDropdownScroll: { maxHeight: 200 },
   poiAdd: {
     backgroundColor: colors.brand,
     borderRadius: 12,
@@ -796,14 +921,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   poiAddText: { color: "#fff", fontWeight: "700" },
-  poiList: {
-    marginTop: 8,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.line,
-    overflow: "hidden",
-  },
   poiItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
