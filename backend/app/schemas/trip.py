@@ -91,6 +91,28 @@ class DayOut(BaseModel):
     items: list[ItemOut] = []
 
 
+class QuickRecommendRequest(BaseModel):
+    """快速参考：仅目的地，不生成行程。"""
+
+    destination: str = Field(min_length=1, max_length=128)
+
+
+class QuickRecommendCard(BaseModel):
+    """快速参考卡片（小红书 + 携程链接）。"""
+
+    id: str
+    title: str
+    tagline: str = ""
+    external_refs: ExternalRefs
+
+
+class QuickRecommendResponse(BaseModel):
+    """快速参考响应：两套入口卡片供选择。"""
+
+    destination: str
+    cards: list[QuickRecommendCard]
+
+
 class TripGenerateRequest(BaseModel):
     """生成攻略请求。"""
 
@@ -105,6 +127,10 @@ class TripGenerateRequest(BaseModel):
     must_include: list[dict] = Field(
         default_factory=list,
         description="用户自选的必去景点列表 [{name, poi_id, location}]",
+    )
+    llm: dict | None = Field(
+        default=None,
+        description="可选：本次生成使用的 LLM {provider, model, api_key}（游客自带 Key）",
     )
 
     model_config = ConfigDict(json_schema_extra={

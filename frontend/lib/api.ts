@@ -5,6 +5,7 @@ import type {
   LlmSettings,
   LlmSettingsUpdate,
   PoiSearchResult,
+  QuickRecommendResponse,
   Token,
   Trip,
   TripListItem,
@@ -128,6 +129,13 @@ export const tripsApi = {
     request<Trip>("/trips/guest-generate", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+
+  /** 快速参考：小红书 / 携程链接，不调模型。 */
+  quickRecommend: (destination: string) =>
+    request<QuickRecommendResponse>("/trips/quick-recommend", {
+      method: "POST",
+      body: JSON.stringify({ destination }),
     }),
 
   list: () => request<TripListItem[]>("/trips"),

@@ -135,3 +135,24 @@ class Item(Base):
     transport_to_next: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     day: Mapped["Day"] = relationship(back_populates="items")
+
+
+class TripGenerationCache(Base):
+    """同词条生成结果缓存（按玩法指纹，不绑定具体用户/日期）。"""
+
+    __tablename__ = "trip_generation_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    destination: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    days_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )

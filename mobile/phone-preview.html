@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>旅迹 · 手机预览</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --frame: #0d0d0d;
+      --screen: #f7f5f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background:
+        radial-gradient(ellipse at 30% 20%, #2a2218 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 80%, #1a2420 0%, transparent 45%),
+        var(--bg);
+      font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      color: #c8c4bc;
+    }
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: #9a958c;
+    }
+    .phone {
+      position: relative;
+      width: 390px;
+      height: 844px;
+      background: var(--frame);
+      border-radius: 44px;
+      padding: 12px;
+      box-shadow:
+        0 0 0 2px #333,
+        0 25px 80px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+    .phone::before {
+      content: "";
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 28px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 2;
+    }
+    .screen {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-radius: 34px;
+      background: var(--screen);
+      overflow: hidden;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .tabs button {
+      border: 1px solid #3a3a3a;
+      background: #222;
+      color: #ddd;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tabs button:hover,
+    .tabs button.active {
+      background: #ff6d00;
+      border-color: #ff6d00;
+      color: #fff;
+    }
+    .hint {
+      font-size: 12px;
+      color: #6e6a62;
+      max-width: 420px;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>旅迹 App · 手机框预览</h1>
+  <div class="tabs" id="tabs">
+    <button type="button" data-hash="" class="active">当前会话</button>
+    <button type="button" data-path="/">刷新首页</button>
+  </div>
+  <div class="phone">
+    <iframe
+      class="screen"
+      id="frame"
+      title="旅迹 App"
+      src="http://localhost:8081/"
+      allow="clipboard-read; clipboard-write"
+    ></iframe>
+  </div>
+  <p class="hint">
+    框内是 Expo 原生 UI 的网页预览（登录 / 列表 / 生成）。请先保证
+    <code>npx expo start --web --port 8081</code> 已启动。
+  </p>
+  <script>
+    const frame = document.getElementById("frame");
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      document.querySelectorAll(".tabs button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      if (btn.dataset.path != null) {
+        frame.src = "http://localhost:8081/" + (btn.dataset.path || "");
+      }
+    });
+  </script>
+</body>
+</html>

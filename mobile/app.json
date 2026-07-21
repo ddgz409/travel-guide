@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "旅迹",
+    "slug": "travel-guide",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.travelguide.app"
+    },
+    "android": {
+      "package": "com.travelguide.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFF1E6",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sharing",
+      "expo-asset",
+      "@react-native-community/datetimepicker",
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "旅迹需要在你同意后显示当前位置，便于对照行程地图。"
+        }
+      ]
+    ]
+  }
+}

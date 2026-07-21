@@ -30,19 +30,22 @@ export function HotelCandidatesPanel({
           {list.slice(0, 8).map((h, idx) => (
             <li key={h.url || h.name} className="text-sm">
               <span className="text-xs text-gray-400 mr-1">#{idx + 1}</span>
-              {h.url ? (
-                <a
-                  href={h.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-orange-600 hover:underline"
-                >
-                  {h.name}
-                </a>
-              ) : (
-                <span className="font-medium">{h.name}</span>
-              )}
-              {typeof h.avg_dist_m === "number" ? (
+              <a
+                href={
+                  h.url ||
+                  `https://hotels.ctrip.com/hotels/list?keyword=${encodeURIComponent(h.name)}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-orange-600 hover:underline"
+              >
+                {h.name}
+              </a>
+              {h.nearest_attraction && typeof h.nearest_dist_m === "number" ? (
+                <span className="text-xs text-emerald-600 ml-2">
+                  距{h.nearest_attraction}约 {(h.nearest_dist_m / 1000).toFixed(1)} km
+                </span>
+              ) : typeof h.avg_dist_m === "number" ? (
                 <span className="text-xs text-emerald-600 ml-2">
                   距景点约 {(h.avg_dist_m / 1000).toFixed(1)} km
                 </span>

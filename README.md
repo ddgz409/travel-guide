@@ -1,6 +1,6 @@
-# 旅行攻略生成器 🧭
+# 旅迹（旅行攻略生成器）
 
-AI 自动生成旅行攻略的 Web 应用。用户输入目的地、日期、人数与偏好，系统聚合高德地图真实景点数据，结合智谱 GLM 生成按天行程、地图路线与预算估算。支持注册登录、保存/编辑/导出 PDF/分享。
+AI 自动生成旅行攻略。同一套 FastAPI 后端同时服务 **Web（Next.js）** 与 **Android/iOS（Expo React Native 原生 UI）**。用户输入目的地、日期、人数与偏好，系统聚合高德地图真实景点数据，结合大模型生成按天行程、地图路线与预算估算。支持注册登录、保存/编辑/导出 PDF/分享。
 
 ## ✨ 功能
 
@@ -8,18 +8,23 @@ AI 自动生成旅行攻略的 Web 应用。用户输入目的地、日期、人
 - **地图路线展示** — 景点位置在地图上标注，连线显示每日路线与交通方式
 - **预算估算** — 自动估算交通/住宿/门票/餐饮费用，按天与分类汇总
 - **保存 / 编辑 / 导出** — 攻略存云端，跨设备同步，可编辑、导出 PDF、生成分享链接
+- **原生 App** — Expo 原生界面（登录、行程列表、生成、详情），复用同一 API
 
 ## 🏗️ 架构
 
 ```
-┌──────────────┐   REST API   ┌──────────────┐   高德API / 智谱GLM
-│  前端 Next.js │ ──────────▶ │ 后端 FastAPI │ ─────────────────▶
-│  React 18     │              │  Python 3.11 │
-└──────────────┘              └──────┬───────┘
-                                     │
-                              ┌──────▼───────┐
-                              │  SQLite (MVP) │
-                              └──────────────┘
+┌──────────────┐                ┌──────────────┐
+│  Web Next.js │──┐  REST API   │ 后端 FastAPI │── 高德 / LLM
+└──────────────┘  ├───────────▶ │  Python      │
+┌──────────────┐  │             └──────┬───────┘
+│ Expo RN App  │──┘                    │
+│ 原生 UI      │                ┌──────▼───────┐
+└──────────────┘                │  SQLite (MVP) │
+         ▲                      └──────────────┘
+         │
+┌────────┴────────┐
+│ packages/shared │  类型 + createApiClient
+└─────────────────┘
 ```
 
 **生成引擎流程**（后端编排式）：
@@ -34,22 +39,10 @@ AI 自动生成旅行攻略的 Web 应用。用户输入目的地、日期、人
 
 ```
 app/
-├── backend/              # FastAPI 后端
-│   ├── app/
-│   │   ├── api/          # 路由 (auth, trips)
-│   │   ├── core/         # 配置、数据库、安全、依赖
-│   │   ├── models/       # SQLAlchemy 模型 (4 表)
-│   │   ├── schemas/      # Pydantic 模型
-│   │   ├── services/     # 生成引擎、高德/智谱客户端、PDF 导出
-│   │   └── main.py       # 应用入口
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/             # Next.js 前端
-│   ├── app/              # 页面路由
-│   ├── components/       # 组件 (导航栏、地图)
-│   ├── lib/              # API 客户端、类型、Provider
-│   ├── stores/           # Zustand 状态
-│   └── .env.example
+├── backend/              # FastAPI 后端（Web / App 共用）
+├── frontend/             # Next.js Web
+├── mobile/               # Expo React Native 原生 App
+├── packages/shared/      # 共用类型 + API 客户端
 └── README.md
 ```
 
@@ -101,7 +94,34 @@ npm run dev
 
 > 注：Windows 上若 `npm run dev`（Turbopack）报错，项目已默认用 `--webpack` 模式。如需 Turbopack 可用 `npm run dev:turbo`。
 
-### 3. 使用
+### 3. Android / iOS App（Expo）
+
+后端需先启动，并监听 `0.0.0.0`（真机访问时）：
+
+```bash
+cd backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+```bash
+cd mobile
+npm install
+npm run android   # 或 npm start 后扫码用 Expo Go
+```
+
+**API 地址约定**
+
+| 环境 | `EXPO_PUBLIC_API_BASE` |
+|------|------------------------|
+| Android 模拟器（默认） | `http://10.0.2.2:8000/api/v1` |
+| iOS 模拟器 | `http://127.0.0.1:8000/api/v1` |
+| 真机 | `http://<电脑局域网IP>:8000/api/v1` |
+
+可在 `mobile/.env` 中配置（参考 `mobile/.env.example`）。手机与电脑需同一 Wi‑Fi，防火墙放行 8000 端口。
+
+当前 App 已实现：登录/注册、行程列表、生成攻略、详情（含生成中轮询）。地图与 PDF 仍以 Web 为主。
+
+### 4. 使用
 
 1. 注册账号
 2. 点击"生成攻略"，填写目的地/日期/人数/偏好
@@ -132,8 +152,9 @@ npm run dev
 ## 🛠️ 技术栈
 
 - **后端**：FastAPI · SQLAlchemy · SQLite · JWT · reportlab
-- **前端**：Next.js 14 · React 18 · TypeScript · Tailwind CSS v4 · Zustand · TanStack Query · 高德地图 JS SDK
-- **AI/数据**：智谱 GLM-4 · 高德地图 API
+- **Web**：Next.js · React · TypeScript · Tailwind CSS v4 · Zustand · TanStack Query · 高德地图 JS SDK
+- **App**：Expo · React Native · React Navigation · AsyncStorage · `@travel-guide/shared`
+- **AI/数据**：智谱 / 可配置 LLM · 高德地图 API
 
 ## 📝 设计决策
 

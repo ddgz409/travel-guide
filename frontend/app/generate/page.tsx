@@ -14,10 +14,12 @@ import {
 } from "react";
 
 import { tripsApi } from "@/lib/api";
-import type { PoiSearchResult } from "@/lib/types";
+import type { PoiSearchResult, QuickRecommendCard } from "@/lib/types";
 import { coverForCity } from "@/lib/cover";
 import { LANDMARKS, landmarksFor, searchHintExamples } from "@/lib/landmarks";
 import { useAuthStore } from "@/stores/auth";
+
+type GenMode = "quick" | "custom";
 
 /** 从搜索结果中选出与芯片名称真正匹配的 POI，绝不回退到无关热门第一项。 */
 function pickBestLandmarkMatch(
@@ -106,6 +108,7 @@ function GenerateContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
+  const [genMode, setGenMode] = useState<GenMode>("quick");
   const [destination, setDestination] = useState(searchParams.get("dest") || "");
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState(plusDaysISO(2));
@@ -115,6 +118,7 @@ function GenerateContent() {
   const [transport, setTransport] = useState("公共交通");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [quickCards, setQuickCards] = useState<QuickRecommendCard[]>([]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PoiSearchResult[]>([]);
@@ -234,6 +238,21 @@ function GenerateContent() {
     );
   };
 
+  const handleQuickRecommend = async () => {
+    setError(null);
+    if (!destination.trim()) return setError("请输入目的地");
+    setSubmitting(true);
+    setQuickCards([]);
+    try {
+      const res = await tripsApi.quickRecommend(destination.trim());
+      setQuickCards(res.cards || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "获取推荐失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault();
     setError(null);
@@ -279,21 +298,66 @@ function GenerateContent() {
               首页
             </Link>
             <span className="mx-1.5">/</span>
-            <span>定制行程</span>
+            <span>行程入口</span>
           </div>
           <h1 className="font-display text-[30px] sm:text-[36px] font-semibold leading-none">
             {destination.trim() || "去哪儿玩？"}
           </h1>
           <p className="text-white/80 text-[14px] mt-2">
-            像订机票一样填好信息，AI 给你一份可落地的每日行程
+            {genMode === "quick"
+              ? "快速模式：秒出小红书与携程参考链接"
+              : "专属定制：填好信息，AI 生成可落地的每日行程"}
           </p>
         </div>
       </section>
 
       <div className="site-container -mt-6 relative z-10">
-        {/* OTA 风格：日期 / 人数 横条 */}
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <button
+            type="button"
+            onClick={() => {
+              setGenMode("quick");
+              setError(null);
+            }}
+            className={`rounded-2xl border p-4 text-left transition-colors ${
+              genMode === "quick"
+                ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                : "border-[var(--line)] bg-white"
+            }`}
+          >
+            <div className="font-semibold text-[16px] text-[var(--ink)]">快速模式</div>
+            <p className="text-[12px] text-[var(--muted)] mt-1 leading-relaxed">
+              不调用模型，立刻给出两套参考入口
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setGenMode("custom");
+              setError(null);
+            }}
+            className={`rounded-2xl border p-4 text-left transition-colors ${
+              genMode === "custom"
+                ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                : "border-[var(--line)] bg-white"
+            }`}
+          >
+            <div className="font-semibold text-[16px] text-[var(--ink)]">专属定制</div>
+            <p className="text-[12px] text-[var(--muted)] mt-1 leading-relaxed">
+              AI 生成每日行程、酒店与路线
+            </p>
+          </button>
+        </div>
+
+        {/* 目的地 +（专属定制时）日期人数 */}
         <div className="bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] p-4 sm:p-5 mb-5">
-          <div className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr_1fr_auto] gap-3 sm:gap-4 items-end">
+          <div
+            className={`grid grid-cols-1 gap-3 sm:gap-4 items-end ${
+              genMode === "custom"
+                ? "sm:grid-cols-[1.2fr_1fr_1fr_auto]"
+                : ""
+            }`}
+          >
             <div>
               <label className="block text-[12px] text-[var(--muted)] mb-1.5">
                 目的地
@@ -301,57 +365,64 @@ function GenerateContent() {
               <input
                 type="text"
                 value={destination}
-                onChange={(e) => setDestination(e.target.value)}
+                onChange={(e) => {
+                  setDestination(e.target.value);
+                  setQuickCards([]);
+                }}
                 placeholder="城市 / 地区"
                 className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[16px] font-semibold text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
               />
             </div>
-            <div>
-              <label className="block text-[12px] text-[var(--muted)] mb-1.5">
-                出发
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] text-[var(--muted)] mb-1.5">
-                返程
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-[12px] text-[var(--muted)] mb-1.5">
-                人数
-              </label>
-              <div className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--background)] h-[50px] px-2">
-                <button
-                  type="button"
-                  onClick={() => setTravelers((n) => Math.max(1, n - 1))}
-                  className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
-                >
-                  −
-                </button>
-                <span className="flex-1 text-center font-bold text-[var(--ink)]">
-                  {travelers}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setTravelers((n) => Math.min(20, n + 1))}
-                  className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
-                >
-                  +
-                </button>
-              </div>
-            </div>
+            {genMode === "custom" ? (
+              <>
+                <div>
+                  <label className="block text-[12px] text-[var(--muted)] mb-1.5">
+                    出发
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-[var(--muted)] mb-1.5">
+                    返程
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] text-[var(--muted)] mb-1.5">
+                    人数
+                  </label>
+                  <div className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--background)] h-[50px] px-2">
+                    <button
+                      type="button"
+                      onClick={() => setTravelers((n) => Math.max(1, n - 1))}
+                      className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
+                    >
+                      −
+                    </button>
+                    <span className="flex-1 text-center font-bold text-[var(--ink)]">
+                      {travelers}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTravelers((n) => Math.min(20, n + 1))}
+                      className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -359,7 +430,10 @@ function GenerateContent() {
               <button
                 key={c}
                 type="button"
-                onClick={() => setDestination(c)}
+                onClick={() => {
+                  setDestination(c);
+                  setQuickCards([]);
+                }}
                 className={`px-3 py-1 rounded-full text-[12px] border transition-colors ${
                   destination === c
                     ? "bg-[var(--brand)] text-white border-[var(--brand)]"
@@ -372,6 +446,75 @@ function GenerateContent() {
           </div>
         </div>
 
+        {genMode === "quick" ? (
+          <div className="space-y-4">
+            {error ? (
+              <p className="text-[14px] text-red-600 bg-red-50 rounded-xl px-4 py-3">
+                {error}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => void handleQuickRecommend()}
+              className="w-full sm:w-auto min-w-[180px] rounded-xl bg-[var(--brand)] text-white font-semibold px-6 py-3.5 disabled:opacity-60"
+            >
+              {submitting ? "加载中…" : "查看参考"}
+            </button>
+            <div className="grid md:grid-cols-2 gap-4">
+              {quickCards.map((card) => (
+                <article
+                  key={card.id}
+                  className="bg-white rounded-2xl border border-[var(--line)] p-5"
+                >
+                  <h2 className="font-semibold text-[18px] text-[var(--ink)]">
+                    {card.title}
+                  </h2>
+                  {card.tagline ? (
+                    <p className="text-[13px] text-[var(--muted)] mt-1">
+                      {card.tagline}
+                    </p>
+                  ) : null}
+                  {(
+                    [
+                      ["小红书", card.external_refs?.xiaohongshu || []],
+                      ["携程", card.external_refs?.ctrip || []],
+                    ] as const
+                  ).map(([label, tips]) =>
+                    tips.length ? (
+                      <div key={label} className="mt-4">
+                        <div className="text-[12px] font-semibold text-[var(--muted)] mb-2">
+                          {label}
+                        </div>
+                        <ul className="space-y-2">
+                          {tips.map((t) => (
+                            <li key={t.url}>
+                              <a
+                                href={t.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] px-3 py-2.5 hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                              >
+                                <span className="text-[14px] font-medium text-[var(--ink)] truncate">
+                                  {t.title}
+                                </span>
+                                <span className="shrink-0 text-[12px] font-semibold text-[var(--brand)]">
+                                  打开 →
+                                </span>
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null,
+                  )}
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {genMode === "custom" ? (
         <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start">
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 必去景点 */}
@@ -690,9 +833,11 @@ function GenerateContent() {
             </div>
           </aside>
         </div>
+        ) : null}
       </div>
 
-      {/* 移动端吸底 CTA */}
+      {/* 移动端吸底 CTA（仅专属定制） */}
+      {genMode === "custom" ? (
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--line)] bg-white/95 backdrop-blur px-4 py-3 safe-pb">
         <div className="flex items-center gap-3 max-w-lg mx-auto">
           <div className="min-w-0 flex-1">
@@ -716,6 +861,7 @@ function GenerateContent() {
           </button>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

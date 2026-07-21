@@ -16,6 +16,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -437,9 +438,11 @@ class GuideGenerator:
             if base:
                 cand = base.to_candidate()
             else:
+                # 无携程详情时给可点的搜索链接，避免列表后半段无法打开
+                q = quote(f"{destination} {p.name}".strip())
                 cand = {
                     "name": p.name,
-                    "url": "",
+                    "url": f"https://hotels.ctrip.com/hotels/list?keyword={q}",
                     "score": 0,
                     "tags": [],
                     "good_rate": (p.rating or 0) * 20 if p.rating else None,
@@ -449,17 +452,24 @@ class GuideGenerator:
                     ),
                     "metro_distance_m": None,
                 }
+            if not (cand.get("url") or "").strip():
+                q = quote(f"{destination} {p.name}".strip())
+                cand["url"] = f"https://hotels.ctrip.com/hotels/list?keyword={q}"
             dist = self._mean_dist_to_anchors(p, anchors)
+            nearest_name, nearest_m = self._nearest_anchor(p, anchors)
             if dist is not None:
                 cand["avg_dist_m"] = int(dist)
+            if nearest_name and nearest_m is not None:
+                cand["nearest_attraction"] = nearest_name
+                cand["nearest_dist_m"] = int(nearest_m)
                 tags = list(cand.get("tags") or [])
-                if dist <= 1500 and "近景点" not in tags:
-                    tags.insert(0, "近景点")
-                elif dist <= 3000 and "较近景点" not in tags:
-                    tags.insert(0, "较近景点")
+                short = nearest_name[:8]
+                near_tag = f"近{short}"
+                if nearest_m <= 1500 and near_tag not in tags:
+                    tags.insert(0, near_tag)
+                elif nearest_m <= 3000 and f"较近{short}" not in tags:
+                    tags.insert(0, f"较近{short}")
                 cand["tags"] = tags
-            if p.note and "近景点" in p.note:
-                pass
             candidates.append(cand)
 
         logger.info(
@@ -500,6 +510,23 @@ class GuideGenerator:
         # 用最近 5 个景点的平均距离，更贴近「住在玩的地方附近」
         nearest = sorted(dists)[: min(5, len(dists))]
         return sum(nearest) / len(nearest)
+
+    def _nearest_anchor(
+        self, hotel: Poi, anchors: list[Poi]
+    ) -> tuple[str | None, float | None]:
+        """返回最近具体景点名与距离（米）。"""
+        if not anchors or not hotel.lng or not hotel.lat:
+            return None, None
+        if abs(hotel.lng) < 0.01 and abs(hotel.lat) < 0.01:
+            return None, None
+        best_name: str | None = None
+        best_dist: float | None = None
+        for a in anchors:
+            d = self._haversine_m(hotel.lng, hotel.lat, a.lng, a.lat)
+            if best_dist is None or d < best_dist:
+                best_dist = d
+                best_name = a.name
+        return best_name, best_dist
 
     def _rank_hotels_by_proximity(
         self,

@@ -1,7 +1,9 @@
 """攻略路由：生成 / 列表 / 详情 / 编辑 / 重新生成 / 分享 / 导出。"""
 import io
 import secrets
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
+from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -13,6 +15,8 @@ from app.core.deps import get_current_user, get_optional_user
 from app.models import Day, Item, Trip, User
 from app.schemas import (
     ItemUpdate,
+    QuickRecommendRequest,
+    QuickRecommendResponse,
     ReorderRequest,
     TripGenerateRequest,
     TripListItem,
@@ -22,6 +26,12 @@ from app.schemas import (
 from app.services.generator import GeneratorError, get_generator
 from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
+from app.services.quick_recommend import build_quick_recommend
+from app.services.trip_cache import (
+    build_cache_key,
+    save_trip_to_cache,
+    try_clone_from_cache,
+)
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
 
@@ -56,6 +66,35 @@ def generate(
     preferences = dict(payload.preferences)
     if payload.must_include:
         preferences["must_include"] = payload.must_include
+    if payload.llm and (payload.llm.get("api_key") or "").strip():
+        # 仅供后台任务读取一次，生成后会清除，避免长期落库明文 Key
+        preferences["_llm_override"] = {
+            "provider": (payload.llm.get("provider") or "").strip() or None,
+            "model": (payload.llm.get("model") or "").strip() or None,
+            "api_key": payload.llm.get("api_key").strip(),
+        }
+
+    days_count = (payload.end_date - payload.start_date).days + 1
+    cache_key = build_cache_key(
+        destination=payload.destination,
+        days_count=days_count,
+        preferences=preferences,
+        must_include=payload.must_include,
+    )
+    if cache_key:
+        cached = try_clone_from_cache(
+            db,
+            cache_key=cache_key,
+            user_id=current.id,
+            destination=payload.destination,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            travelers=payload.travelers,
+            preferences=preferences,
+            title=title,
+        )
+        if cached is not None:
+            return cached
 
     trip = Trip(
         user_id=current.id,
@@ -78,8 +117,20 @@ def generate(
 
 
 def _llm_for_trip(db: Session, trip: Trip):
-    """按攻略所属用户加载 LLM（未配置则用服务器默认智谱 glm-4）。"""
+    """按攻略所属用户加载 LLM；若 preferences 含一次性覆盖则优先。"""
     from app.services.llm_client import LLMClient
+
+    prefs = dict(trip.preferences or {})
+    override = prefs.pop("_llm_override", None)
+    if override:
+        trip.preferences = prefs
+        db.add(trip)
+        db.commit()
+        return LLMClient(
+            provider=override.get("provider"),
+            api_key=override.get("api_key"),
+            model=override.get("model"),
+        )
 
     user = db.get(User, trip.user_id)
     return LLMClient.for_user(user)
@@ -95,6 +146,17 @@ def _run_generate(trip_id: str, generator) -> None:
         if trip is None:
             return
         generator.generate(trip, db, llm=_llm_for_trip(db, trip))
+        db.refresh(trip)
+        if trip.status == "ready":
+            prefs = dict(trip.preferences or {})
+            days_count = (trip.end_date - trip.start_date).days + 1
+            key = build_cache_key(
+                destination=trip.destination,
+                days_count=days_count,
+                preferences=prefs,
+                must_include=prefs.get("must_include") or [],
+            )
+            save_trip_to_cache(db, trip, key)
     finally:
         db.close()
 
@@ -137,6 +199,34 @@ def guest_generate(
     preferences = dict(payload.preferences)
     if payload.must_include:
         preferences["must_include"] = payload.must_include
+    if payload.llm and (payload.llm.get("api_key") or "").strip():
+        preferences["_llm_override"] = {
+            "provider": (payload.llm.get("provider") or "").strip() or None,
+            "model": (payload.llm.get("model") or "").strip() or None,
+            "api_key": payload.llm.get("api_key").strip(),
+        }
+
+    days_count = (payload.end_date - payload.start_date).days + 1
+    cache_key = build_cache_key(
+        destination=payload.destination,
+        days_count=days_count,
+        preferences=preferences,
+        must_include=payload.must_include,
+    )
+    if cache_key:
+        cached = try_clone_from_cache(
+            db,
+            cache_key=cache_key,
+            user_id=guest.id,
+            destination=payload.destination,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            travelers=payload.travelers,
+            preferences=preferences,
+            title=title,
+        )
+        if cached is not None:
+            return cached
 
     trip = Trip(
         user_id=guest.id,
@@ -155,6 +245,12 @@ def guest_generate(
     generator = get_generator()
     background_tasks.add_task(_run_generate, trip.id, generator)
     return trip
+
+
+@router.post("/quick-recommend", response_model=QuickRecommendResponse)
+def quick_recommend(payload: QuickRecommendRequest):
+    """快速参考：不调模型、不建行程，返回两套小红书/携程入口卡片。"""
+    return build_quick_recommend(payload.destination)
 
 
 @router.get("/pois/search")
@@ -465,6 +561,18 @@ def update_item_route(
     return {**transport, "to_name": next_item.name, "from_name": item.name}
 
 
+def _haversine_m_loc(a: dict, b: dict) -> float:
+    lng1, lat1 = float(a["lng"]), float(a["lat"])
+    lng2, lat2 = float(b["lng"]), float(b["lat"])
+    dlat = radians(lat2 - lat1)
+    dlng = radians(lng2 - lng1)
+    x = (
+        sin(dlat / 2) ** 2
+        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    )
+    return 2 * 6371000 * asin(sqrt(x))
+
+
 @router.get("/{trip_id}/map-routes/{day_id}")
 def get_day_routes(
     trip_id: str,
@@ -475,7 +583,7 @@ def get_day_routes(
 ):
     """规划当天全部景点间路线（逐段串联成完整一日线）。
 
-    公交模式对过近点位常失败，自动降级为步行，保证地图能画出全程。
+    优先复用条目上已缓存的 transport_to_next；其余段并行请求高德，降低卡顿。
     """
     trip = _trip_or_404(trip_id, db, current.id if current else None)
     day = db.get(Day, day_id)
@@ -497,42 +605,55 @@ def get_day_routes(
         located.append(it)
 
     amap = get_amap_client()
-    segments: list[dict] = []
+    city = trip.destination
     expected = max(0, len(located) - 1)
+    pairs = [(located[i], located[i + 1]) for i in range(len(located) - 1)]
 
-    def _haversine_m(a: Item, b: Item) -> float:
-        from math import asin, cos, radians, sin, sqrt
+    def _cached_segment(a: Item, b: Item) -> dict | None:
+        t = a.transport_to_next or {}
+        poly = t.get("polyline") or []
+        if len(poly) < 2:
+            return None
+        used = t.get("mode") or mode
+        # 同模式，或地图仅需折线时接受已有方案（标 fallback）
+        if used != mode and not (mode == "transit" and used in ("walking", "transit")):
+            return None
+        return {
+            "from_item_id": a.id,
+            "to_item_id": b.id,
+            "from_name": a.name,
+            "to_name": b.name,
+            "mode": used,
+            "distance_m": int(t.get("distance_m") or 0),
+            "duration_s": int(t.get("duration_s") or 0),
+            "polyline": poly,
+            "fallback": used != mode,
+            "cached": True,
+        }
 
-        lng1, lat1 = float(a.location["lng"]), float(a.location["lat"])
-        lng2, lat2 = float(b.location["lng"]), float(b.location["lat"])
-        dlat = radians(lat2 - lat1)
-        dlng = radians(lng2 - lng1)
-        x = (
-            sin(dlat / 2) ** 2
-            + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
-        )
-        return 2 * 6371000 * asin(sqrt(x))
+    def _plan_pair(a: Item, b: Item, prefer: str) -> dict:
+        cached = _cached_segment(a, b)
+        if cached:
+            return cached
 
-    def _plan_pair(a: Item, b: Item, prefer: str) -> tuple[object | None, str]:
         origin = f"{a.location['lng']},{a.location['lat']}"
         dest = f"{b.location['lng']},{b.location['lat']}"
-        dist = _haversine_m(a, b)
-        # 公交对过近点位经常无方案，优先改步行
-        order: list[str]
+        dist = _haversine_m_loc(a.location, b.location)
+        # 少试几种模式，避免每段串行打满高德
         if prefer == "transit" and dist < 900:
-            order = ["walking", "transit", "driving"]
+            order = ["walking"]
         elif prefer == "transit":
-            order = ["transit", "walking", "driving"]
+            order = ["transit", "walking"]
         elif prefer == "driving":
             order = ["driving", "walking"]
         else:
-            order = ["walking", "driving"]
+            order = ["walking"]
 
         for m in order:
             try:
                 if m == "transit":
                     seg = amap.plan_route(
-                        origin, dest, mode="transit", city=trip.destination
+                        origin, dest, mode="transit", city=city
                     )
                 else:
                     seg = amap.plan_route(origin, dest, mode=m)
@@ -541,52 +662,70 @@ def get_day_routes(
             if not seg:
                 continue
             poly = getattr(seg, "polyline", None) or []
-            if m == "transit" and seg.schemes:
+            if m == "transit" and getattr(seg, "schemes", None):
                 poly = seg.schemes[0].get("polyline") or poly
-            if len(poly) >= 2:
-                # 挂到 seg 上方便读取
-                seg.polyline = poly  # type: ignore[attr-defined]
-                return seg, m
-        return None, prefer
-
-    for i in range(len(located) - 1):
-        a, b = located[i], located[i + 1]
-        seg, used_mode = _plan_pair(a, b, mode)
-        if not seg:
-            # 最后兜底：起终点连线，保证全程不断档
-            segments.append(
-                {
-                    "from_item_id": a.id,
-                    "to_item_id": b.id,
-                    "from_name": a.name,
-                    "to_name": b.name,
-                    "mode": "direct",
-                    "distance_m": int(_haversine_m(a, b)),
-                    "duration_s": 0,
-                    "polyline": [
-                        [float(a.location["lng"]), float(a.location["lat"])],
-                        [float(b.location["lng"]), float(b.location["lat"])],
-                    ],
-                    "fallback": True,
-                }
-            )
-            continue
-        polyline = getattr(seg, "polyline", None) or []
-        segments.append(
-            {
+            if len(poly) < 2:
+                continue
+            return {
                 "from_item_id": a.id,
                 "to_item_id": b.id,
                 "from_name": a.name,
                 "to_name": b.name,
-                "mode": used_mode,
+                "mode": m,
                 "distance_m": seg.distance_m,
                 "duration_s": seg.duration_s,
-                "polyline": polyline,
-                "fallback": used_mode != mode,
+                "polyline": poly,
+                "fallback": m != prefer,
             }
-        )
 
-    # 拼成一条总折线，方便前端一次画完整日路线
+        return {
+            "from_item_id": a.id,
+            "to_item_id": b.id,
+            "from_name": a.name,
+            "to_name": b.name,
+            "mode": "direct",
+            "distance_m": int(dist),
+            "duration_s": 0,
+            "polyline": [
+                [float(a.location["lng"]), float(a.location["lat"])],
+                [float(b.location["lng"]), float(b.location["lat"])],
+            ],
+            "fallback": True,
+        }
+
+    # 并行规划各段（高德调用占主要耗时）
+    results: dict[int, dict] = {}
+    workers = min(6, max(1, len(pairs)))
+    if pairs:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_plan_pair, a, b, mode): i for i, (a, b) in enumerate(pairs)
+            }
+            for fut in as_completed(futures):
+                i = futures[fut]
+                try:
+                    results[i] = fut.result()
+                except Exception:
+                    a, b = pairs[i]
+                    results[i] = {
+                        "from_item_id": a.id,
+                        "to_item_id": b.id,
+                        "from_name": a.name,
+                        "to_name": b.name,
+                        "mode": "direct",
+                        "distance_m": int(
+                            _haversine_m_loc(a.location, b.location)
+                        ),
+                        "duration_s": 0,
+                        "polyline": [
+                            [float(a.location["lng"]), float(a.location["lat"])],
+                            [float(b.location["lng"]), float(b.location["lat"])],
+                        ],
+                        "fallback": True,
+                    }
+
+    segments = [results[i] for i in range(len(pairs))]
+
     full_polyline: list[list[float]] = []
     for s in segments:
         pts = s.get("polyline") or []
@@ -595,7 +734,6 @@ def get_day_routes(
         if not full_polyline:
             full_polyline.extend(pts)
         else:
-            # 跳过与上一段尾点重复的首点
             full_polyline.extend(pts[1:] if pts[0] == full_polyline[-1] else pts)
 
     total_s = sum(int(s.get("duration_s") or 0) for s in segments)

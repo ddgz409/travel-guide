@@ -1,4 +1,4 @@
-// 与后端对应的类型定义
+/** Web / App 共用的领域类型（与 FastAPI / frontend/lib/types 对齐） */
 
 export interface User {
   id: string;
@@ -25,7 +25,6 @@ export interface LlmSettings {
 export interface LlmSettingsUpdate {
   provider?: string | null;
   model?: string | null;
-  /** null=不改；""=清除改用服务器默认 */
   api_key?: string | null;
 }
 
@@ -162,7 +161,9 @@ export interface HotelCandidate {
   is_huazhu?: boolean;
   metro_distance_m?: number | null;
   avg_dist_m?: number | null;
+  /** 最近具体景点名 */
   nearest_attraction?: string | null;
+  /** 到最近景点的距离（米） */
   nearest_dist_m?: number | null;
 }
 
@@ -216,6 +217,12 @@ export interface GenerateRequest {
   travelers: number;
   preferences: TripPreferences;
   must_include?: PoiSearchResult[];
+  /** 本次生成覆盖：游客/临时自带 LLM Key */
+  llm?: {
+    provider?: string | null;
+    model?: string | null;
+    api_key?: string | null;
+  } | null;
 }
 
 export interface QuickRecommendCard {
@@ -228,4 +235,28 @@ export interface QuickRecommendCard {
 export interface QuickRecommendResponse {
   destination: string;
   cards: QuickRecommendCard[];
+}
+
+export interface DayRouteSegment {
+  from_item_id: string;
+  to_item_id: string;
+  from_name: string;
+  to_name: string;
+  mode: string;
+  distance_m: number;
+  duration_s: number;
+  polyline: number[][];
+  fallback?: boolean;
+}
+
+export interface DayRoutesResult {
+  mode: string;
+  day_id: string;
+  segments: DayRouteSegment[];
+  polyline?: number[][];
+  stop_count?: number;
+  segment_count?: number;
+  expected_segments?: number;
+  total_duration_s: number;
+  total_distance_m: number;
 }

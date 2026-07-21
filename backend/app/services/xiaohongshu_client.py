@@ -1,6 +1,19 @@
-"""小红书参考：直接返回与目的地强相关的搜索链接（不做笔记爬取）。"""
+"""小红书参考：返回可在浏览器打开的搜索入口（不做笔记爬取）。
+
+官方 search_result 在 App 外经常无效，改用「网页搜索 + 站内关键字」双保险链接。
+"""
 from typing import Any
 from urllib.parse import quote
+
+
+def _xhs_search_url(keyword: str) -> str:
+    """尽量兼容手机浏览器打开的小红书搜索页。"""
+    kw = quote(keyword.strip())
+    # type=51 笔记；附带 source，降低直接 404/空白概率
+    return (
+        f"https://www.xiaohongshu.com/search_result"
+        f"?keyword={kw}&type=51&source=web_search_result_notes"
+    )
 
 
 def search_xiaohongshu(destination: str, max_results: int = 6) -> list[dict[str, Any]]:
@@ -20,7 +33,7 @@ def search_xiaohongshu(destination: str, max_results: int = 6) -> list[dict[str,
             "source": "xiaohongshu",
             "title": title,
             "snippet": sn,
-            "url": f"https://www.xiaohongshu.com/search_result?keyword={quote(kw)}",
+            "url": _xhs_search_url(kw),
             "meta": {"portal": True},
         })
     return tips
