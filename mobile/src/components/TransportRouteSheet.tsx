@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -8,6 +9,14 @@ import {
   Text,
   View,
 } from "react-native";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { WebView } from "react-native-webview";
 import type { RouteStep, TransportToNext } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
@@ -23,6 +32,9 @@ const MODE_TABS: { id: Mode; label: string }[] = [
   { id: "walking", label: "步行" },
   { id: "driving", label: "驾车" },
 ];
+
+const SCREEN_W = Dimensions.get("window").width;
+const DISMISS_X = Math.min(120, SCREEN_W * 0.28);
 
 function modeLabel(mode: string) {
   if (mode === "walking") return "步行";
@@ -65,6 +77,18 @@ export function TransportRouteSheet({
   const [error, setError] = useState<string | null>(null);
   const amapKey = getAmapJsKey();
 
+  const translateX = useSharedValue(0);
+
+  function closeSheet() {
+    setOpen(false);
+    translateX.value = 0;
+  }
+
+  function openSheet() {
+    translateX.value = 0;
+    setOpen(true);
+  }
+
   useEffect(() => {
     setData(transport);
     setMode((transport.mode as Mode) || "transit");
@@ -74,7 +98,6 @@ export function TransportRouteSheet({
     setLoading(true);
     setError(null);
     try {
-      // 切换交通方式才强制重规划；打开弹层优先读缓存
       const res =
         forceReplan || m !== (data.mode as Mode)
           ? await api.trips.updateItemRoute(tripId, itemId, {
@@ -100,6 +123,38 @@ export function TransportRouteSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const edgeBack = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX(12)
+        .failOffsetY([-24, 24])
+        .hitSlop({ left: 0, width: 28, top: 0, bottom: 0 })
+        .onUpdate((e) => {
+          translateX.value = Math.max(0, e.translationX);
+        })
+        .onEnd((e) => {
+          const shouldClose =
+            e.translationX > DISMISS_X || e.velocityX > 900;
+          if (shouldClose) {
+            translateX.value = withTiming(SCREEN_W, { duration: 180 }, () => {
+              runOnJS(closeSheet)();
+            });
+          } else {
+            translateX.value = withSpring(0, { damping: 22, stiffness: 260 });
+          }
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, translateX.value / SCREEN_W) * 0.85,
+  }));
 
   const steps = (data.detail || []) as RouteStep[];
   const min = Math.round((data.duration_s || 0) / 60);
@@ -134,7 +189,7 @@ export function TransportRouteSheet({
 
   return (
     <>
-      <Pressable style={styles.card} onPress={() => setOpen(true)}>
+      <Pressable style={styles.card} onPress={openSheet}>
         <View style={styles.cardTop}>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -157,106 +212,126 @@ export function TransportRouteSheet({
         </Text>
       </Pressable>
 
-      <Modal visible={open} animationType="slide" transparent>
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHead}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetTitle}>路线规划</Text>
-                <Text style={styles.sheetSub} numberOfLines={1}>
-                  {fromName}
-                  {data.to_name ? ` → ${data.to_name}` : " → 下一站"}
-                </Text>
-              </View>
-              <Pressable onPress={() => setOpen(false)} hitSlop={12}>
-                <Text style={styles.close}>关闭</Text>
-              </Pressable>
-            </View>
+      <Modal visible={open} animationType="slide" transparent onRequestClose={closeSheet}>
+        <GestureHandlerRootView style={styles.modalRoot}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet}>
+            <Animated.View style={[styles.backdrop, backdropStyle]} />
+          </Pressable>
 
-            <View style={styles.tabs}>
-              {MODE_TABS.map((t) => {
-                const on = mode === t.id;
-                return (
-                  <Pressable
-                    key={t.id}
-                    style={[styles.tab, on && styles.tabOn]}
-                    disabled={loading}
-                    onPress={() => {
-                      setMode(t.id);
-                      void load(t.id, true);
-                    }}
-                  >
-                    <Text style={[styles.tabText, on && styles.tabTextOn]}>
-                      {t.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          <GestureDetector gesture={edgeBack}>
+            <Animated.View style={[styles.sheet, sheetStyle]}>
+              {/* 左侧热区提示条：侧滑返回 */}
+              <View style={styles.edgeHint} pointerEvents="none" />
 
-            <View style={styles.mapBox}>
-              {amapKey && html ? (
-                <WebView
-                  originWhitelist={["*"]}
-                  source={{ html, baseUrl: "https://webapi.amap.com" }}
-                  style={StyleSheet.absoluteFill}
-                  javaScriptEnabled
-                  domStorageEnabled
-                  scrollEnabled={false}
-                />
-              ) : (
-                <View style={styles.mapFallback}>
-                  <Text style={styles.mapFallbackText}>
-                    地图 Key 未注入，下方仍可查看文字路线
+              <View style={styles.sheetHead}>
+                <Pressable
+                  onPress={closeSheet}
+                  hitSlop={12}
+                  style={styles.backBtn}
+                >
+                  <Text style={styles.backChevron}>‹</Text>
+                  <Text style={styles.backText}>返回</Text>
+                </Pressable>
+                <View style={{ flex: 1, marginHorizontal: 8 }}>
+                  <Text style={styles.sheetTitle}>路线规划</Text>
+                  <Text style={styles.sheetSub} numberOfLines={1}>
+                    {fromName}
+                    {data.to_name ? ` → ${data.to_name}` : " → 下一站"}
                   </Text>
                 </View>
-              )}
-              {loading ? (
-                <View style={styles.mapLoading}>
-                  <ActivityIndicator color="#1a66ff" />
-                </View>
-              ) : null}
-            </View>
+                <Pressable onPress={closeSheet} hitSlop={12}>
+                  <Text style={styles.close}>关闭</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.swipeTip}>从左缘向右滑可返回</Text>
 
-            <ScrollView style={styles.steps} contentContainerStyle={{ paddingBottom: 24 }}>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              {loading && !steps.length ? (
-                <Text style={styles.hint}>加载路线中…</Text>
-              ) : null}
-              {steps.map((step, i) => {
-                const isWalk = step.type === "walk" || step.type === "drive";
-                return (
-                  <View key={i} style={styles.stepRow}>
-                    <Text style={styles.stepTitle}>
-                      {isWalk
-                        ? step.type === "drive"
-                          ? "驾车"
-                          : "步行"
-                        : step.line_name || "公交"}
-                      {step.distance_m
-                        ? ` · ${fmtKm(step.distance_m)}`
-                        : ""}
-                    </Text>
-                    {step.instruction ? (
-                      <Text style={styles.stepDesc}>{step.instruction}</Text>
-                    ) : null}
-                    {step.departure_stop || step.arrival_stop ? (
-                      <Text style={styles.stepDesc}>
-                        {[step.departure_stop, step.arrival_stop]
-                          .filter(Boolean)
-                          .join(" → ")}
+              <View style={styles.tabs}>
+                {MODE_TABS.map((t) => {
+                  const on = mode === t.id;
+                  return (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.tab, on && styles.tabOn]}
+                      disabled={loading}
+                      onPress={() => {
+                        setMode(t.id);
+                        void load(t.id, true);
+                      }}
+                    >
+                      <Text style={[styles.tabText, on && styles.tabTextOn]}>
+                        {t.label}
                       </Text>
-                    ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.mapBox}>
+                {amapKey && html ? (
+                  <WebView
+                    originWhitelist={["*"]}
+                    source={{ html, baseUrl: "https://webapi.amap.com" }}
+                    style={StyleSheet.absoluteFill}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    scrollEnabled={false}
+                  />
+                ) : (
+                  <View style={styles.mapFallback}>
+                    <Text style={styles.mapFallbackText}>
+                      地图 Key 未注入，下方仍可查看文字路线
+                    </Text>
                   </View>
-                );
-              })}
-              {!loading && !steps.length && !error ? (
-                <Text style={styles.hint}>暂无详细路段</Text>
-              ) : null}
-            </ScrollView>
-          </View>
-        </View>
+                )}
+                {loading ? (
+                  <View style={styles.mapLoading}>
+                    <ActivityIndicator color="#1a66ff" />
+                  </View>
+                ) : null}
+              </View>
+
+              <ScrollView
+                style={styles.steps}
+                contentContainerStyle={{ paddingBottom: 24 }}
+              >
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                {loading && !steps.length ? (
+                  <Text style={styles.hint}>加载路线中…</Text>
+                ) : null}
+                {steps.map((step, i) => {
+                  const isWalk = step.type === "walk" || step.type === "drive";
+                  return (
+                    <View key={i} style={styles.stepRow}>
+                      <Text style={styles.stepTitle}>
+                        {isWalk
+                          ? step.type === "drive"
+                            ? "驾车"
+                            : "步行"
+                          : step.line_name || "公交"}
+                        {step.distance_m
+                          ? ` · ${fmtKm(step.distance_m)}`
+                          : ""}
+                      </Text>
+                      {step.instruction ? (
+                        <Text style={styles.stepDesc}>{step.instruction}</Text>
+                      ) : null}
+                      {step.departure_stop || step.arrival_stop ? (
+                        <Text style={styles.stepDesc}>
+                          {[step.departure_stop, step.arrival_stop]
+                            .filter(Boolean)
+                            .join(" → ")}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+                {!loading && !steps.length && !error ? (
+                  <Text style={styles.hint}>暂无详细路段</Text>
+                ) : null}
+              </ScrollView>
+            </Animated.View>
+          </GestureDetector>
+        </GestureHandlerRootView>
       </Modal>
     </>
   );
@@ -291,7 +366,10 @@ const styles = StyleSheet.create({
   cardCta: { fontSize: 12, fontWeight: "700", color: "#1a66ff" },
   cardSub: { marginTop: 4, fontSize: 11, color: colors.muted },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
   sheet: {
     maxHeight: "92%",
     backgroundColor: "#fff",
@@ -299,18 +377,47 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     overflow: "hidden",
   },
+  edgeHint: {
+    position: "absolute",
+    left: 0,
+    top: 80,
+    bottom: 80,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(26,102,255,0.35)",
+    zIndex: 2,
+  },
   sheetHead: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 4,
+  },
+  backChevron: {
+    fontSize: 28,
+    lineHeight: 28,
+    fontWeight: "300",
+    color: colors.brandHot,
+    marginTop: -2,
+  },
+  backText: { fontSize: 15, fontWeight: "700", color: colors.brandHot },
   sheetTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
   sheetSub: { marginTop: 2, fontSize: 12, color: colors.muted },
-  close: { fontSize: 14, fontWeight: "700", color: colors.brandHot },
-  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 12 },
+  close: { fontSize: 14, fontWeight: "700", color: colors.muted },
+  swipeTip: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    fontSize: 11,
+    color: colors.muted,
+  },
+  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 8 },
   tab: {
     flex: 1,
     borderRadius: 20,
