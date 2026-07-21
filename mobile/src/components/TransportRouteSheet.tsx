@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Modal,
   Pressable,
@@ -18,11 +19,20 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { WebView } from "react-native-webview";
+import * as Location from "expo-location";
 import type { RouteStep, TransportToNext } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../api";
 import { buildAmapHtml } from "../amapHtml";
 import { getAmapJsKey } from "../config";
+import {
+  describeLocationError,
+  getDeviceLocation,
+} from "../getDeviceLocation";
+import {
+  loadLocationConsent,
+  saveLocationConsent,
+} from "../locationPrefs";
 import { colors } from "../theme";
 
 type Mode = "transit" | "walking" | "driving";
@@ -75,9 +85,63 @@ export function TransportRouteSheet({
   );
   const [data, setData] = useState<TransportToNext>(transport);
   const [error, setError] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
   const amapKey = getAmapJsKey();
+  const webRef = useRef<WebView>(null);
+  const mapReadyRef = useRef(false);
 
   const translateX = useSharedValue(0);
+
+  const inject = useCallback((js: string) => {
+    webRef.current?.injectJavaScript(`${js}; true;`);
+  }, []);
+
+  const requestAndShowLocation = useCallback(async () => {
+    setLocating(true);
+    try {
+      let consent = await loadLocationConsent();
+      if (consent === null) {
+        const choice = await new Promise<"granted" | "denied">((resolve) => {
+          Alert.alert(
+            "定位权限",
+            "是否允许旅迹获取你的位置，用于在路线地图上显示当前位置？可稍后在设置中修改。",
+            [
+              {
+                text: "不允许",
+                style: "cancel",
+                onPress: () => resolve("denied"),
+              },
+              { text: "允许", onPress: () => resolve("granted") },
+            ],
+          );
+        });
+        await saveLocationConsent(choice);
+        consent = choice;
+      }
+      if (consent !== "granted") {
+        Alert.alert("未开启定位", "可在「设置」中打开定位权限后再试。");
+        return;
+      }
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        await saveLocationConsent("denied");
+        Alert.alert("系统未授权", "请在系统设置里允许定位权限后再试。");
+        return;
+      }
+      await saveLocationConsent("granted");
+      const { lng, lat } = await getDeviceLocation();
+      if (!mapReadyRef.current) {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      inject(
+        `window.setUserLocation && window.setUserLocation(${lng},${lat},true)`,
+      );
+    } catch (e) {
+      Alert.alert("定位失败", describeLocationError(e));
+    } finally {
+      setLocating(false);
+    }
+  }, [inject]);
 
   function closeSheet() {
     setOpen(false);
@@ -180,10 +244,12 @@ export function TransportRouteSheet({
 
   const html = useMemo(() => {
     if (!amapKey) return "";
+    mapReadyRef.current = false;
     return buildAmapHtml({
       key: amapKey,
       markers,
       polyline: data.polyline || [],
+      interactive: true,
     });
   }, [amapKey, markers, data.polyline]);
 
@@ -269,12 +335,28 @@ export function TransportRouteSheet({
               <View style={styles.mapBox}>
                 {amapKey && html ? (
                   <WebView
+                    ref={webRef}
                     originWhitelist={["*"]}
                     source={{ html, baseUrl: "https://webapi.amap.com" }}
                     style={StyleSheet.absoluteFill}
                     javaScriptEnabled
                     domStorageEnabled
                     scrollEnabled={false}
+                    setSupportMultipleWindows={false}
+                    androidLayerType="hardware"
+                    onMessage={(e) => {
+                      try {
+                        const msg = JSON.parse(e.nativeEvent.data);
+                        if (msg?.type === "ready") mapReadyRef.current = true;
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    onLoadEnd={() => {
+                      setTimeout(() => {
+                        mapReadyRef.current = true;
+                      }, 800);
+                    }}
                   />
                 ) : (
                   <View style={styles.mapFallback}>
@@ -286,6 +368,35 @@ export function TransportRouteSheet({
                 {loading ? (
                   <View style={styles.mapLoading}>
                     <ActivityIndicator color="#1a66ff" />
+                  </View>
+                ) : null}
+                {amapKey && html ? (
+                  <View style={styles.mapControls} pointerEvents="box-none">
+                    <Pressable
+                      style={styles.ctrlBtn}
+                      onPress={() => inject("window.zoomIn && window.zoomIn()")}
+                    >
+                      <Text style={styles.ctrlText}>＋</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.ctrlBtn}
+                      onPress={() =>
+                        inject("window.zoomOut && window.zoomOut()")
+                      }
+                    >
+                      <Text style={styles.ctrlText}>－</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.ctrlBtn, styles.locateBtn]}
+                      onPress={() => void requestAndShowLocation()}
+                      disabled={locating}
+                    >
+                      {locating ? (
+                        <ActivityIndicator color="#1a66ff" />
+                      ) : (
+                        <Text style={styles.locateText}>定位</Text>
+                      )}
+                    </Pressable>
                   </View>
                 ) : null}
               </View>
@@ -431,7 +542,7 @@ const styles = StyleSheet.create({
   mapBox: {
     marginHorizontal: 12,
     marginTop: 12,
-    height: 200,
+    height: 220,
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#eef2f7",
@@ -449,6 +560,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.45)",
   },
+  mapControls: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    gap: 6,
+  },
+  ctrlBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.line,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  ctrlText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.ink,
+    lineHeight: 20,
+  },
+  locateBtn: { marginTop: 2 },
+  locateText: { fontSize: 11, fontWeight: "800", color: "#1a66ff" },
   steps: { paddingHorizontal: 16, paddingTop: 12 },
   stepRow: {
     paddingVertical: 10,

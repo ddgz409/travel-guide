@@ -306,7 +306,7 @@ export function HomeScreen({ navigation }: Props) {
 
           {showCityPanel ? (
             <View style={styles.cityPanel}>
-              <Text style={styles.cityPanelTitle}>快捷城市 · 按首字母</Text>
+              <Text style={styles.cityPanelTitle}>全部城市 · 按首字母</Text>
               <ScrollView
                 style={styles.cityScroll}
                 nestedScrollEnabled
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginBottom: 8,
   },
-  cityScroll: { maxHeight: 230 },
+  cityScroll: { maxHeight: 320 },
   cityEmpty: { fontSize: 13, color: colors.muted, paddingVertical: 8 },
   cityGroup: { marginBottom: 10 },
   cityLetter: {
