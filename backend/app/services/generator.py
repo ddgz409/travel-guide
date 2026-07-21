@@ -1176,23 +1176,26 @@ class GuideGenerator:
         db.flush()  # 拿到 day.id
 
         items_data = plan.get("items", [])
-        prev_loc: str | None = None
+        prev_item: Item | None = None
+        prev_loc: dict[str, Any] | None = None
         # 估算时间：从 9:00 开始累加（停留+交通）
         current_time_min = 9 * 60  # 9:00 = 540 分钟
         for seq, it in enumerate(items_data):
             loc = it.get("location") or {}
-            loc_str = f"{loc.get('lng')},{loc.get('lat')}" if loc.get("lng") else None
+            has_coords = loc.get("lng") is not None and loc.get("lat") is not None
 
-            # 估算出发时间（从上一站离开的时刻）
-            departure_time = current_time_min if prev_loc else None
-
-            # 路线：生成阶段用坐标估算（避免每段 2–3 次高德规划拖慢/限流）
-            # 详细换乘可在详情页按需调用 /items/{id}/route
-            transport = None
-            if prev_loc and loc_str and loc.get("lng") and loc.get("lat"):
+            # 路线写在上一站的 transport_to_next（本站 ← 上一站）
+            # 生成阶段用坐标估算，详细换乘在详情页按需调用 /items/{id}/route
+            if prev_item is not None and prev_loc and has_coords:
                 try:
-                    olng, olat = (float(x) for x in prev_loc.split(","))
-                    dist_m = int(self._haversine_m(olng, olat, float(loc["lng"]), float(loc["lat"])))
+                    dist_m = int(
+                        self._haversine_m(
+                            float(prev_loc["lng"]),
+                            float(prev_loc["lat"]),
+                            float(loc["lng"]),
+                            float(loc["lat"]),
+                        )
+                    )
                 except (TypeError, ValueError):
                     dist_m = 0
                 if dist_m > 0:
@@ -1202,15 +1205,26 @@ class GuideGenerator:
                     else:
                         duration_s = max(180, int(dist_m / 6.0))  # 公交/地铁粗估
                         mode = "transit"
-                    transport = {
+                    departure_time = current_time_min
+                    current_time_min += duration_s // 60
+                    prev_item.transport_to_next = {
                         "mode": mode,
                         "distance_m": dist_m,
                         "duration_s": duration_s,
                         "detail": None,
+                        "departure_time": _min_to_time(departure_time),
+                        "arrival_time": _min_to_time(current_time_min),
+                        "from_location": {
+                            "lng": float(prev_loc["lng"]),
+                            "lat": float(prev_loc["lat"]),
+                            "name": prev_item.name,
+                        },
+                        "to_location": {
+                            "lng": float(loc["lng"]),
+                            "lat": float(loc["lat"]),
+                            "name": it.get("name") or "",
+                        },
                     }
-                    current_time_min += duration_s // 60
-                    transport["departure_time"] = _min_to_time(departure_time) if departure_time else None
-                    transport["arrival_time"] = _min_to_time(current_time_min)
 
             item = Item(
                 day_id=day.id,
@@ -1226,10 +1240,12 @@ class GuideGenerator:
                 rating=it.get("rating"),
                 selected=True,
                 alternatives=it.get("alternatives"),
-                transport_to_next=transport,
+                transport_to_next=None,
             )
             db.add(item)
-            prev_loc = loc_str
+            db.flush()  # 拿到 item 引用，供下一段写回 transport_to_next
+            prev_item = item
+            prev_loc = loc if has_coords else None
             # 累加停留时间
             stay = it.get("duration_min") or 90
             current_time_min += stay

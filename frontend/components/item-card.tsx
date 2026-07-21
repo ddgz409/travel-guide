@@ -29,11 +29,20 @@ function formatDuration(min: number | null): string {
 
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+const ROUTE_STUB: TransportToNext = {
+  mode: "transit",
+  distance_m: 0,
+  duration_s: 0,
+  detail: null,
+};
+
 interface ItemCardProps {
   item: Item;
   index: number;
   tripId: string;
   city?: string;
+  /** 当天后续还有可规划站点时显示路线入口 */
+  hasNextRoute?: boolean;
   onToggle: (selected: boolean) => void;
   onSwap: (altIndex: number) => void;
   onReplace: (poi: PoiSearchResult) => void;
@@ -50,6 +59,7 @@ export function ItemCard({
   index,
   tripId,
   city = "",
+  hasNextRoute = false,
   onToggle,
   onSwap,
   onReplace,
@@ -64,7 +74,13 @@ export function ItemCard({
   const slot = item.time_slot;
   const cover = coverForItem(item.name, item.type, city);
   const [localTransport, setLocalTransport] = useState<TransportToNext | null>(null);
-  const transport = localTransport || item.transport_to_next;
+  const showRoute =
+    item.selected &&
+    hasNextRoute &&
+    item.location?.lng != null &&
+    item.location?.lat != null;
+  const transport =
+    localTransport || item.transport_to_next || (showRoute ? ROUTE_STUB : null);
 
   const [altSearch, setAltSearch] = useState("");
   const [altResults, setAltResults] = useState<PoiSearchResult[]>([]);
@@ -272,7 +288,7 @@ export function ItemCard({
         </div>
       )}
 
-      {transport && item.selected && (
+      {showRoute && transport && (
         <RouteBoard
           tripId={tripId}
           itemId={item.id}

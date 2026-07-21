@@ -308,32 +308,45 @@ export default function TripDetailPage() {
                   </span>
                 </div>
 
-                {dayItems.map((it, idx) => (
-                  <ItemCard
-                    key={it.id}
-                    item={it}
-                    index={idx}
-                    tripId={tripId}
-                    city={trip.destination}
-                    onToggle={(selected) =>
-                      toggleItem.mutate({ itemId: it.id, selected })
-                    }
-                    onSwap={(altIndex) =>
-                      swapItem.mutate({ itemId: it.id, altIndex })
-                    }
-                    onReplace={(poi) =>
-                      replaceItem.mutate({ itemId: it.id, poi })
-                    }
-                    onTransportChange={() =>
-                      qc.invalidateQueries({ queryKey: ["trip", tripId] })
-                    }
-                    onDragStart={() => setDragIndex(idx)}
-                    onDragOver={() => setDragOverIndex(idx)}
-                    onDrop={() => currentDay && handleDrop(currentDay, dayItems, idx)}
-                    dragging={dragIndex === idx}
-                    dragOver={dragOverIndex === idx}
-                  />
-                ))}
+                {dayItems.map((it, idx) => {
+                  const hasNextRoute = dayItems
+                    .slice(idx + 1)
+                    .some(
+                      (n) =>
+                        n.selected &&
+                        n.location?.lng != null &&
+                        n.location?.lat != null,
+                    );
+                  return (
+                    <ItemCard
+                      key={it.id}
+                      item={it}
+                      index={idx}
+                      tripId={tripId}
+                      city={trip.destination}
+                      hasNextRoute={hasNextRoute}
+                      onToggle={(selected) =>
+                        toggleItem.mutate({ itemId: it.id, selected })
+                      }
+                      onSwap={(altIndex) =>
+                        swapItem.mutate({ itemId: it.id, altIndex })
+                      }
+                      onReplace={(poi) =>
+                        replaceItem.mutate({ itemId: it.id, poi })
+                      }
+                      onTransportChange={() =>
+                        qc.invalidateQueries({ queryKey: ["trip", tripId] })
+                      }
+                      onDragStart={() => setDragIndex(idx)}
+                      onDragOver={() => setDragOverIndex(idx)}
+                      onDrop={() =>
+                        currentDay && handleDrop(currentDay, dayItems, idx)
+                      }
+                      dragging={dragIndex === idx}
+                      dragOver={dragOverIndex === idx}
+                    />
+                  );
+                })}
               </div>
 
               <aside className="lg:sticky lg:top-[72px] space-y-4">

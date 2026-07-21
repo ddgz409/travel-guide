@@ -72,22 +72,40 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return output;
 }
 
+function hasCoords(loc: Item["location"]): boolean {
+  return loc != null && loc.lng != null && loc.lat != null;
+}
+
+const ROUTE_STUB: TransportToNext = {
+  mode: "transit",
+  distance_m: 0,
+  duration_s: 0,
+  detail: null,
+};
+
 const ItemBlock = memo(function ItemBlock({
   item,
   tripId,
   canEdit,
   onChanged,
+  hasNextRoute,
 }: {
   item: Item;
   tripId: string;
   canEdit: boolean;
   onChanged: (trip: Trip) => void;
+  /** 当天后续还有可规划站点时显示路线入口（不依赖错误缓存） */
+  hasNextRoute: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [localTransport, setLocalTransport] = useState<TransportToNext | null>(
     item.transport_to_next,
   );
   const alts = item.alternatives || [];
+  const showRoute =
+    item.selected && hasNextRoute && hasCoords(item.location);
+  const transportForSheet =
+    localTransport || item.transport_to_next || (showRoute ? ROUTE_STUB : null);
 
   useEffect(() => {
     setLocalTransport(item.transport_to_next);
@@ -149,12 +167,12 @@ const ItemBlock = memo(function ItemBlock({
           <Text style={styles.itemMeta}>评分 {item.rating}</Text>
         ) : null}
       </View>
-      {localTransport && item.selected ? (
+      {showRoute && transportForSheet ? (
         <TransportRouteSheet
           tripId={tripId}
           itemId={item.id}
           fromName={item.name}
-          transport={localTransport}
+          transport={transportForSheet}
           onUpdated={setLocalTransport}
         />
       ) : null}
@@ -515,16 +533,22 @@ export function TripDetailScreen({ route, navigation }: Props) {
         <Text style={styles.sectionTitle}>
           精选行程 · {selectedItems.length} 个安排
         </Text>
-        {dayItems.map((item, i) => (
-          <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
-            <ItemBlock
-              item={item}
-              tripId={trip.id}
-              canEdit={canEdit}
-              onChanged={setTrip}
-            />
-          </FadeSlideIn>
-        ))}
+        {dayItems.map((item, i) => {
+          const hasNextRoute = dayItems
+            .slice(i + 1)
+            .some((n) => n.selected && hasCoords(n.location));
+          return (
+            <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
+              <ItemBlock
+                item={item}
+                tripId={trip.id}
+                canEdit={canEdit}
+                onChanged={setTrip}
+                hasNextRoute={hasNextRoute}
+              />
+            </FadeSlideIn>
+          );
+        })}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>当日路线地图</Text>

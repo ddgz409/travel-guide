@@ -414,6 +414,27 @@ def update_item(
     return trip
 
 
+def _has_coords(loc: dict | None) -> bool:
+    if not loc:
+        return False
+    return loc.get("lng") is not None and loc.get("lat") is not None
+
+
+def _next_routable_item(item: Item, db: Session) -> Item | None:
+    """当天后续第一个仍勾选且有坐标的站点（跳过已取消/无坐标）。"""
+    rows = db.scalars(
+        select(Item)
+        .where(Item.day_id == item.day_id, Item.seq > item.seq)
+        .order_by(Item.seq)
+    ).all()
+    for n in rows:
+        if n.selected is False or n.selected == 0:
+            continue
+        if _has_coords(n.location):
+            return n
+    return None
+
+
 def _plan_and_save_transport(
     item: Item,
     next_item: Item,
@@ -494,9 +515,9 @@ def get_item_route(
         raise HTTPException(status_code=404, detail="条目不存在")
 
     transport = item.transport_to_next or {}
-    next_item = db.scalar(
-        select(Item).where(Item.day_id == item.day_id, Item.seq == item.seq + 1)
-    )
+    if not _has_coords(item.location):
+        raise HTTPException(status_code=400, detail="当前站点缺少坐标，无法规划路线")
+    next_item = _next_routable_item(item, db)
     if not next_item:
         return {**transport, "detail": transport.get("detail"), "to_name": None}
 
@@ -548,9 +569,9 @@ def update_item_route(
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
-    next_item = db.scalar(
-        select(Item).where(Item.day_id == item.day_id, Item.seq == item.seq + 1)
-    )
+    if not _has_coords(item.location):
+        raise HTTPException(status_code=400, detail="当前站点缺少坐标，无法规划路线")
+    next_item = _next_routable_item(item, db)
     if not next_item:
         raise HTTPException(status_code=400, detail="已是当天最后一站")
 
@@ -617,6 +638,17 @@ def get_day_routes(
         poly = t.get("polyline") or []
         if len(poly) < 2:
             return None
+        # 旧数据曾把「到本站」误存在本站；校验终点坐标，避免错用缓存
+        to_loc = t.get("to_location") or {}
+        if to_loc.get("lng") is not None and to_loc.get("lat") is not None:
+            try:
+                if (
+                    abs(float(to_loc["lng"]) - float(b.location["lng"])) > 1e-3
+                    or abs(float(to_loc["lat"]) - float(b.location["lat"])) > 1e-3
+                ):
+                    return None
+            except (TypeError, ValueError, KeyError):
+                return None
         used = t.get("mode") or mode
         # 同模式，或地图仅需折线时接受已有方案（标 fallback）
         if used != mode and not (mode == "transit" and used in ("walking", "transit")):
