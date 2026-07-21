@@ -32,6 +32,9 @@ dist/
 *.sqlite3
 db.sqlite3
 
+# Runtime caches
+backend/data/landmark_cache.json
+
 # Git worktrees (local isolation)
 .worktrees/
 

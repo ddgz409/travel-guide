@@ -163,6 +163,7 @@ export function AnimatedDot({ active }: { active: boolean }) {
           height: 6,
           borderRadius: 3,
           backgroundColor: "#ff6d00",
+          marginRight: 6,
         },
         style,
       ]}

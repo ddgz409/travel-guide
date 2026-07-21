@@ -118,6 +118,12 @@ export const tripsApi = {
       `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}`
     ),
 
+  /** 目的地热门景点推荐芯片（本地精选 + 高德补全）。 */
+  suggestLandmarks: (city: string) =>
+    request<{ city: string; landmarks: string[] }>(
+      `/trips/pois/suggest?city=${encodeURIComponent(city)}`
+    ),
+
   generate: (payload: GenerateRequest) =>
     request<Trip>("/trips/generate", {
       method: "POST",

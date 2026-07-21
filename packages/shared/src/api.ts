@@ -121,6 +121,10 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<PoiSearchResult[]>(
           `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}`,
         ),
+      suggestLandmarks: (city: string) =>
+        request<{ city: string; landmarks: string[] }>(
+          `/trips/pois/suggest?city=${encodeURIComponent(city)}`,
+        ),
       list: () => request<TripListItem[]>("/trips"),
       get: (id: string) => request<Trip>(`/trips/${id}`),
       generate: (payload: GenerateRequest) =>

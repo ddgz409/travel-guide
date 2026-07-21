@@ -134,9 +134,8 @@ function GenerateContent() {
     return Math.floor((b - a) / 86400000) + 1;
   }, [startDate, endDate]);
 
-  const localLandmarks = useMemo(
-    () => landmarksFor(destination).slice(0, 8),
-    [destination],
+  const [localLandmarks, setLocalLandmarks] = useState<string[]>(() =>
+    landmarksFor(destination).slice(0, 8),
   );
   const hintExamples = useMemo(
     () => searchHintExamples(destination),
@@ -157,6 +156,29 @@ function GenerateContent() {
     setSearchResults([]);
     setShowResults(false);
   }, [landmarkCityKey]);
+
+  useEffect(() => {
+    const dest = destination.trim();
+    if (!dest) {
+      setLocalLandmarks([]);
+      return;
+    }
+    setLocalLandmarks(landmarksFor(dest).slice(0, 8));
+    let cancelled = false;
+    void tripsApi
+      .suggestLandmarks(dest)
+      .then((res) => {
+        if (!cancelled && res.landmarks?.length) {
+          setLocalLandmarks(res.landmarks.slice(0, 8));
+        }
+      })
+      .catch(() => {
+        /* 保留本地精选 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [destination]);
 
   const doSearch = useCallback(
     async (q: string) => {

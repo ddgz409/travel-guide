@@ -340,11 +340,14 @@ def search_pois(
 
 @router.get("/pois/suggest")
 def suggest_pois(city: str = ""):
-    """返回目的地热门必去景点名称（本地库，供搜索框推荐芯片）。"""
-    from app.services.destination_landmarks import landmarks_for
+    """返回目的地热门必去景点（本地精选 + 高德补全，供搜索框推荐芯片）。"""
+    from app.services.destination_landmarks import resolve_landmarks
 
-    names = landmarks_for(city.strip())
-    return {"city": city.strip(), "landmarks": names[:12]}
+    city_s = city.strip()
+    if not city_s:
+        return {"city": "", "landmarks": []}
+    names = resolve_landmarks(city_s, get_amap_client(), limit=12)
+    return {"city": city_s, "landmarks": names}
 
 
 @router.get("", response_model=list[TripListItem])

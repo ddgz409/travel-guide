@@ -28,7 +28,7 @@ from app.services.ctrip_hotel_client import CtripHotel, search_ctrip_hotels
 from app.services.destination_landmarks import (
     is_micro_poi,
     landmark_boost,
-    landmarks_for,
+    resolve_landmarks,
 )
 from app.services.xiaohongshu_client import search_xiaohongshu
 from app.services.llm_client import LLMClient, LLMError, get_llm_client
@@ -272,7 +272,7 @@ class GuideGenerator:
         """获取三类 POI 候选池：周边搜 + 热门地标关键词，过滤微点后按知名度重排。"""
         must_include = must_include or []
         pool: dict[str, list[Poi]] = {k: [] for k in POI_TYPES}
-        city_landmarks = landmarks_for(destination)
+        city_landmarks = resolve_landmarks(destination, self.amap, limit=LANDMARK_SEARCH_LIMIT)
 
         def _one(kind: str, type_code: str) -> tuple[str, list[Poi]]:
             try:
@@ -904,7 +904,9 @@ class GuideGenerator:
         external_refs: dict | None = None,
     ) -> str:
         """构造用户提示词，注入候选 POI（含评分）+ 网页摘要。"""
-        city_landmarks = landmarks_for(trip.destination)
+        city_landmarks = resolve_landmarks(
+            trip.destination, self.amap, limit=LANDMARK_SEARCH_LIMIT
+        )
 
         def fmt(kind: str) -> str:
             lines = []

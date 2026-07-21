@@ -131,10 +131,32 @@ export function GenerateScreen({ navigation, route }: Props) {
     return Math.floor((b - a) / 86400000) + 1;
   }, [startDate, endDate]);
 
-  const localLandmarks = useMemo(
-    () => landmarksFor(destination).slice(0, 10),
-    [destination],
+  const [localLandmarks, setLocalLandmarks] = useState<string[]>(() =>
+    landmarksFor(destination).slice(0, 10),
   );
+
+  useEffect(() => {
+    const dest = destination.trim();
+    if (!dest) {
+      setLocalLandmarks([]);
+      return;
+    }
+    setLocalLandmarks(landmarksFor(dest).slice(0, 10));
+    let cancelled = false;
+    void api.trips
+      .suggestLandmarks(dest)
+      .then((res) => {
+        if (!cancelled && res.landmarks?.length) {
+          setLocalLandmarks(res.landmarks.slice(0, 10));
+        }
+      })
+      .catch(() => {
+        /* 保留本地精选 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [destination]);
 
   function scrollPoiIntoView() {
     // 只轻微滚动，避免把搜索框顶出可视区

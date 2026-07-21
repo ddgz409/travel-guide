@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Dimensions,
   Image,
   ImageSourcePropType,
   NativeScrollEvent,
@@ -10,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -29,8 +29,6 @@ import { colors } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Home">;
-
-const { width: SCREEN_W } = Dimensions.get("window");
 
 const SLIDES: Array<{
   title: string;
@@ -128,6 +126,7 @@ const INTERESTS = [
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: screenW } = useWindowDimensions();
   const { user, isGuest, enterGuest } = useAuth();
   const [slide, setSlide] = useState(0);
   const [q, setQ] = useState("");
@@ -144,18 +143,18 @@ export function HomeScreen({ navigation }: Props) {
       if (Date.now() < pauseAutoUntil.current) return;
       setSlide((s) => {
         const next = (s + 1) % SLIDES.length;
-        heroRef.current?.scrollTo({ x: next * SCREEN_W, animated: true });
+        heroRef.current?.scrollTo({ x: next * screenW, animated: true });
         return next;
       });
     }, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [screenW]);
 
   function onHeroScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
     const i = Math.max(
       0,
-      Math.min(SLIDES.length - 1, Math.round(x / SCREEN_W)),
+      Math.min(SLIDES.length - 1, Math.round(x / screenW)),
     );
     setSlide(i);
   }
@@ -206,7 +205,9 @@ export function HomeScreen({ navigation }: Props) {
     });
   }
 
-  const cardW = (SCREEN_W - 20 * 2 - 12) / 2;
+  // 卡片左右各 margin 6；分区左右 padding 20
+  const cardW = (screenW - 40 - 24) / 2;
+  const shortcutW = (screenW - 30 - 20) / 2;
 
   return (
     <View style={styles.root}>
@@ -216,18 +217,29 @@ export function HomeScreen({ navigation }: Props) {
       >
         <Text style={styles.logo}>旅迹</Text>
         <View style={styles.topActions}>
-          <PressScale onPress={() => navigation.navigate("Settings")}>
+          <PressScale
+            style={styles.topActionItem}
+            onPress={() => navigation.navigate("Settings")}
+          >
             <Text style={styles.topCta}>模型设置</Text>
           </PressScale>
           {user || isGuest ? (
-            <PressScale onPress={() => navigation.navigate("Trips")}>
+            <PressScale
+              style={styles.topActionItem}
+              onPress={() => navigation.navigate("Trips")}
+            >
               <Text style={styles.topLink}>我的</Text>
             </PressScale>
           ) : null}
           {user ? (
-            <Text style={styles.topMuted}>{user.username}</Text>
+            <Text style={[styles.topMuted, styles.topActionItem]}>
+              {user.username}
+            </Text>
           ) : (
-            <PressScale onPress={() => navigation.navigate("Login")}>
+            <PressScale
+              style={styles.topActionItem}
+              onPress={() => navigation.navigate("Login")}
+            >
               <Text style={styles.topLink}>登录</Text>
             </PressScale>
           )}
@@ -252,12 +264,12 @@ export function HomeScreen({ navigation }: Props) {
             {SLIDES.map((s) => (
               <Pressable
                 key={s.dest}
-                style={styles.heroPage}
+                style={[styles.heroPage, { width: screenW }]}
                 onPress={() => void goGenerate(s.dest)}
               >
                 <Image
                   source={s.img}
-                  style={styles.heroImg}
+                  style={[styles.heroImg, { width: screenW }]}
                   resizeMode="cover"
                 />
                 <View style={styles.heroMask} />
@@ -372,7 +384,7 @@ export function HomeScreen({ navigation }: Props) {
           ].map((x) => (
             <PressScale
               key={x.title}
-              style={styles.shortcut}
+              style={[styles.shortcut, { width: shortcutW }]}
               onPress={x.onPress}
             >
               <Text style={styles.shortcutTitle}>{x.title}</Text>
@@ -464,18 +476,40 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
-  logo: { fontSize: 22, fontWeight: "800", color: colors.ink, letterSpacing: 1 },
-  topActions: { flexDirection: "row", alignItems: "center", gap: 14 },
-  topLink: { fontSize: 14, color: colors.ink, fontWeight: "600" },
-  topMuted: { fontSize: 13, color: colors.muted },
-  topCta: { fontSize: 14, color: colors.brand, fontWeight: "700" },
+  logo: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.ink,
+    letterSpacing: 1,
+    flexShrink: 0,
+    marginRight: 12,
+  },
+  topActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    flexWrap: "nowrap",
+  },
+  topActionItem: { marginLeft: 14, flexShrink: 0 },
+  topLink: {
+    fontSize: 14,
+    color: colors.ink,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  topMuted: { fontSize: 13, color: colors.muted, lineHeight: 20 },
+  topCta: {
+    fontSize: 14,
+    color: colors.brand,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
   hero: {
     height: 320,
     backgroundColor: "#1a1a1a",
     overflow: "hidden",
   },
   heroPage: {
-    width: SCREEN_W,
     height: 320,
     overflow: "hidden",
     backgroundColor: "#1a1a1a",
@@ -484,7 +518,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    width: SCREEN_W,
     height: 320,
     transform: [{ scale: 1.06 }],
   },
@@ -496,32 +529,32 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 20,
     right: 20,
-    bottom: 36,
+    bottom: 44,
   },
   heroEyebrow: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 12,
     letterSpacing: 2,
     marginBottom: 8,
+    lineHeight: 18,
   },
   heroTitle: {
     color: "#fff",
     fontSize: 26,
     fontWeight: "800",
-    lineHeight: 34,
+    lineHeight: 36,
     marginBottom: 8,
   },
   heroSub: {
     color: "rgba(255,255,255,0.88)",
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   dots: {
     position: "absolute",
     left: 20,
-    bottom: 16,
+    bottom: 14,
     flexDirection: "row",
-    gap: 6,
   },
   searchWrap: {
     marginTop: 16,
@@ -577,7 +610,7 @@ const styles = StyleSheet.create({
     color: colors.brandHot,
     marginBottom: 6,
   },
-  cityChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  cityChips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
   cityChip: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -585,31 +618,46 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    margin: 4,
   },
   cityChipOn: {
     borderColor: colors.brand,
     backgroundColor: colors.brandSoft,
   },
-  cityChipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
+  cityChipText: {
+    fontSize: 14,
+    color: colors.ink,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
   cityChipTextOn: { color: colors.brandHot },
   shortcuts: {
     marginTop: 16,
-    marginHorizontal: 20,
+    marginHorizontal: 15,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
   },
   shortcut: {
-    width: (SCREEN_W - 40 - 10) / 2,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    margin: 5,
   },
-  shortcutTitle: { fontSize: 14, fontWeight: "700", color: colors.ink },
-  shortcutDesc: { marginTop: 4, fontSize: 12, color: colors.muted },
+  shortcutTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.ink,
+    lineHeight: 20,
+  },
+  shortcutDesc: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 18,
+  },
   section: { marginTop: 28, paddingHorizontal: 20 },
   sectionRow: {
     flexDirection: "row",
@@ -622,9 +670,16 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.ink,
     marginBottom: 12,
+    lineHeight: 26,
   },
-  sectionLink: { fontSize: 13, color: colors.brand, fontWeight: "600", marginBottom: 12 },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sectionLink: {
+    fontSize: 13,
+    color: colors.brand,
+    fontWeight: "600",
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  chips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
   chip: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -632,20 +687,32 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    margin: 4,
   },
-  chipText: { fontSize: 14, color: colors.ink },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  chipText: { fontSize: 14, color: colors.ink, lineHeight: 20 },
+  grid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -6 },
   card: {
     backgroundColor: colors.card,
     borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.line,
+    margin: 6,
   },
   cardImg: { width: "100%", height: 110 },
   cardBody: { padding: 10 },
-  cardName: { fontSize: 15, fontWeight: "700", color: colors.ink },
-  cardDesc: { marginTop: 2, fontSize: 12, color: colors.muted },
+  cardName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.ink,
+    lineHeight: 22,
+  },
+  cardDesc: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 18,
+  },
   bigCta: {
     marginTop: 28,
     marginHorizontal: 20,
@@ -654,8 +721,18 @@ const styles = StyleSheet.create({
     paddingVertical: 22,
     paddingHorizontal: 20,
   },
-  bigCtaTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
-  bigCtaSub: { color: "rgba(255,255,255,0.65)", marginTop: 6, fontSize: 13 },
+  bigCtaTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 26,
+  },
+  bigCtaSub: {
+    color: "rgba(255,255,255,0.65)",
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 20,
+  },
   llmBar: {
     marginTop: 18,
     marginHorizontal: 20,
@@ -666,14 +743,14 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
   },
   llmDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.brand,
+    marginRight: 10,
   },
-  llmMsg: { fontSize: 13, color: colors.ink, fontWeight: "600" },
-  llmUrl: { marginTop: 2, fontSize: 11, color: colors.muted },
+  llmMsg: { fontSize: 13, color: colors.ink, fontWeight: "600", lineHeight: 20 },
+  llmUrl: { marginTop: 2, fontSize: 11, color: colors.muted, lineHeight: 16 },
 });
