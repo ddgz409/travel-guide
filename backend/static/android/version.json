@@ -1,7 +1,7 @@
 {
-  "versionCode": 4,
-  "versionName": "1.0.2",
+  "versionCode": 5,
+  "versionName": "1.0.3",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "路线规划支持左侧滑返回；修复联网与应用内检查更新",
+  "notes": "全国城市列表；路线规划定位/缩放；修复部分站点缺少路线规划",
   "force": false
 }
