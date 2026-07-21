@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "1.0.4",
+  "versionCode": 7,
+  "versionName": "1.0.5",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "全国城市热门景点；行程彩色卡片；首页布局与路线规划修复",
+  "notes": "首页彩色双列卡片；动漫风封面；生成页快速参考卡片优化",
   "force": false
 }
