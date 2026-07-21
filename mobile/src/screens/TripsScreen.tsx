@@ -20,28 +20,28 @@ import Animated from "react-native-reanimated";
 import { api, apiBase } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { PressScale, enterUp } from "../motion";
-import { colors } from "../theme";
+import { cardShadow, colors, pastels } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Trips">;
 
-const CARD_COLORS = ["#E8E4F8", "#D7EAF8", "#E4F0D8", "#F8E8D8", "#F5E0EC"];
+const CARD_COLORS = pastels;
 
 const COVER_BY_CITY: Array<{ key: string; img: ImageSourcePropType }> = [
-  { key: "北京", img: require("../../assets/covers/beijing_hero.jpg") },
-  { key: "上海", img: require("../../assets/covers/shanghai_bund.jpg") },
-  { key: "杭州", img: require("../../assets/covers/hangzhou_hero.jpg") },
+  { key: "北京", img: require("../../assets/covers/beijing_anime.png") },
+  { key: "上海", img: require("../../assets/covers/shanghai_anime.png") },
+  { key: "杭州", img: require("../../assets/covers/hangzhou_anime.png") },
   { key: "成都", img: require("../../assets/covers/chengdu.jpg") },
-  { key: "大理", img: require("../../assets/covers/dali.jpg") },
+  { key: "大理", img: require("../../assets/covers/dali_anime.png") },
   { key: "西安", img: require("../../assets/covers/xian.jpg") },
   { key: "厦门", img: require("../../assets/covers/xiamen.jpg") },
-  { key: "三亚", img: require("../../assets/covers/sanya.jpg") },
+  { key: "三亚", img: require("../../assets/covers/sanya_anime.png") },
   { key: "洛阳", img: require("../../assets/covers/luoyang.jpg") },
   { key: "泉州", img: require("../../assets/covers/quanzhou.jpg") },
-  { key: "西湖", img: require("../../assets/covers/westlake.jpg") },
+  { key: "西湖", img: require("../../assets/covers/hangzhou_anime.png") },
 ];
 
-const FALLBACK_COVER = require("../../assets/covers/hangzhou_hero.jpg");
+const FALLBACK_COVER = require("../../assets/covers/hangzhou_anime.png");
 
 function coverFor(destination: string): ImageSourcePropType {
   const d = destination || "";
@@ -130,7 +130,12 @@ function TripCard({
   const initial = (username || item.destination || "旅").slice(0, 1);
 
   return (
-    <PressScale style={styles.cardPress} scaleTo={0.985} onPress={onPress} onLongPress={onLongPress}>
+    <PressScale
+      style={styles.cardPress}
+      scaleTo={0.985}
+      onPress={onPress}
+      onLongPress={onLongPress}
+    >
       <View style={[styles.card, { backgroundColor: bg }]}>
         <View style={styles.badge}>
           <View
@@ -396,7 +401,7 @@ export function TripsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F3F1EC" },
+  root: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 8,
@@ -426,7 +431,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     fontSize: 28,
     fontWeight: "800",
-    color: "#9A9690",
+    color: colors.ink,
     letterSpacing: 0.5,
   },
   banner: {
@@ -471,6 +476,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     minHeight: 188,
     overflow: "hidden",
+    ...cardShadow,
   },
   badge: {
     alignSelf: "flex-start",
@@ -486,7 +492,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#B0B0B0",
+    backgroundColor: colors.brand,
     marginRight: 6,
   },
   badgeDotLive: { backgroundColor: "#2e7d32" },
@@ -495,7 +501,7 @@ const styles = StyleSheet.create({
   badgeDotSoon: { backgroundColor: colors.brand },
   badgeText: {
     fontSize: 12,
-    color: "#6F6F6F",
+    color: colors.muted,
     fontWeight: "600",
     lineHeight: 16,
   },
@@ -516,13 +522,13 @@ const styles = StyleSheet.create({
   metaBar: {
     width: 2,
     borderRadius: 1,
-    backgroundColor: "rgba(0,0,0,0.12)",
+    backgroundColor: "rgba(255,109,0,0.28)",
     marginRight: 10,
   },
   metaTextCol: { flex: 1 },
   metaLine: {
     fontSize: 13,
-    color: "#6A6A6A",
+    color: colors.muted,
     lineHeight: 20,
   },
   cardBottom: {
@@ -542,7 +548,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.9)",
   },
   avatarPrimary: { backgroundColor: colors.brand },
-  avatarSecondary: { backgroundColor: "#8E8E8E" },
+  avatarSecondary: { backgroundColor: "#E07A3A" },
   avatarText: {
     color: "#fff",
     fontSize: 13,

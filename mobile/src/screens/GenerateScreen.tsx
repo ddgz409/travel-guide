@@ -26,7 +26,7 @@ import { landmarksFor } from "../landmarks";
 import { localLlmOverride } from "../llmStore";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../motion";
 import { openExternal } from "../openExternal";
-import { colors } from "../theme";
+import { cardShadow, colors } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Generate">;
@@ -51,6 +51,13 @@ const BUDGET_LEVELS = [
 ];
 const TRANSPORTS = ["公共交通", "自驾", "步行", "混合"];
 const QUICK_CITIES = ["北京", "成都", "杭州", "大理", "西安", "厦门", "上海", "三亚"];
+
+const MODE_COLORS = { quick: "#FFE8D6", custom: "#E8E4F8" };
+const QUICK_CARD_BG: Record<string, string> = {
+  classic: "#E8E4F8",
+  life: "#FFE8D6",
+};
+const QUICK_CARD_FALLBACK = ["#D7EAF8", "#E4F0D8", "#F5E0EC"];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -351,13 +358,20 @@ export function GenerateScreen({ navigation, route }: Props) {
               )
             }
           >
-            <Text style={styles.tipTitle} numberOfLines={1}>
+            <Text style={styles.tipTitle} numberOfLines={2}>
               {t.title}
             </Text>
             <Text style={styles.tipGo}>打开 →</Text>
           </PressScale>
         ))}
       </View>
+    );
+  }
+
+  function quickCardBg(cardId: string, index: number): string {
+    return (
+      QUICK_CARD_BG[cardId] ||
+      QUICK_CARD_FALLBACK[index % QUICK_CARD_FALLBACK.length]
     );
   }
 
@@ -380,7 +394,11 @@ export function GenerateScreen({ navigation, route }: Props) {
         <Text style={styles.modeLabel}>选择模式</Text>
         <View style={styles.modeRow}>
           <PressScale
-            style={[styles.modeCard, genMode === "quick" && styles.modeCardOn]}
+            style={[
+              styles.modeCard,
+              { backgroundColor: MODE_COLORS.quick },
+              genMode === "quick" && styles.modeCardOn,
+            ]}
             onPress={() => {
               setGenMode("quick");
               setError(null);
@@ -397,7 +415,11 @@ export function GenerateScreen({ navigation, route }: Props) {
             <Text style={styles.modeDesc}>秒出小红书 / 携程参考链接</Text>
           </PressScale>
           <PressScale
-            style={[styles.modeCard, genMode === "custom" && styles.modeCardOn]}
+            style={[
+              styles.modeCard,
+              { backgroundColor: MODE_COLORS.custom },
+              genMode === "custom" && styles.modeCardOn,
+            ]}
             onPress={() => {
               setGenMode("custom");
               setError(null);
@@ -469,7 +491,18 @@ export function GenerateScreen({ navigation, route }: Props) {
               </PressScale>
               {quickCards.map((card, i) => (
                 <FadeSlideIn key={card.id} delay={i * 80}>
-                  <View style={styles.quickCard}>
+                  <View
+                    style={[
+                      styles.quickCard,
+                      { backgroundColor: quickCardBg(card.id, i) },
+                    ]}
+                  >
+                    <View style={styles.quickCardBadge}>
+                      <View style={styles.quickCardBadgeDot} />
+                      <Text style={styles.quickCardBadgeText}>
+                        {card.id === "life" ? "吃住出行" : "经典打卡"}
+                      </Text>
+                    </View>
                     <Text style={styles.quickCardTitle}>{card.title}</Text>
                     {card.tagline ? (
                       <Text style={styles.quickCardTag}>{card.tagline}</Text>
@@ -786,15 +819,14 @@ const styles = StyleSheet.create({
   modeRow: { flexDirection: "row", gap: 10 },
   modeCard: {
     flex: 1,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "transparent",
+    borderRadius: 18,
     padding: 14,
+    ...cardShadow,
   },
   modeCardOn: {
     borderColor: colors.brand,
-    backgroundColor: colors.brandSoft,
   },
   modeTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
   modeTitleOn: { color: colors.brandHot },
@@ -806,15 +838,43 @@ const styles = StyleSheet.create({
   },
   quickCard: {
     marginTop: 14,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: 14,
+    borderRadius: 20,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    ...cardShadow,
   },
-  quickCardTitle: { fontSize: 17, fontWeight: "800", color: colors.ink },
+  quickCardBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+  quickCardBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.brand,
+    marginRight: 6,
+  },
+  quickCardBadgeText: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: "600",
+  },
+  quickCardTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: colors.ink,
+    lineHeight: 26,
+  },
   quickCardTag: {
     marginTop: 4,
+    marginBottom: 4,
     fontSize: 13,
     color: colors.muted,
     lineHeight: 18,
@@ -824,24 +884,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: colors.muted,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   tipRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 14,
+    backgroundColor: colors.card,
   },
   tipTitle: { flex: 1, fontSize: 14, color: colors.ink, fontWeight: "600" },
-  tipGo: { marginLeft: 8, fontSize: 13, color: colors.brandHot, fontWeight: "700" },
+  tipGo: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: colors.brandHot,
+    fontWeight: "700",
+  },
   note: {
-    backgroundColor: colors.brandSoft,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderRadius: 14,
     padding: 12,
     marginTop: 12,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   noteText: { fontSize: 13, color: colors.ink, lineHeight: 18 },
   noteLink: {
@@ -856,7 +925,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
@@ -866,7 +935,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
     flexDirection: "row",
@@ -877,10 +946,9 @@ const styles = StyleSheet.create({
   dateBtnHint: { fontSize: 13, color: colors.brandHot, fontWeight: "600" },
   pickerWrap: {
     marginTop: 10,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.line,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 0,
     overflow: "hidden",
     paddingBottom: Platform.OS === "ios" ? 8 : 0,
   },
@@ -899,13 +967,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.card,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
-  chipOn: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
-  chipText: { fontSize: 14, color: colors.muted },
-  chipTextOn: { color: colors.brandHot, fontWeight: "600" },
+  chipOn: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
+  chipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
+  chipTextOn: { color: colors.brandHot, fontWeight: "700" },
   chipDesc: { fontSize: 11, color: colors.muted, marginTop: 2 },
   poiRow: {
     flexDirection: "row",

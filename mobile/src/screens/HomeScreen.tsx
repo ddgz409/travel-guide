@@ -25,7 +25,7 @@ import {
   PressScale,
   enterFade,
 } from "../motion";
-import { colors } from "../theme";
+import { accentPastels, cardShadow, colors, pastels } from "../theme";
 import type { AppStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Home">;
@@ -40,31 +40,31 @@ const SLIDES: Array<{
     title: "长城秋色，城阙连云",
     sub: "登高望远，把京华秋意装进视野",
     dest: "北京",
-    img: require("../../assets/covers/beijing_hero.jpg"),
+    img: require("../../assets/covers/beijing_anime.png"),
   },
   {
     title: "外滩灯火，浦江夜色",
     sub: "摩天轮下看魔都心跳",
     dest: "上海",
-    img: require("../../assets/covers/shanghai_bund.jpg"),
+    img: require("../../assets/covers/shanghai_anime.png"),
   },
   {
     title: "西湖烟雨，茶香入梦",
     sub: "环湖慢行，把雷峰夕照留给傍晚",
     dest: "杭州",
-    img: require("../../assets/covers/hangzhou_hero.jpg"),
+    img: require("../../assets/covers/hangzhou_anime.png"),
   },
   {
     title: "椰风浪暖，天涯海角",
     sub: "把冬天留给阳光与沙滩",
     dest: "三亚",
-    img: require("../../assets/covers/sanya.jpg"),
+    img: require("../../assets/covers/sanya_anime.png"),
   },
   {
     title: "苍山洱海，风花雪月",
     sub: "骑行海东，在古城巷口遇见慢时光",
     dest: "大理",
-    img: require("../../assets/covers/dali.jpg"),
+    img: require("../../assets/covers/dali_anime.png"),
   },
 ];
 
@@ -76,7 +76,7 @@ const DESTINATIONS: Array<{
   {
     name: "北京",
     desc: "故宫长城 · 皇城根下",
-    img: require("../../assets/covers/beijing_hero.jpg"),
+    img: require("../../assets/covers/beijing_anime.png"),
   },
   {
     name: "成都",
@@ -86,12 +86,12 @@ const DESTINATIONS: Array<{
   {
     name: "杭州",
     desc: "西湖龙井 · 江南烟雨",
-    img: require("../../assets/covers/westlake.jpg"),
+    img: require("../../assets/covers/hangzhou_anime.png"),
   },
   {
     name: "大理",
     desc: "风花雪月 · 苍山洱海",
-    img: require("../../assets/covers/dali.jpg"),
+    img: require("../../assets/covers/dali_anime.png"),
   },
   {
     name: "西安",
@@ -106,12 +106,12 @@ const DESTINATIONS: Array<{
   {
     name: "上海",
     desc: "外滩夜景 · 魔都节奏",
-    img: require("../../assets/covers/shanghai_bund.jpg"),
+    img: require("../../assets/covers/shanghai_anime.png"),
   },
   {
     name: "三亚",
     desc: "热带海岛 · 阳光沙滩",
-    img: require("../../assets/covers/sanya.jpg"),
+    img: require("../../assets/covers/sanya_anime.png"),
   },
 ];
 
@@ -123,6 +123,9 @@ const INTERESTS = [
   { label: "摄影", tag: "摄影" },
   { label: "购物", tag: "购物" },
 ];
+
+const CARD_COLORS = pastels;
+const SHORTCUT_COLORS = accentPastels;
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -206,8 +209,9 @@ export function HomeScreen({ navigation }: Props) {
   }
 
   // 卡片左右各 margin 6；分区左右 padding 20
-  const cardW = (screenW - 40 - 24) / 2;
   const shortcutW = (screenW - 30 - 20) / 2;
+  // section padding 16*2 + gap 10 → 一行两个
+  const destW = (screenW - 32 - 10) / 2;
 
   return (
     <View style={styles.root}>
@@ -221,7 +225,7 @@ export function HomeScreen({ navigation }: Props) {
             style={styles.topActionItem}
             onPress={() => navigation.navigate("Settings")}
           >
-            <Text style={styles.topCta}>模型设置</Text>
+            <Text style={styles.topCta}>设置</Text>
           </PressScale>
           {user || isGuest ? (
             <PressScale
@@ -372,7 +376,7 @@ export function HomeScreen({ navigation }: Props) {
               onPress: () => goGenerate(),
             },
             {
-              title: "我的攻略",
+              title: "我的行程",
               desc: "收藏与编辑",
               onPress: () => navigation.navigate("Trips"),
             },
@@ -381,10 +385,16 @@ export function HomeScreen({ navigation }: Props) {
               desc: "自带 LLM API Key",
               onPress: () => navigation.navigate("Settings"),
             },
-          ].map((x) => (
+          ].map((x, i) => (
             <PressScale
               key={x.title}
-              style={[styles.shortcut, { width: shortcutW }]}
+              style={[
+                styles.shortcut,
+                {
+                  width: shortcutW,
+                  backgroundColor: SHORTCUT_COLORS[i % SHORTCUT_COLORS.length],
+                },
+              ]}
               onPress={x.onPress}
             >
               <Text style={styles.shortcutTitle}>{x.title}</Text>
@@ -410,24 +420,46 @@ export function HomeScreen({ navigation }: Props) {
 
         <FadeSlideIn delay={260} style={styles.section}>
           <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>热门目的地</Text>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+              热门目的地
+            </Text>
             <PressScale onPress={() => goGenerate()}>
-              <Text style={styles.sectionLink}>AI 生成 →</Text>
+              <Text style={[styles.sectionLink, { marginBottom: 0 }]}>
+                AI 生成 →
+              </Text>
             </PressScale>
           </View>
-          <View style={styles.grid}>
-            {DESTINATIONS.map((d) => (
+          <View style={styles.destGrid}>
+            {DESTINATIONS.map((d, i) => (
               <PressScale
                 key={d.name}
-                style={[styles.card, { width: cardW }]}
+                style={[styles.destCardPress, { width: destW }]}
+                scaleTo={0.985}
                 onPress={() => goGenerate(d.name)}
               >
-                <Image source={d.img} style={styles.cardImg} resizeMode="cover" />
-                <View style={styles.cardBody}>
-                  <Text style={styles.cardName}>{d.name}</Text>
-                  <Text style={styles.cardDesc} numberOfLines={1}>
-                    {d.desc}
-                  </Text>
+                <View
+                  style={[
+                    styles.destCard,
+                    { backgroundColor: CARD_COLORS[i % CARD_COLORS.length] },
+                  ]}
+                >
+                  <View style={styles.destLeft}>
+                    <Text style={styles.destTitle} numberOfLines={1}>
+                      {d.name}
+                    </Text>
+                    <Text style={styles.destMeta} numberOfLines={2}>
+                      {d.desc}
+                    </Text>
+                  </View>
+                  <View style={styles.destCoverWrap} pointerEvents="none">
+                    <View style={styles.destCoverInner}>
+                      <Image
+                        source={d.img}
+                        style={styles.destCover}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  </View>
                 </View>
               </PressScale>
             ))}
@@ -522,7 +554,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.06 }],
   },
   heroMask: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.38)",
   },
   heroText: {
@@ -614,7 +646,7 @@ const styles = StyleSheet.create({
   cityChip: {
     borderWidth: 1,
     borderColor: colors.line,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.card,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -638,19 +670,18 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   shortcut: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     margin: 5,
+    minHeight: 72,
+    ...cardShadow,
   },
   shortcutTitle: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
     color: colors.ink,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   shortcutDesc: {
     marginTop: 4,
@@ -658,12 +689,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
     lineHeight: 18,
   },
-  section: { marginTop: 28, paddingHorizontal: 20 },
+  section: { marginTop: 28, paddingHorizontal: 16 },
   sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
+    paddingHorizontal: 4,
   },
   sectionTitle: {
     fontSize: 18,
@@ -671,6 +703,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     marginBottom: 12,
     lineHeight: 26,
+    paddingHorizontal: 4,
   },
   sectionLink: {
     fontSize: 13,
@@ -679,45 +712,83 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     lineHeight: 20,
   },
-  chips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -2 },
   chip: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
     margin: 4,
-  },
-  chipText: { fontSize: 14, color: colors.ink, lineHeight: 20 },
-  grid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -6 },
-  card: {
     backgroundColor: colors.card,
-    borderRadius: 14,
-    overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.line,
-    margin: 6,
   },
-  cardImg: { width: "100%", height: 110 },
-  cardBody: { padding: 10 },
-  cardName: {
-    fontSize: 15,
-    fontWeight: "700",
+  chipText: {
+    fontSize: 14,
     color: colors.ink,
-    lineHeight: 22,
+    fontWeight: "600",
+    lineHeight: 20,
   },
-  cardDesc: {
-    marginTop: 2,
-    fontSize: 12,
+  destGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  destCardPress: { marginBottom: 10 },
+  destCard: {
+    borderRadius: 20,
+    paddingTop: 12,
+    paddingLeft: 12,
+    paddingRight: 10,
+    paddingBottom: 12,
+    minHeight: 108,
+    overflow: "hidden",
+    flexDirection: "row",
+    alignItems: "stretch",
+    ...cardShadow,
+  },
+  destLeft: {
+    flex: 1,
+    paddingRight: 4,
+    zIndex: 2,
+    justifyContent: "center",
+  },
+  destTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: colors.ink,
+    lineHeight: 24,
+    marginBottom: 4,
+  },
+  destMeta: {
+    fontSize: 11,
     color: colors.muted,
-    lineHeight: 18,
+    lineHeight: 16,
+  },
+  destCoverWrap: {
+    width: 56,
+    justifyContent: "flex-end",
+    alignItems: "flex-end",
+    zIndex: 1,
+  },
+  destCoverInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    overflow: "hidden",
+    transform: [{ rotate: "10deg" }],
+    marginRight: 0,
+    marginBottom: 2,
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  destCover: {
+    width: "100%",
+    height: "100%",
   },
   bigCta: {
-    marginTop: 28,
-    marginHorizontal: 20,
+    marginTop: 20,
+    marginHorizontal: 16,
     backgroundColor: colors.ink,
-    borderRadius: 16,
+    borderRadius: 22,
     paddingVertical: 22,
     paddingHorizontal: 20,
   },

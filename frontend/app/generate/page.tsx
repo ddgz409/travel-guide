@@ -484,66 +484,87 @@ function GenerateContent() {
               {submitting ? "加载中…" : "查看参考"}
             </button>
             <div className="grid md:grid-cols-2 gap-4">
-              {quickCards.map((card) => (
-                <article
-                  key={card.id}
-                  className="bg-white rounded-2xl border border-[var(--line)] p-5"
-                >
-                  <h2 className="font-semibold text-[18px] text-[var(--ink)]">
-                    {card.title}
-                  </h2>
-                  {card.tagline ? (
-                    <p className="text-[13px] text-[var(--muted)] mt-1">
-                      {card.tagline}
-                    </p>
-                  ) : null}
-                  {(
-                    [
-                      ["小红书", card.external_refs?.xiaohongshu || []],
-                      ["携程", card.external_refs?.ctrip || []],
-                    ] as const
-                  ).map(([label, tips]) =>
-                    tips.length ? (
-                      <div key={label} className="mt-4">
-                        <div className="text-[12px] font-semibold text-[var(--muted)] mb-2">
-                          {label}
+              {quickCards.map((card) => {
+                const bg =
+                  card.id === "life" ? "#FFE8D6" : "#E8E4F8";
+                const badge =
+                  card.id === "life" ? "吃住出行" : "经典打卡";
+                return (
+                  <article
+                    key={card.id}
+                    className="rounded-[20px] p-5 overflow-hidden shadow-[0_6px_18px_rgba(196,122,58,0.12)]"
+                    style={{ backgroundColor: bg }}
+                  >
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 mb-2.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)]" />
+                      <span className="text-[12px] font-semibold text-[#8B735F]">
+                        {badge}
+                      </span>
+                    </div>
+                    <h2 className="font-semibold text-[18px] text-[var(--ink)] leading-snug">
+                      {card.title}
+                    </h2>
+                    {card.tagline ? (
+                      <p className="text-[13px] text-[#8B735F] mt-1">
+                        {card.tagline}
+                      </p>
+                    ) : null}
+                    {(
+                      [
+                        ["小红书", card.external_refs?.xiaohongshu || []],
+                        ["携程", card.external_refs?.ctrip || []],
+                      ] as const
+                    ).map(([label, tips]) =>
+                      tips.length ? (
+                        <div key={label} className="mt-4">
+                          <div className="text-[12px] font-semibold text-[#8B735F] mb-2">
+                            {label}
+                          </div>
+                          <ul className="space-y-2">
+                            {tips.map((t) => (
+                              <li key={t.url}>
+                                <a
+                                  href={t.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => {
+                                    if (label !== "小红书") return;
+                                    const app = t.meta?.app_url;
+                                    if (!app) return;
+                                    e.preventDefault();
+                                    window.location.href = app;
+                                    window.setTimeout(() => {
+                                      if (
+                                        document.visibilityState === "visible"
+                                      ) {
+                                        window.open(
+                                          t.url,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        );
+                                      }
+                                    }, 1200);
+                                  }}
+                                  className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 hover:bg-[var(--brand-soft)] transition-colors"
+                                >
+                                  <span className="text-[14px] font-medium text-[var(--ink)] truncate">
+                                    {t.title}
+                                  </span>
+                                  <span className="shrink-0 text-[12px] font-semibold text-[var(--brand)]">
+                                    {label === "小红书"
+                                      ? "App / 网页 →"
+                                      : "打开 →"}
+                                  </span>
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                        <ul className="space-y-2">
-                          {tips.map((t) => (
-                            <li key={t.url}>
-                              <a
-                                href={t.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => {
-                                  if (label !== "小红书") return;
-                                  const app = t.meta?.app_url;
-                                  if (!app) return;
-                                  e.preventDefault();
-                                  window.location.href = app;
-                                  window.setTimeout(() => {
-                                    if (document.visibilityState === "visible") {
-                                      window.open(t.url, "_blank", "noopener,noreferrer");
-                                    }
-                                  }, 1200);
-                                }}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] px-3 py-2.5 hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
-                              >
-                                <span className="text-[14px] font-medium text-[var(--ink)] truncate">
-                                  {t.title}
-                                </span>
-                                <span className="shrink-0 text-[12px] font-semibold text-[var(--brand)]">
-                                  {label === "小红书" ? "App / 网页 →" : "打开 →"}
-                                </span>
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null,
-                  )}
-                </article>
-              ))}
+                      ) : null,
+                    )}
+                  </article>
+                );
+              })}
             </div>
           </div>
         ) : null}
