@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   ImageSourcePropType,
+  Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -200,8 +201,10 @@ export function HomeScreen({ navigation }: Props) {
     if (!user && !isGuest) await enterGuest();
   }
 
-  async function goGenerate(dest?: string, interests?: string[]) {
-    await ensureCanGenerate();
+  function goGenerate(dest?: string, interests?: string[]) {
+    // 不 await：游客态进阶只是本地写 AsyncStorage，绝不应阻塞跳转，
+    // 否则点击城市/卡片偶发「没反应」（await 期间 onBlur 卸载了面板）。
+    void ensureCanGenerate();
     navigation.navigate("Generate", {
       destination: dest,
       interests,
@@ -326,7 +329,7 @@ export function HomeScreen({ navigation }: Props) {
               <ScrollView
                 style={styles.cityScroll}
                 nestedScrollEnabled
-                keyboardShouldPersistTaps="handled"
+                keyboardShouldPersistTaps="always"
               >
                 {cityGroups.length === 0 ? (
                   <Text style={styles.cityEmpty}>没有匹配城市，可直接搜索</Text>
@@ -344,9 +347,12 @@ export function HomeScreen({ navigation }: Props) {
                               q.trim() === name && styles.cityChipOn,
                             ]}
                             onPress={() => {
+                              // 先收键盘并标记失焦，避免 onBlur 的 180ms 延迟
+                              // 在导航前卸载面板、吞掉点击。
+                              Keyboard.dismiss();
                               setQ(name);
                               setSearchFocus(false);
-                              void goGenerate(name);
+                              goGenerate(name);
                             }}
                           >
                             <Text

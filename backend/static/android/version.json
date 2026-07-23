@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.0.5",
+  "versionCode": 9,
+  "versionName": "1.0.6",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "首页彩色双列卡片；动漫风封面；生成页快速参考卡片优化",
+  "notes": "修复首页搜索点击城市无反应的问题",
   "force": false
 }
