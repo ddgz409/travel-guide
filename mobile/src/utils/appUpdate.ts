@@ -4,7 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Alert, Linking, Platform } from "react-native";
 import type { AndroidUpdateInfo } from "@travel-guide/shared";
-import { api } from "./api";
+import { api } from "../api/client";
 
 const SKIP_KEY = "travel_guide_skip_update_code";
 

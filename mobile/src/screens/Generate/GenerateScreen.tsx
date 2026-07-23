@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -20,88 +19,34 @@ import type {
   QuickRecommendCard,
 } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../api";
-import { useAuth } from "../auth/AuthContext";
-import { landmarksFor } from "../landmarks";
-import { localLlmOverride } from "../llmStore";
-import { FadeSlideIn, FadeSwitch, PressScale } from "../motion";
-import { openExternal } from "../openExternal";
-import { cardShadow, colors } from "../theme";
-import type { AppStackParamList } from "../navigation/types";
+import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
+import { landmarksFor } from "../../data/landmarks";
+import { localLlmOverride } from "../../utils/llmStore";
+import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
+import { openExternal } from "../../utils/openExternal";
+import { colors } from "../../theme";
+import type { AppStackParamList } from "../../navigation/types";
+import {
+  BUDGET_LEVELS,
+  INTERESTS,
+  MODE_COLORS,
+  QUICK_CITIES,
+  TRANSPORTS,
+} from "./constants";
+import { pickBestLandmarkMatch, quickCardBg } from "./helpers";
+import { styles } from "./styles";
+import {
+  formatDisplayDate,
+  parseISODate,
+  plusDaysISO,
+  todayISO,
+  toISODate,
+} from "../../utils/date";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Generate">;
 type DateField = "start" | "end";
 type GenMode = "quick" | "custom";
-
-
-const INTERESTS = [
-  "文化",
-  "美食",
-  "自然",
-  "购物",
-  "亲子",
-  "摄影",
-  "历史",
-  "艺术",
-];
-const BUDGET_LEVELS = [
-  { id: "经济", desc: "性价比优先" },
-  { id: "中等", desc: "舒适平衡" },
-  { id: "豪华", desc: "体验优先" },
-];
-const TRANSPORTS = ["公共交通", "自驾", "步行", "混合"];
-const QUICK_CITIES = ["北京", "成都", "杭州", "大理", "西安", "厦门", "上海", "三亚"];
-
-const MODE_COLORS = { quick: "#FFE8D6", custom: "#E8E4F8" };
-const QUICK_CARD_BG: Record<string, string> = {
-  classic: "#E8E4F8",
-  life: "#FFE8D6",
-};
-const QUICK_CARD_FALLBACK = ["#D7EAF8", "#E4F0D8", "#F5E0EC"];
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-function plusDaysISO(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-function parseISODate(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return new Date();
-  return new Date(y, m - 1, d);
-}
-function toISODate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-function formatDisplayDate(iso: string): string {
-  const date = parseISODate(iso);
-  if (Number.isNaN(date.getTime())) return iso || "选择日期";
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function pickBestLandmarkMatch(
-  query: string,
-  results: PoiSearchResult[],
-): PoiSearchResult | null {
-  if (!results.length) return null;
-  const q = query.replace(/\s+/g, "");
-  const scored = results.map((r, i) => {
-    const name = r.name.replace(/\s+/g, "");
-    let score = 0;
-    if (name === q) score += 100;
-    if (name.includes(q) || q.includes(name)) score += 50;
-    if (name.startsWith(q) || q.startsWith(name)) score += 20;
-    score -= i;
-    return { r, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0]?.score > 0 ? scored[0].r : results[0];
-}
 
 export function GenerateScreen({ navigation, route }: Props) {
   const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
@@ -361,17 +306,10 @@ export function GenerateScreen({ navigation, route }: Props) {
             <Text style={styles.tipTitle} numberOfLines={2}>
               {t.title}
             </Text>
-            <Text style={styles.tipGo}>打开 →</Text>
+            <Text style={styles.tipGo}>打开 {'→'}</Text>
           </PressScale>
         ))}
       </View>
-    );
-  }
-
-  function quickCardBg(cardId: string, index: number): string {
-    return (
-      QUICK_CARD_BG[cardId] ||
-      QUICK_CARD_FALLBACK[index % QUICK_CARD_FALLBACK.length]
     );
   }
 
@@ -524,7 +462,7 @@ export function GenerateScreen({ navigation, route }: Props) {
                   onPress={() => navigation.navigate("Settings")}
                 >
                   <Text style={styles.noteText}>
-                    已登录：生成优先用账号里的 LLM Key。点此管理 →
+                    已登录：生成优先用账号里的 LLM Key。点此管理 {'→'}
                   </Text>
                 </PressScale>
               ) : (
@@ -533,7 +471,7 @@ export function GenerateScreen({ navigation, route }: Props) {
                     可在「设置」填写自己的 LLM API Key；未填则用服务器默认模型。
                   </Text>
                   <PressScale onPress={() => navigation.navigate("Settings")}>
-                    <Text style={styles.noteLink}>去配置 LLM API →</Text>
+                    <Text style={styles.noteLink}>去配置 LLM API {'→'}</Text>
                   </PressScale>
                 </View>
               )}
@@ -802,234 +740,3 @@ export function GenerateScreen({ navigation, route }: Props) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20 },
-  searchHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: colors.muted,
-  },
-  modeLabel: {
-    fontSize: 13,
-    color: colors.muted,
-    marginBottom: 8,
-  },
-  modeRow: { flexDirection: "row", gap: 10 },
-  modeCard: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: "transparent",
-    borderRadius: 18,
-    padding: 14,
-    ...cardShadow,
-  },
-  modeCardOn: {
-    borderColor: colors.brand,
-  },
-  modeTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
-  modeTitleOn: { color: colors.brandHot },
-  modeDesc: {
-    marginTop: 4,
-    fontSize: 12,
-    color: colors.muted,
-    lineHeight: 17,
-  },
-  quickCard: {
-    marginTop: 14,
-    borderRadius: 20,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    ...cardShadow,
-  },
-  quickCardBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginBottom: 10,
-  },
-  quickCardBadgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.brand,
-    marginRight: 6,
-  },
-  quickCardBadgeText: {
-    fontSize: 12,
-    color: colors.muted,
-    fontWeight: "600",
-  },
-  quickCardTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.ink,
-    lineHeight: 26,
-  },
-  quickCardTag: {
-    marginTop: 4,
-    marginBottom: 4,
-    fontSize: 13,
-    color: colors.muted,
-    lineHeight: 18,
-  },
-  tipBlock: { marginTop: 12 },
-  tipBlockTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.muted,
-    marginBottom: 8,
-  },
-  tipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 14,
-    backgroundColor: colors.card,
-  },
-  tipTitle: { flex: 1, fontSize: 14, color: colors.ink, fontWeight: "600" },
-  tipGo: {
-    marginLeft: 8,
-    fontSize: 13,
-    color: colors.brandHot,
-    fontWeight: "700",
-  },
-  note: {
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    padding: 12,
-    marginTop: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  noteText: { fontSize: 13, color: colors.ink, lineHeight: 18 },
-  noteLink: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.brandHot,
-  },
-  label: { fontSize: 13, color: colors.muted, marginTop: 14, marginBottom: 6 },
-  hint: { fontSize: 12, color: colors.muted, marginTop: 10, marginBottom: 4 },
-  input: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.ink,
-  },
-  dateBtn: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dateBtnText: { fontSize: 16, color: colors.ink, fontWeight: "600" },
-  dateBtnHint: { fontSize: 13, color: colors.brandHot, fontWeight: "600" },
-  pickerWrap: {
-    marginTop: 10,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    borderWidth: 0,
-    overflow: "hidden",
-    paddingBottom: Platform.OS === "ios" ? 8 : 0,
-  },
-  pickerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  pickerTitle: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  pickerDone: { fontSize: 15, fontWeight: "700", color: colors.brandHot },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  chipOn: {
-    borderColor: colors.brand,
-    backgroundColor: colors.brandSoft,
-  },
-  chipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
-  chipTextOn: { color: colors.brandHot, fontWeight: "700" },
-  chipDesc: { fontSize: 11, color: colors.muted, marginTop: 2 },
-  poiRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-  },
-  poiSearchBlock: {
-    marginTop: 10,
-    position: "relative",
-    zIndex: 30,
-  },
-  poiDropdown: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 56,
-    zIndex: 40,
-    elevation: 12,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.line,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  poiDropdownScroll: { maxHeight: 200 },
-  poiAdd: {
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    minWidth: 64,
-    alignItems: "center",
-  },
-  poiAddText: { color: "#fff", fontWeight: "700" },
-  poiItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  poiName: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  poiAddr: { fontSize: 12, color: colors.muted, marginTop: 2 },
-  error: { marginTop: 14, color: colors.danger, fontSize: 14 },
-  primaryBtn: {
-    marginTop: 28,
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  btnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-});

@@ -10,11 +10,11 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { WebView } from "react-native-webview";
 import type { Item } from "@travel-guide/shared";
-import { api } from "../api";
-import { buildAmapHtml } from "../amapHtml";
-import { getAmapJsKey } from "../config";
-import type { AppStackParamList } from "../navigation/types";
-import { colors } from "../theme";
+import { api } from "../../api/client";
+import { buildAmapHtml } from "../../utils/amapHtml";
+import { getAmapJsKey } from "../../api/config";
+import type { AppStackParamList } from "../../navigation/types";
+import { colors } from "../../theme";
 
 type Props = {
   tripId: string;

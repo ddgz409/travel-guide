@@ -3,17 +3,17 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { formatAuthError, useAuth } from "../auth/AuthContext";
-import { FadeSlideIn, PressScale } from "../motion";
-import { colors } from "../theme";
-import type { AppStackParamList } from "../navigation/types";
+import { formatAuthError, useAuth } from "../../auth/AuthContext";
+import { FadeSlideIn, PressScale } from "../../utils/motion";
+import { colors } from "../../theme";
+import type { AppStackParamList } from "../../navigation/types";
+import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Login">;
 
@@ -117,61 +117,3 @@ export function LoginScreen({ navigation }: Props) {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 24 },
-  back: { marginTop: 8, alignSelf: "flex-start" },
-  backText: { color: colors.muted, fontSize: 15 },
-  hero: { marginTop: 28, marginBottom: 36 },
-  brand: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: colors.ink,
-    letterSpacing: 2,
-  },
-  tagline: { marginTop: 8, fontSize: 15, color: colors.muted },
-  form: { gap: 8 },
-  label: { fontSize: 13, color: colors.muted, marginTop: 8 },
-  input: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.ink,
-  },
-  error: { color: colors.danger, marginTop: 8, fontSize: 14 },
-  primaryBtn: {
-    marginTop: 20,
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  btnDisabled: { opacity: 0.7 },
-  primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  guestBtn: {
-    marginTop: 12,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.brand,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  guestBtnText: { color: colors.brandHot, fontSize: 16, fontWeight: "700" },
-  guestHint: {
-    marginTop: 8,
-    textAlign: "center",
-    color: colors.muted,
-    fontSize: 12,
-  },
-  link: {
-    marginTop: 18,
-    textAlign: "center",
-    color: colors.brand,
-    fontSize: 15,
-  },
-});

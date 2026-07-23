@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -19,49 +17,23 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { WebView } from "react-native-webview";
-import * as Location from "expo-location";
 import type { RouteStep, TransportToNext } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../api";
-import { buildAmapHtml } from "../amapHtml";
-import { getAmapJsKey } from "../config";
+import { api } from "../../api/client";
+import { buildAmapHtml } from "../../utils/amapHtml";
+import { getAmapJsKey } from "../../api/config";
+import { useMapLocation } from "../../hooks/useMapLocation";
+import { colors } from "../../theme";
 import {
-  describeLocationError,
-  getDeviceLocation,
-} from "../getDeviceLocation";
-import {
-  loadLocationConsent,
-  saveLocationConsent,
-} from "../locationPrefs";
-import { colors } from "../theme";
-
-type Mode = "transit" | "walking" | "driving";
-
-const MODE_TABS: { id: Mode; label: string }[] = [
-  { id: "transit", label: "公交地铁" },
-  { id: "walking", label: "步行" },
-  { id: "driving", label: "驾车" },
-];
-
-const SCREEN_W = Dimensions.get("window").width;
-const DISMISS_X = Math.min(120, SCREEN_W * 0.28);
-
-function modeLabel(mode: string) {
-  if (mode === "walking") return "步行";
-  if (mode === "driving") return "驾车";
-  return "公交地铁";
-}
-
-function fmtMin(s: number) {
-  const m = Math.max(1, Math.round(s / 60));
-  if (m < 60) return `${m}分钟`;
-  return `${Math.floor(m / 60)}小时${m % 60}分`;
-}
-
-function fmtKm(m: number) {
-  if (m < 1000) return `${m}米`;
-  return `${(m / 1000).toFixed(1)}公里`;
-}
+  DISMISS_X,
+  MODE_TABS,
+  SCREEN_W,
+  fmtKm,
+  fmtMin,
+  modeLabel,
+  type Mode,
+} from "./helpers";
+import { styles } from "./styles";
 
 type Props = {
   tripId: string;
@@ -85,7 +57,6 @@ export function TransportRouteSheet({
   );
   const [data, setData] = useState<TransportToNext>(transport);
   const [error, setError] = useState<string | null>(null);
-  const [locating, setLocating] = useState(false);
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
   const mapReadyRef = useRef(false);
@@ -96,52 +67,11 @@ export function TransportRouteSheet({
     webRef.current?.injectJavaScript(`${js}; true;`);
   }, []);
 
-  const requestAndShowLocation = useCallback(async () => {
-    setLocating(true);
-    try {
-      let consent = await loadLocationConsent();
-      if (consent === null) {
-        const choice = await new Promise<"granted" | "denied">((resolve) => {
-          Alert.alert(
-            "定位权限",
-            "是否允许旅迹获取你的位置，用于在路线地图上显示当前位置？可稍后在设置中修改。",
-            [
-              {
-                text: "不允许",
-                style: "cancel",
-                onPress: () => resolve("denied"),
-              },
-              { text: "允许", onPress: () => resolve("granted") },
-            ],
-          );
-        });
-        await saveLocationConsent(choice);
-        consent = choice;
-      }
-      if (consent !== "granted") {
-        Alert.alert("未开启定位", "可在「设置」中打开定位权限后再试。");
-        return;
-      }
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        await saveLocationConsent("denied");
-        Alert.alert("系统未授权", "请在系统设置里允许定位权限后再试。");
-        return;
-      }
-      await saveLocationConsent("granted");
-      const { lng, lat } = await getDeviceLocation();
-      if (!mapReadyRef.current) {
-        await new Promise((r) => setTimeout(r, 600));
-      }
-      inject(
-        `window.setUserLocation && window.setUserLocation(${lng},${lat},true)`,
-      );
-    } catch (e) {
-      Alert.alert("定位失败", describeLocationError(e));
-    } finally {
-      setLocating(false);
-    }
-  }, [inject]);
+  const { locating, requestAndShowLocation } = useMapLocation(
+    inject,
+    mapReadyRef,
+    "路线地图",
+  );
 
   function closeSheet() {
     setOpen(false);
@@ -302,7 +232,7 @@ export function TransportRouteSheet({
                   <Text style={styles.sheetTitle}>路线规划</Text>
                   <Text style={styles.sheetSub} numberOfLines={1}>
                     {fromName}
-                    {data.to_name ? ` → ${data.to_name}` : " → 下一站"}
+                    {data.to_name ? ` -> ${data.to_name}` : " -> 下一站"}
                   </Text>
                 </View>
                 <Pressable onPress={closeSheet} hitSlop={12}>
@@ -430,7 +360,7 @@ export function TransportRouteSheet({
                         <Text style={styles.stepDesc}>
                           {[step.departure_stop, step.arrival_stop]
                             .filter(Boolean)
-                            .join(" → ")}
+                            .join(" -> ")}
                         </Text>
                       ) : null}
                     </View>
@@ -448,155 +378,5 @@ export function TransportRouteSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    marginTop: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#d6e4ff",
-    backgroundColor: "#f0f7ff",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  cardTop: { flexDirection: "row", alignItems: "center", gap: 8 },
-  badge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#1a66ff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
-  cardSummary: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1a66ff",
-  },
-  cardCta: { fontSize: 12, fontWeight: "700", color: "#1a66ff" },
-  cardSub: { marginTop: 4, fontSize: 11, color: colors.muted },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  sheet: {
-    maxHeight: "92%",
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    overflow: "hidden",
-  },
-  edgeHint: {
-    position: "absolute",
-    left: 0,
-    top: 80,
-    bottom: 80,
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: "rgba(26,102,255,0.35)",
-    zIndex: 2,
-  },
-  sheetHead: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingRight: 4,
-  },
-  backChevron: {
-    fontSize: 28,
-    lineHeight: 28,
-    fontWeight: "300",
-    color: colors.brandHot,
-    marginTop: -2,
-  },
-  backText: { fontSize: 15, fontWeight: "700", color: colors.brandHot },
-  sheetTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
-  sheetSub: { marginTop: 2, fontSize: 12, color: colors.muted },
-  close: { fontSize: 14, fontWeight: "700", color: colors.muted },
-  swipeTip: {
-    paddingHorizontal: 16,
-    paddingTop: 6,
-    fontSize: 11,
-    color: colors.muted,
-  },
-  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 8 },
-  tab: {
-    flex: 1,
-    borderRadius: 20,
-    paddingVertical: 8,
-    alignItems: "center",
-    backgroundColor: colors.bg,
-  },
-  tabOn: { backgroundColor: "#1a66ff" },
-  tabText: { fontSize: 13, fontWeight: "700", color: colors.ink },
-  tabTextOn: { color: "#fff" },
-  mapBox: {
-    marginHorizontal: 12,
-    marginTop: 12,
-    height: 220,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#eef2f7",
-  },
-  mapFallback: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-  },
-  mapFallbackText: { fontSize: 12, color: colors.muted, textAlign: "center" },
-  mapLoading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.45)",
-  },
-  mapControls: {
-    position: "absolute",
-    right: 8,
-    bottom: 8,
-    gap: 6,
-  },
-  ctrlBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.line,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-  },
-  ctrlText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.ink,
-    lineHeight: 20,
-  },
-  locateBtn: { marginTop: 2 },
-  locateText: { fontSize: 11, fontWeight: "800", color: "#1a66ff" },
-  steps: { paddingHorizontal: 16, paddingTop: 12 },
-  stepRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  stepTitle: { fontSize: 14, fontWeight: "700", color: colors.ink },
-  stepDesc: { marginTop: 4, fontSize: 12, color: colors.muted, lineHeight: 18 },
-  hint: { paddingVertical: 20, textAlign: "center", color: colors.muted },
-  error: { color: colors.danger, marginBottom: 8 },
-});
+// silence unused import warning for fmtMin (kept for potential future use)
+void fmtMin;

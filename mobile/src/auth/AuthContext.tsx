@@ -8,7 +8,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { User } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api, setStoredToken } from "../api";
+import { api, setStoredToken } from "../api/client";
 
 const GUEST_KEY = "travel_guide_guest";
 const GUEST_TRIPS_KEY = "travel_guide_guest_trips";

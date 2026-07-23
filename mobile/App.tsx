@@ -5,25 +5,25 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
-import { maybePromptUpdateOnLaunch } from "./src/appUpdate";
+import { maybePromptUpdateOnLaunch } from "./src/utils/appUpdate";
 import type { AppStackParamList } from "./src/navigation/types";
-import { HomeScreen } from "./src/screens/HomeScreen";
-import { LoginScreen } from "./src/screens/LoginScreen";
-import { RegisterScreen } from "./src/screens/RegisterScreen";
-import { TripsScreen } from "./src/screens/TripsScreen";
-import { GenerateScreen } from "./src/screens/GenerateScreen";
-import { SettingsScreen } from "./src/screens/SettingsScreen";
-import { MapFullScreen } from "./src/screens/MapFullScreen";
+import { HomeScreen } from "./src/screens/Home/HomeScreen";
+import { LoginScreen } from "./src/screens/Login/LoginScreen";
+import { RegisterScreen } from "./src/screens/Register/RegisterScreen";
+import { TripsScreen } from "./src/screens/Trips/TripsScreen";
+import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
+import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
+import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
 import { colors } from "./src/theme";
 
 /** 推迟加载带地图的页面，避免启动时拉起 react-native-maps 导致闪退 */
 const TripDetailScreen = lazy(() =>
-  import("./src/screens/TripDetailScreen").then((m) => ({
+  import("./src/screens/TripDetail/TripDetailScreen").then((m) => ({
     default: m.TripDetailScreen,
   })),
 );
 const ShareScreen = lazy(() =>
-  import("./src/screens/ShareScreen").then((m) => ({ default: m.ShareScreen })),
+  import("./src/screens/Share/ShareScreen").then((m) => ({ default: m.ShareScreen })),
 );
 
 const Stack = createNativeStackNavigator<AppStackParamList>();

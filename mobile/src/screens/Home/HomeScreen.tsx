@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
-  ImageSourcePropType,
   Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
@@ -16,117 +14,28 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
-import { api } from "../api";
-import { useAuth } from "../auth/AuthContext";
-import { citiesGrouped } from "../cities";
-import { loadLocalLlm } from "../llmStore";
+import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
+import { citiesGrouped } from "../../data/cities";
+import { loadLocalLlm } from "../../utils/llmStore";
 import {
   AnimatedDot,
   FadeSlideIn,
   PressScale,
   enterFade,
-} from "../motion";
-import { accentPastels, cardShadow, colors, pastels } from "../theme";
-import type { AppStackParamList } from "../navigation/types";
+} from "../../utils/motion";
+import { colors } from "../../theme";
+import type { AppStackParamList } from "../../navigation/types";
+import { styles } from "./styles";
+import {
+  SLIDES,
+  DESTINATIONS,
+  INTERESTS,
+  CARD_COLORS,
+  SHORTCUT_COLORS,
+} from "./content";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Home">;
-
-const SLIDES: Array<{
-  title: string;
-  sub: string;
-  dest: string;
-  img: ImageSourcePropType;
-}> = [
-  {
-    title: "长城秋色，城阙连云",
-    sub: "登高望远，把京华秋意装进视野",
-    dest: "北京",
-    img: require("../../assets/covers/beijing_anime.png"),
-  },
-  {
-    title: "外滩灯火，浦江夜色",
-    sub: "摩天轮下看魔都心跳",
-    dest: "上海",
-    img: require("../../assets/covers/shanghai_anime.png"),
-  },
-  {
-    title: "西湖烟雨，茶香入梦",
-    sub: "环湖慢行，把雷峰夕照留给傍晚",
-    dest: "杭州",
-    img: require("../../assets/covers/hangzhou_anime.png"),
-  },
-  {
-    title: "椰风浪暖，天涯海角",
-    sub: "把冬天留给阳光与沙滩",
-    dest: "三亚",
-    img: require("../../assets/covers/sanya_anime.png"),
-  },
-  {
-    title: "苍山洱海，风花雪月",
-    sub: "骑行海东，在古城巷口遇见慢时光",
-    dest: "大理",
-    img: require("../../assets/covers/dali_anime.png"),
-  },
-];
-
-const DESTINATIONS: Array<{
-  name: string;
-  desc: string;
-  img: ImageSourcePropType;
-}> = [
-  {
-    name: "北京",
-    desc: "故宫长城 · 皇城根下",
-    img: require("../../assets/covers/beijing_anime.png"),
-  },
-  {
-    name: "成都",
-    desc: "熊猫火锅 · 慢生活",
-    img: require("../../assets/covers/chengdu.jpg"),
-  },
-  {
-    name: "杭州",
-    desc: "西湖龙井 · 江南烟雨",
-    img: require("../../assets/covers/hangzhou_anime.png"),
-  },
-  {
-    name: "大理",
-    desc: "风花雪月 · 苍山洱海",
-    img: require("../../assets/covers/dali_anime.png"),
-  },
-  {
-    name: "西安",
-    desc: "兵马俑 · 古城墙",
-    img: require("../../assets/covers/xian.jpg"),
-  },
-  {
-    name: "厦门",
-    desc: "鼓浪屿 · 海边慢行",
-    img: require("../../assets/covers/xiamen.jpg"),
-  },
-  {
-    name: "上海",
-    desc: "外滩夜景 · 魔都节奏",
-    img: require("../../assets/covers/shanghai_anime.png"),
-  },
-  {
-    name: "三亚",
-    desc: "热带海岛 · 阳光沙滩",
-    img: require("../../assets/covers/sanya_anime.png"),
-  },
-];
-
-const INTERESTS = [
-  { label: "美食", tag: "美食" },
-  { label: "人文", tag: "人文历史" },
-  { label: "自然", tag: "自然风光" },
-  { label: "亲子", tag: "亲子" },
-  { label: "摄影", tag: "摄影" },
-  { label: "购物", tag: "购物" },
-];
-
-const CARD_COLORS = pastels;
-const SHORTCUT_COLORS = accentPastels;
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -213,7 +122,7 @@ export function HomeScreen({ navigation }: Props) {
 
   // 卡片左右各 margin 6；分区左右 padding 20
   const shortcutW = (screenW - 30 - 20) / 2;
-  // section padding 16*2 + gap 10 → 一行两个
+  // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
   return (
@@ -431,7 +340,7 @@ export function HomeScreen({ navigation }: Props) {
             </Text>
             <PressScale onPress={() => goGenerate()}>
               <Text style={[styles.sectionLink, { marginBottom: 0 }]}>
-                AI 生成 →
+                AI 生成 {'→'}
               </Text>
             </PressScale>
           </View>
@@ -501,333 +410,3 @@ export function HomeScreen({ navigation }: Props) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  topBar: {
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  logo: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: colors.ink,
-    letterSpacing: 1,
-    flexShrink: 0,
-    marginRight: 12,
-  },
-  topActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexShrink: 1,
-    flexWrap: "nowrap",
-  },
-  topActionItem: { marginLeft: 14, flexShrink: 0 },
-  topLink: {
-    fontSize: 14,
-    color: colors.ink,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  topMuted: { fontSize: 13, color: colors.muted, lineHeight: 20 },
-  topCta: {
-    fontSize: 14,
-    color: colors.brand,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  hero: {
-    height: 320,
-    backgroundColor: "#1a1a1a",
-    overflow: "hidden",
-  },
-  heroPage: {
-    height: 320,
-    overflow: "hidden",
-    backgroundColor: "#1a1a1a",
-  },
-  heroImg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    height: 320,
-    transform: [{ scale: 1.06 }],
-  },
-  heroMask: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.38)",
-  },
-  heroText: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    bottom: 44,
-  },
-  heroEyebrow: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-    letterSpacing: 2,
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  heroTitle: {
-    color: "#fff",
-    fontSize: 26,
-    fontWeight: "800",
-    lineHeight: 36,
-    marginBottom: 8,
-  },
-  heroSub: {
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  dots: {
-    position: "absolute",
-    left: 20,
-    bottom: 14,
-    flexDirection: "row",
-  },
-  searchWrap: {
-    marginTop: 16,
-    marginHorizontal: 20,
-  },
-  searchBox: {
-    width: "100%",
-    height: 52,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.line,
-    flexDirection: "row",
-    alignItems: "stretch",
-    overflow: "hidden",
-  },
-  searchInput: {
-    flex: 1,
-    height: "100%",
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: colors.ink,
-  },
-  searchBtn: {
-    height: "100%",
-    backgroundColor: colors.brand,
-    paddingHorizontal: 22,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  searchBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  cityPanel: {
-    marginTop: 10,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: 12,
-    maxHeight: 280,
-  },
-  cityPanelTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.muted,
-    marginBottom: 8,
-  },
-  cityScroll: { maxHeight: 320 },
-  cityEmpty: { fontSize: 13, color: colors.muted, paddingVertical: 8 },
-  cityGroup: { marginBottom: 10 },
-  cityLetter: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: colors.brandHot,
-    marginBottom: 6,
-  },
-  cityChips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
-  cityChip: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    margin: 4,
-  },
-  cityChipOn: {
-    borderColor: colors.brand,
-    backgroundColor: colors.brandSoft,
-  },
-  cityChipText: {
-    fontSize: 14,
-    color: colors.ink,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  cityChipTextOn: { color: colors.brandHot },
-  shortcuts: {
-    marginTop: 16,
-    marginHorizontal: 15,
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  shortcut: {
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    margin: 5,
-    minHeight: 72,
-    ...cardShadow,
-  },
-  shortcutTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: colors.ink,
-    lineHeight: 22,
-  },
-  shortcutDesc: {
-    marginTop: 4,
-    fontSize: 12,
-    color: colors.muted,
-    lineHeight: 18,
-  },
-  section: { marginTop: 28, paddingHorizontal: 16 },
-  sectionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.ink,
-    marginBottom: 12,
-    lineHeight: 26,
-    paddingHorizontal: 4,
-  },
-  sectionLink: {
-    fontSize: 13,
-    color: colors.brand,
-    fontWeight: "600",
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  chips: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -2 },
-  chip: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    margin: 4,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  chipText: {
-    fontSize: 14,
-    color: colors.ink,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  destGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  destCardPress: { marginBottom: 10 },
-  destCard: {
-    borderRadius: 20,
-    paddingTop: 12,
-    paddingLeft: 12,
-    paddingRight: 10,
-    paddingBottom: 12,
-    minHeight: 108,
-    overflow: "hidden",
-    flexDirection: "row",
-    alignItems: "stretch",
-    ...cardShadow,
-  },
-  destLeft: {
-    flex: 1,
-    paddingRight: 4,
-    zIndex: 2,
-    justifyContent: "center",
-  },
-  destTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: colors.ink,
-    lineHeight: 24,
-    marginBottom: 4,
-  },
-  destMeta: {
-    fontSize: 11,
-    color: colors.muted,
-    lineHeight: 16,
-  },
-  destCoverWrap: {
-    width: 56,
-    justifyContent: "flex-end",
-    alignItems: "flex-end",
-    zIndex: 1,
-  },
-  destCoverInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    overflow: "hidden",
-    transform: [{ rotate: "10deg" }],
-    marginRight: 0,
-    marginBottom: 2,
-    backgroundColor: "rgba(255,255,255,0.35)",
-  },
-  destCover: {
-    width: "100%",
-    height: "100%",
-  },
-  bigCta: {
-    marginTop: 20,
-    marginHorizontal: 16,
-    backgroundColor: colors.ink,
-    borderRadius: 22,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
-  },
-  bigCtaTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "800",
-    lineHeight: 26,
-  },
-  bigCtaSub: {
-    color: "rgba(255,255,255,0.65)",
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  llmBar: {
-    marginTop: 18,
-    marginHorizontal: 20,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  llmDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.brand,
-    marginRight: 10,
-  },
-  llmMsg: { fontSize: 13, color: colors.ink, fontWeight: "600", lineHeight: 20 },
-  llmUrl: { marginTop: 2, fontSize: 11, color: colors.muted, lineHeight: 16 },
-});

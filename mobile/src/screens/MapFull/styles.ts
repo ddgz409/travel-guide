@@ -1,0 +1,51 @@
+import { StyleSheet } from "react-native";
+import { colors } from "../../theme";
+
+export const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#eef2f7" },
+  map: { flex: 1 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+  },
+  hint: { color: colors.muted },
+  controls: {
+    position: "absolute",
+    right: 14,
+    bottom: 36,
+    gap: 8,
+  },
+  ctrlBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.line,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  ctrlText: { fontSize: 22, fontWeight: "700", color: colors.ink, lineHeight: 24 },
+  locateBtn: { marginTop: 4 },
+  locateText: { fontSize: 12, fontWeight: "800", color: "#1a66ff" },
+  titleChip: {
+    position: "absolute",
+    top: 12,
+    left: 14,
+    right: 70,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  titleText: { fontSize: 13, fontWeight: "700", color: colors.ink },
+});

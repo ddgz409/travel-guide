@@ -4,7 +4,6 @@ import {
   Alert,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -13,27 +12,28 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { LlmSettings } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import * as Location from "expo-location";
-import { api } from "../api";
+import { api } from "../../api/client";
 import {
   currentVersionCode,
   currentVersionName,
   promptCheckUpdate,
-} from "../appUpdate";
-import { useAuth } from "../auth/AuthContext";
+} from "../../utils/appUpdate";
+import { useAuth } from "../../auth/AuthContext";
 import {
   LOCAL_MODELS,
   LOCAL_PROVIDERS,
   loadLocalLlm,
   saveLocalLlm,
   type LocalLlmConfig,
-} from "../llmStore";
+} from "../../utils/llmStore";
 import {
   loadLocationConsent,
   saveLocationConsent,
   type LocationConsent,
-} from "../locationPrefs";
-import { colors } from "../theme";
-import type { AppStackParamList } from "../navigation/types";
+} from "../../utils/locationPrefs";
+import { colors } from "../../theme";
+import type { AppStackParamList } from "../../navigation/types";
+import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Settings">;
 
@@ -250,7 +250,7 @@ export function SettingsScreen({ navigation }: Props) {
       <View style={styles.locCard}>
         <Text style={styles.locTitle}>应用更新</Text>
         <Text style={styles.locSub}>
-          当前版本 {currentVersionName()}（{currentVersionCode() || "—"}
+          当前版本 {currentVersionName()}（{currentVersionCode() || "-"}
           ）。有新版本时可下载安装包更新。
         </Text>
         <View style={styles.locRow}>
@@ -285,7 +285,7 @@ export function SettingsScreen({ navigation }: Props) {
           onPress={() => navigation.navigate("Login")}
         >
           <Text style={styles.loginBannerText}>
-            去登录，把 Key 存到账号（跨设备） →
+            去登录，把 Key 存到账号（跨设备） {'→'}
           </Text>
         </Pressable>
       ) : null}
@@ -445,85 +445,3 @@ export function SettingsScreen({ navigation }: Props) {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, paddingBottom: 40 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 24, fontWeight: "800", color: colors.ink },
-  sub: { marginTop: 8, fontSize: 14, color: colors.muted, lineHeight: 20 },
-  locCard: {
-    marginTop: 16,
-    marginBottom: 8,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: 16,
-  },
-  locTitle: { fontSize: 16, fontWeight: "700", color: colors.ink },
-  locSub: {
-    marginTop: 6,
-    fontSize: 13,
-    color: colors.muted,
-    lineHeight: 18,
-  },
-  locRow: {
-    marginTop: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  locStatus: { fontSize: 14, color: colors.ink, fontWeight: "600" },
-  locBtn: {
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  locBtnOff: { backgroundColor: colors.brandSoft },
-  locBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  locBtnTextOff: { color: colors.brandHot },
-  loginBanner: {
-    marginTop: 14,
-    backgroundColor: colors.brandSoft,
-    borderRadius: 12,
-    padding: 12,
-  },
-  loginBannerText: { color: colors.brandHot, fontWeight: "600", fontSize: 13 },
-  label: { marginTop: 18, marginBottom: 8, fontSize: 13, color: colors.muted },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipOn: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
-  chipText: { fontSize: 14, color: colors.muted },
-  chipTextOn: { color: colors.brandHot, fontWeight: "600" },
-  input: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.ink,
-  },
-  clear: { marginTop: 8, color: colors.brand, fontSize: 13 },
-  hint: { marginTop: 8, fontSize: 12, color: colors.muted },
-  error: { marginTop: 12, color: colors.danger },
-  ok: { marginTop: 12, color: colors.ready },
-  btn: {
-    marginTop: 24,
-    backgroundColor: colors.brand,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-});

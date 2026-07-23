@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { Item } from "@travel-guide/shared";
-import { api } from "../api";
-import { colors } from "../theme";
+import { api } from "../../api/client";
+import { colors } from "../../theme";
 
 type Props = {
   tripId: string;
