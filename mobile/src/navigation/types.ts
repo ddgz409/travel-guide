@@ -1,5 +1,6 @@
 export type AppStackParamList = {
   Home: undefined;
+  Chat: undefined;
   Trips: undefined;
   TripDetail: { tripId: string };
   Generate: { destination?: string; interests?: string[] } | undefined;

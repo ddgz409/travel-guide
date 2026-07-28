@@ -276,3 +276,22 @@ export interface DayRoutesResult {
   total_duration_s: number;
   total_distance_m: number;
 }
+
+// ---- AI 聊天助手 ----
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ChatLlmOverride = {
+  provider?: string;
+  model?: string;
+  api_key?: string;
+  base_url?: string;
+};
+
+export type ChatRequest = {
+  messages: ChatMessage[];
+  llm?: ChatLlmOverride | null;
+};

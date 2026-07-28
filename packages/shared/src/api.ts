@@ -1,6 +1,8 @@
 /** 跨端 API 客户端：Web / React Native 注入 token 存储与 API Base */
 
 import type {
+  ChatLlmOverride,
+  ChatMessage,
   DayRoutesResult,
   GenerateRequest,
   AndroidUpdateInfo,
@@ -229,6 +231,27 @@ export function createApiClient(opts: CreateApiClientOptions) {
         });
         if (!res.ok) throw new ApiError(`导出失败 (${res.status})`, res.status);
         return res.arrayBuffer();
+      },
+    },
+    chat: {
+      /**
+       * 流式聊天：返回原始 Response（SSE 流），前端用 reader 逐块读。
+       * 不走通用 request<T> 封装，因为返回的不是 JSON 而是 text/event-stream。
+       */
+      stream: async (
+        messages: ChatMessage[],
+        llm?: ChatLlmOverride | null,
+      ): Promise<Response> => {
+        const token = await tokenStore.getToken();
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        return fetch(`${apiBase}/chat/stream`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ messages, llm: llm || null }),
+        });
       },
     },
   };

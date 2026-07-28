@@ -7,6 +7,7 @@ from app.schemas.auth import (
     UserLogin,
     UserOut,
 )
+from app.schemas.chat import ChatMessage, ChatRequest
 from app.schemas.trip import (
     DayOut,
     ItemOut,
@@ -29,6 +30,8 @@ __all__ = [
     "UserOut",
     "LlmSettingsOut",
     "LlmSettingsUpdate",
+    "ChatMessage",
+    "ChatRequest",
     "DayOut",
     "ItemOut",
     "ItemUpdate",
