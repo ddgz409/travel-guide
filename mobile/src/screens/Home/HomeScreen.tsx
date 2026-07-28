@@ -47,6 +47,10 @@ export function HomeScreen({ navigation }: Props) {
   const [llmStatus, setLlmStatus] = useState("检测 LLM 配置…");
   const heroRef = useRef<ScrollView>(null);
   const pauseAutoUntil = useRef(0);
+  /** 防止 onBlur 的 180ms 定时器堆积：每次新失焦清除旧定时器 */
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 防止快速双击 city chip 触发两次 navigate */
+  const navigatingRef = useRef(false);
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
@@ -62,6 +66,13 @@ export function HomeScreen({ navigation }: Props) {
     }, 5000);
     return () => clearInterval(t);
   }, [screenW]);
+
+  // 组件卸载时清除 onBlur 残留定时器
+  useEffect(() => {
+    return () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    };
+  }, []);
 
   function onHeroScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
@@ -111,13 +122,17 @@ export function HomeScreen({ navigation }: Props) {
   }
 
   function goGenerate(dest?: string, interests?: string[]) {
-    // 不 await：游客态进阶只是本地写 AsyncStorage，绝不应阻塞跳转，
-    // 否则点击城市/卡片偶发「没反应」（await 期间 onBlur 卸载了面板）。
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    // 游客态进阶只是本地写 AsyncStorage，fire-and-forget 即可；
+    // GenerateScreen 的 onSubmit 另有守卫兜底。
     void ensureCanGenerate();
     navigation.navigate("Generate", {
       destination: dest,
       interests,
     });
+    // 导航后重置，允许下次点击（延迟到动画结束）
+    setTimeout(() => { navigatingRef.current = false; }, 500);
   }
 
   // 卡片左右各 margin 6；分区左右 padding 20
@@ -164,6 +179,7 @@ export function HomeScreen({ navigation }: Props) {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         <View style={styles.hero}>
@@ -212,8 +228,8 @@ export function HomeScreen({ navigation }: Props) {
               onChangeText={setQ}
               onFocus={() => setSearchFocus(true)}
               onBlur={() => {
-                // 稍延后，方便点选城市
-                setTimeout(() => setSearchFocus(false), 180);
+                if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+                blurTimerRef.current = setTimeout(() => setSearchFocus(false), 180);
               }}
               placeholder="搜目的地，或从下方选城市"
               placeholderTextColor={colors.muted}
