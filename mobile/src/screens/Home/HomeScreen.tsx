@@ -302,6 +302,11 @@ export function HomeScreen({ navigation }: Props) {
         <FadeSlideIn delay={140} style={styles.shortcuts}>
           {[
             {
+              title: "AI 助手",
+              desc: "旅游问题随时问",
+              onPress: () => navigation.navigate("Chat"),
+            },
+            {
               title: "AI 生成攻略",
               desc: "一键定制行程",
               onPress: () => goGenerate(),

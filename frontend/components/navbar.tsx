@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/auth";
 
 const LINKS = [
   { href: "/", label: "首页" },
+  { href: "/chat", label: "AI助手" },
   { href: "/generate", label: "去旅行" },
   { href: "/trips", label: "我的攻略", auth: true },
   { href: "/settings", label: "设置", auth: true },

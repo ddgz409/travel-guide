@@ -255,3 +255,35 @@ export const tripsApi = {
     return res.blob();
   },
 };
+
+// ---------------- AI 助手 ----------------
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatLlmOverride = {
+  provider?: string;
+  model?: string;
+  api_key?: string;
+  base_url?: string;
+};
+
+export const chatApi = {
+  /**
+   * 流式聊天：返回原始 Response（SSE 流）。
+   * 调用方用 response.body.getReader() 逐块读取。
+   */
+  stream: async (
+    messages: ChatMessage[],
+    llm?: ChatLlmOverride | null,
+  ): Promise<Response> => {
+    const token = getToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${API_BASE}/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages, llm: llm || null }),
+    });
+  },
+};

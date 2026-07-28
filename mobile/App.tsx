@@ -14,6 +14,7 @@ import { TripsScreen } from "./src/screens/Trips/TripsScreen";
 import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
 import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
+import { ChatScreen } from "./src/screens/Chat/ChatScreen";
 import { colors } from "./src/theme";
 
 /** 推迟加载带地图的页面，避免启动时拉起 react-native-maps 导致闪退 */
@@ -46,6 +47,11 @@ function RootNavigator() {
         name="Home"
         component={HomeScreen}
         options={{ headerShown: false, animation: "fade" }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
       />
       <Stack.Screen
         name="Trips"
