@@ -258,7 +258,11 @@ export const tripsApi = {
 
 // ---------------- AI 助手 ----------------
 
-export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+};
 export type ChatLlmOverride = {
   provider?: string;
   model?: string;

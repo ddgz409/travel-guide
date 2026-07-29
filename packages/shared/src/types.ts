@@ -282,6 +282,7 @@ export interface DayRoutesResult {
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
 };
 
 export type ChatLlmOverride = {

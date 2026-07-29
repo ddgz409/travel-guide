@@ -91,10 +91,10 @@ def chat_stream(
     api_key: str,
     model: str,
     base_url: str,
-) -> Generator[str, None, None]:
-    """流式聊天，逐块 yield 文本内容。"""
+) -> Generator[dict[str, str], None, None]:
+    """流式聊天，逐块 yield {"type": "reasoning"|"content"|"error", "content": "..."}。"""
     if not api_key:
-        yield "⚠️ 未配置 API Key，请在「设置」中填写。"
+        yield {"type": "error", "content": "⚠️ 未配置 API Key，请在「设置」中填写。"}
         return
 
     # 构造消息（系统提示 + 最近 N 条对话）
@@ -128,15 +128,12 @@ def chat_stream(
         with httpx.Client(timeout=90.0) as client:
             with client.stream("POST", url, headers=headers, json=body) as resp:
                 if resp.status_code >= 400:
-                    yield f"❌ 请求失败 (HTTP {resp.status_code})"
+                    yield {"type": "error", "content": f"❌ 请求失败 (HTTP {resp.status_code})"}
                     return
 
-                buffer = ""
                 for raw_line in resp.iter_lines():
                     line = raw_line.strip()
-                    if not line:
-                        continue
-                    if not line.startswith("data: "):
+                    if not line or not line.startswith("data: "):
                         continue
                     data = line[6:].strip()
                     if data == "[DONE]":
@@ -144,15 +141,19 @@ def chat_stream(
                     try:
                         chunk = json.loads(data)
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        # 思考过程（DeepSeek-R1 / 智谱 GLM-4.5+ 等模型支持）
+                        reasoning = delta.get("reasoning_content", "")
+                        if reasoning:
+                            yield {"type": "reasoning", "content": reasoning}
+                        # 正式回答
                         content = delta.get("content", "")
                         if content:
-                            yield content
+                            yield {"type": "content", "content": content}
                     except (json.JSONDecodeError, KeyError, IndexError):
-                        # 某些 SSE 行可能解析失败（智谱在搜索时会发送 search_info 等额外类型），跳过
                         pass
     except httpx.HTTPError as e:
         logger.exception("Chat stream HTTP error")
-        yield f"❌ 网络错误：{e}"
+        yield {"type": "error", "content": f"❌ 网络错误：{e}"}
     except Exception as e:
         logger.exception("Chat stream error")
-        yield f"❌ 未知错误：{e}"
+        yield {"type": "error", "content": f"❌ 未知错误：{e}"}
