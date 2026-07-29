@@ -40,11 +40,11 @@ def chat_stream_endpoint(
                 model=config["model"],
                 base_url=config["base_url"],
             ):
-                yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.exception("Chat stream error")
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         generate(),

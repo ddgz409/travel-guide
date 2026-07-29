@@ -60,6 +60,24 @@ export const styles = StyleSheet.create({
   },
   msgUserText: { fontSize: 15, color: "#fff", lineHeight: 22 },
   msgAIText: { fontSize: 15, color: colors.ink, lineHeight: 22 },
+  reasoningBox: {
+    backgroundColor: "#f5f0e8",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  reasoningLabel: {
+    fontSize: 11,
+    color: colors.muted,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  reasoningText: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 19,
+  },
   loadingDot: {
     alignSelf: "flex-start",
     marginLeft: 4,

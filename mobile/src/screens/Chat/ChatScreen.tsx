@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,11 @@ import { api } from "../../api/client";
 import { colors } from "../../theme";
 import { styles } from "./styles";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+};
 
 const WELCOME = `你好！我是「旅迹」AI 旅行助手 🌍
 
@@ -56,31 +60,54 @@ export function ChatScreen() {
     try {
       const res = await api.chat.stream(updated, null);
 
-      // 先读完整响应体为文本
-      const bodyText = await res.text();
-      const lines = bodyText.split("\n");
+      // 真流式读取：用 reader 逐块处理，实现逐字显示
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("不支持流式读取");
 
+      const decoder = new TextDecoder();
       let aiContent = "";
-      const msgsWithAI: Msg[] = [...updated, { role: "assistant", content: "" }];
+      let aiReasoning = "";
+      const msgsWithAI: Msg[] = [
+        ...updated,
+        { role: "assistant", content: "", reasoning: "" },
+      ];
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") break;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) {
-            aiContent = `❌ ${parsed.error}`;
-          } else if (parsed.content) {
-            aiContent += parsed.content;
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // 保留最后不完整的一行
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") {
+            reader.cancel();
+            break;
           }
-          msgsWithAI[msgsWithAI.length - 1] = {
-            role: "assistant",
-            content: aiContent,
-          };
-          setMsgs([...msgsWithAI]);
-        } catch {
-          /* skip non-JSON line */
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === "reasoning") {
+              aiReasoning += parsed.content;
+            } else if (parsed.type === "content") {
+              aiContent += parsed.content;
+            } else if (parsed.type === "error") {
+              aiContent += parsed.content;
+            }
+            // 实时更新
+            msgsWithAI[msgsWithAI.length - 1] = {
+              role: "assistant",
+              content: aiContent,
+              reasoning: aiReasoning || undefined,
+            };
+            setMsgs([...msgsWithAI]);
+          } catch {
+            /* skip non-JSON */
+          }
         }
       }
     } catch (e: unknown) {
@@ -107,7 +134,7 @@ export function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
       {/* 顶部 */}
@@ -158,6 +185,18 @@ export function ChatScreen() {
                     isUser ? styles.msgUser : styles.msgAI,
                   ]}
                 >
+                  {/* 思考过程 */}
+                  {item.reasoning ? (
+                    <View style={styles.reasoningBox}>
+                      <Text style={styles.reasoningLabel}>
+                        {loading && item === msgs[msgs.length - 1]
+                          ? "思考中…"
+                          : "思考过程"}
+                      </Text>
+                      <Text style={styles.reasoningText}>{item.reasoning}</Text>
+                    </View>
+                  ) : null}
+                  {/* 正文 */}
                   <Text style={isUser ? styles.msgUserText : styles.msgAIText}>
                     {item.content}
                   </Text>
@@ -168,7 +207,7 @@ export function ChatScreen() {
         />
       )}
 
-      {loading && (
+      {loading && !msgs[msgs.length - 1]?.reasoning && (
         <View style={styles.loadingDot}>
           <ActivityIndicator size="small" color={colors.brand} />
         </View>

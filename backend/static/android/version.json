@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "1.0.6",
+  "versionCode": 11,
+  "versionName": "1.0.8",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "修复首页搜索点击城市无反应的问题",
+  "notes": "AI助手实时流式输出 + 思考过程显示；修复键盘遮挡",
   "force": false
 }

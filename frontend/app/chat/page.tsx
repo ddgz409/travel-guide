@@ -78,7 +78,8 @@ export default function ChatPage() {
 
       const decoder = new TextDecoder();
       let aiContent = "";
-      const msgsWithAI: ChatMessage[] = [...updated, { role: "assistant", content: "" }];
+      let aiReasoning = "";
+      const msgsWithAI: ChatMessage[] = [...updated, { role: "assistant", content: "", reasoning: "" }];
       setMessages(msgsWithAI);
 
       while (true) {
@@ -96,13 +97,19 @@ export default function ChatPage() {
             }
             try {
               const parsed = JSON.parse(data);
-              if (parsed.error) {
-                aiContent = `❌ ${parsed.error}`;
-              } else if (parsed.content) {
+              if (parsed.type === "reasoning") {
+                aiReasoning += parsed.content;
+              } else if (parsed.type === "content") {
+                aiContent += parsed.content;
+              } else if (parsed.type === "error") {
                 aiContent += parsed.content;
               }
               // 更新最后一条消息
-              msgsWithAI[msgsWithAI.length - 1] = { role: "assistant", content: aiContent };
+              msgsWithAI[msgsWithAI.length - 1] = {
+                role: "assistant",
+                content: aiContent,
+                reasoning: aiReasoning || undefined,
+              };
               setMessages([...msgsWithAI]);
             } catch {
               // 非 JSON 行（如空行），跳过
@@ -191,6 +198,14 @@ export default function ChatPage() {
                     : "bg-[var(--card)] text-[var(--ink)] border border-[var(--line)]"
                 }`}
               >
+                {msg.reasoning ? (
+                  <div className="mb-2 px-3 py-2 rounded-xl bg-[var(--bg)] text-xs text-[var(--muted)] leading-relaxed">
+                    <div className="font-bold mb-1">
+                      {loading && i === messages.length - 1 ? "思考中…" : "思考过程"}
+                    </div>
+                    {renderMarkdown(msg.reasoning)}
+                  </div>
+                ) : null}
                 {renderMarkdown(msg.content)}
               </div>
             </div>
