@@ -3,12 +3,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY = "travel_guide_local_llm";
+const CUSTOM_KEY = "travel_guide_custom_providers";
 
 export type LocalLlmConfig = {
   provider: string;
   model: string;
   apiKey: string;
   baseUrl: string;
+};
+
+export type CustomProvider = {
+  name: string;
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
 };
 
 export const DEFAULT_LOCAL_LLM: LocalLlmConfig = {
@@ -33,6 +42,50 @@ export const LOCAL_MODELS: Record<string, string[]> = {
   mimo: ["mimo-v2.5-pro", "mimo-v2.5"],
   openai: ["gpt-4o-mini", "gpt-4o"],
 };
+
+/** 返回 AI 助手可选的模型列表 */
+export function getAvailableModels(): Array<{
+  provider: string;
+  model: string;
+  label: string;
+  badge?: string;
+}> {
+  const list: Array<{ provider: string; model: string; label: string; badge?: string }> = [];
+  // 智谱默认可用
+  const zhipuModels = LOCAL_MODELS.zhipu || [];
+  for (const m of zhipuModels.slice(0,6)) {
+    const free = m.includes("flash") || m.includes("Flash");
+    list.push({
+      provider: "zhipu",
+      model: m,
+      label: `智谱 ${m}`,
+      badge: free ? "免费" : "联网",
+    });
+  }
+  return list;
+}
+
+/** 加载自定义供应商列表 */
+export async function loadCustomProviders(): Promise<CustomProvider[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CUSTOM_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 保存自定义供应商 */
+export async function saveCustomProvider(p: CustomProvider): Promise<void> {
+  const list = await loadCustomProviders();
+  const idx = list.findIndex((x) => x.provider === p.provider);
+  if (idx >= 0) list[idx] = p;
+  else list.push(p);
+  await AsyncStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
+  // 同时更新当前使用的 LLM
+  const cur = await loadLocalLlm();
+  await saveLocalLlm({ ...cur, provider: p.provider, model: p.model, apiKey: p.apiKey, baseUrl: p.baseUrl });
+}
 
 export async function loadLocalLlm(): Promise<LocalLlmConfig> {
   try {

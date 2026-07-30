@@ -15,6 +15,9 @@ import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
 import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
 import { ChatScreen } from "./src/screens/Chat/ChatScreen";
+import { TravelSearchScreen } from "./src/screens/TravelSearch/TravelSearchScreen";
+import { PortalSelectScreen } from "./src/screens/PortalSelect/PortalSelectScreen";
+import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
 import { colors } from "./src/theme";
 
 /** 推迟加载带地图的页面，避免启动时拉起 react-native-maps 导致闪退 */
@@ -37,22 +40,51 @@ function RootNavigator() {
         headerStyle: { backgroundColor: colors.card },
         headerTintColor: colors.ink,
         contentStyle: { backgroundColor: colors.bg },
-        animation: "fade_from_bottom",
-        animationDuration: 320,
+        animationDuration: 400,
         gestureEnabled: true,
         fullScreenGestureEnabled: true,
       }}
     >
+      {/* Home 保持淡入 */}
       <Stack.Screen
         name="Home"
         component={HomeScreen}
         options={{ headerShown: false, animation: "fade" }}
       />
+
+      {/* 辅助功能页：底部滑入 */}
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
         options={{ headerShown: false, animation: "slide_from_bottom" }}
       />
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ title: "注册", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: "设置", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="MapFull"
+        component={MapFullScreen}
+        options={{ title: "地图", animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="ModelManage"
+        component={ModelManageScreen}
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+
+      {/* 浏览流程页：翻页效果 */}
       <Stack.Screen
         name="Trips"
         component={TripsScreen}
@@ -66,32 +98,22 @@ function RootNavigator() {
       <Stack.Screen
         name="Generate"
         component={GenerateScreen}
-        options={{ title: "生成攻略", animation: "fade_from_bottom" }}
-      />
-      <Stack.Screen
-        name="Login"
-        component={LoginScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="Register"
-        component={RegisterScreen}
-        options={{ title: "注册", animation: "slide_from_right" }}
-      />
-      <Stack.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{ title: "设置", animation: "fade_from_bottom" }}
-      />
-      <Stack.Screen
-        name="MapFull"
-        component={MapFullScreen}
-        options={{ title: "地图", animation: "fade_from_bottom" }}
+        options={{ title: "生成攻略", animation: "slide_from_right" }}
       />
       <Stack.Screen
         name="Share"
         component={ShareScreen}
         options={{ title: "分享攻略", animation: "slide_from_right" }}
+      />
+      <Stack.Screen
+        name="TravelSearch"
+        component={TravelSearchScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
+      <Stack.Screen
+        name="PortalSelect"
+        component={PortalSelectScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
       />
     </Stack.Navigator>
   );
