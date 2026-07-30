@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   Text,
@@ -10,8 +11,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { api } from "../../api/client";
 import { colors } from "../../theme";
+import { getAvailableModels, loadLocalLlm } from "../../utils/llmStore";
 import { styles } from "./styles";
 
 type Msg = {
@@ -33,11 +36,20 @@ const QUICK = [
 
 export function ChatScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [curModel, setCurModel] = useState({
+    provider: "zhipu",
+    model: "glm-4",
+    label: "GLM-4",
+  });
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
+
+  const availableModels = getAvailableModels();
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -58,7 +70,10 @@ export function ChatScreen() {
     abortRef.current = ctrl;
 
     try {
-      const res = await api.chat.stream(updated, null);
+      const res = await api.chat.stream(updated, {
+        provider: curModel.provider,
+        model: curModel.model,
+      });
 
       // 真流式读取：用 reader 逐块处理，实现逐字显示
       const reader = res.body?.getReader();
@@ -215,6 +230,10 @@ export function ChatScreen() {
 
       {/* 底部输入区 */}
       <View style={styles.inputBar}>
+        {/* 模型按钮 */}
+        <Pressable style={styles.modelBtn} onPress={() => setModelOpen(true)}>
+          <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           value={input}
@@ -241,6 +260,46 @@ export function ChatScreen() {
           </Pressable>
         )}
       </View>
+
+      {/* 模型选择弹窗 */}
+      <Modal visible={modelOpen} transparent animationType="fade" onRequestClose={() => setModelOpen(false)}>
+        <Pressable style={styles.modelOverlay} onPress={() => setModelOpen(false)}>
+          <View style={styles.modelPanel}>
+            <Text style={styles.modelPanelTitle}>选择模型</Text>
+            {availableModels.map((m) => {
+              const active = curModel.model === m.model && curModel.provider === m.provider;
+              return (
+                <Pressable
+                  key={m.provider + m.model}
+                  style={[styles.modelCard, active && styles.modelCardOn]}
+                  onPress={() => {
+                    setCurModel({ provider: m.provider, model: m.model, label: m.label.split(" ").pop() || m.label });
+                    setModelOpen(false);
+                  }}
+                >
+                  <View style={styles.modelCardRow}>
+                    <View style={[styles.modelDot, active && styles.modelDotOn]} />
+                    <Text style={styles.modelCardText}>{m.label}</Text>
+                    {m.badge ? <Text style={styles.modelBadge}>{m.badge}</Text> : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={styles.modelManage}
+              onPress={() => {
+                setModelOpen(false);
+                navigation.navigate("ModelManage" as never);
+              }}
+            >
+              <Text style={styles.modelManageText}>管理模型 →</Text>
+            </Pressable>
+            <Pressable style={styles.modelCloseBtn} onPress={() => setModelOpen(false)}>
+              <Text style={styles.modelCloseText}>关闭</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

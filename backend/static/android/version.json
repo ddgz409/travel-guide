@@ -1,7 +1,7 @@
 {
-  "versionCode": 11,
-  "versionName": "1.0.8",
+  "versionCode": 12,
+  "versionName": "1.0.9",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "AI助手实时流式输出 + 思考过程显示；修复键盘遮挡",
+  "notes": "出行搜索+平台比价、AI模型切换与管理、页面动画优化",
   "force": false
 }

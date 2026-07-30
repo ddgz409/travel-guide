@@ -307,6 +307,11 @@ export function HomeScreen({ navigation }: Props) {
               onPress: () => navigation.navigate("Chat"),
             },
             {
+              title: "出行搜索",
+              desc: "机票火车票比价",
+              onPress: () => navigation.navigate("TravelSearch"),
+            },
+            {
               title: "AI 生成攻略",
               desc: "一键定制行程",
               onPress: () => goGenerate(),
