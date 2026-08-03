@@ -43,37 +43,54 @@ export const LOCAL_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
 };
 
-/** 返回 AI 助手可选的模型列表（含服务器默认 + 用户自定义供应商） */
+/** 返回 AI 助手可选的模型列表（按供应商分组） */
 export async function getAvailableModels(): Promise<
-  Array<{ provider: string; model: string; label: string; badge?: string }>
-> {
-  const list: Array<{
+  Array<{
     provider: string;
-    model: string;
-    label: string;
+    providerLabel: string;
     badge?: string;
+    models: Array<{ model: string; label: string }>;
+  }>
+> {
+  const groups: Array<{
+    provider: string;
+    providerLabel: string;
+    badge?: string;
+    models: Array<{ model: string; label: string }>;
   }> = [];
 
-  // 服务器默认模型（始终可用，不需要自己的 Key）
-  list.push({
+  // 服务器默认供应商
+  groups.push({
     provider: "zhipu",
-    model: "glm-4",
-    label: "GLM-4",
+    providerLabel: "智谱 GLM",
     badge: "服务器默认",
+    models: [
+      { model: "glm-4", label: "GLM-4" },
+      { model: "glm-4-flash", label: "GLM-4-Flash（免费）" },
+      { model: "glm-4.7-flash", label: "GLM-4.7-Flash（免费）" },
+    ],
   });
 
-  // 用户保存的自定义供应商
+  // 用户保存的自定义供应商（同 provider 合并）
   const customs = await loadCustomProviders();
   for (const c of customs) {
-    list.push({
-      provider: c.provider,
-      model: c.model,
-      label: c.name,
-      badge: "自定义",
-    });
+    const existing = groups.find((g) => g.provider === c.provider);
+    if (existing) {
+      // 同一供应商下追加模型
+      if (!existing.models.some((m) => m.model === c.model)) {
+        existing.models.push({ model: c.model, label: c.model });
+      }
+    } else {
+      groups.push({
+        provider: c.provider,
+        providerLabel: c.name,
+        badge: "自定义",
+        models: [{ model: c.model, label: c.model }],
+      });
+    }
   }
 
-  return list;
+  return groups;
 }
 
 /** 加载自定义供应商列表 */

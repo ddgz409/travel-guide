@@ -41,6 +41,12 @@ export function ChatScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [modelLevel, setModelLevel] = useState<1 | 2>(1);
+  const [modelGroups, setModelGroups] = useState<Array<{
+    provider: string; providerLabel: string; badge?: string;
+    models: Array<{ model: string; label: string }>;
+  }>>([]);
+  const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
   const [curModel, setCurModel] = useState({
     provider: "zhipu",
     model: "glm-4",
@@ -49,17 +55,15 @@ export function ChatScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
 
-  const [availableModels, setAvailableModels] = useState<Array<{
-    provider: string;
-    model: string;
-    label: string;
-    badge?: string;
-  }>>([{ provider: "zhipu", model: "glm-4", label: "GLM-4", badge: "服务器默认" }]);
-
-  // 加载可用模型列表（含自定义供应商）
+  // 加载可用模型分组
   useEffect(() => {
-    void getAvailableModels().then(setAvailableModels);
+    void getAvailableModels().then(setModelGroups);
   }, []);
+
+  function openModelPopup() {
+    // 每次打开刷新列表
+    void getAvailableModels().then((g) => { setModelGroups(g); setModelLevel(1); setModelOpen(true); });
+  }
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -241,7 +245,7 @@ export function ChatScreen() {
       {/* 底部输入区 */}
       <View style={styles.inputBar}>
         {/* 模型按钮 */}
-        <Pressable style={styles.modelBtn} onPress={() => setModelOpen(true)}>
+        <Pressable style={styles.modelBtn} onPress={openModelPopup}>
           <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
         </Pressable>
         <TextInput
@@ -271,30 +275,65 @@ export function ChatScreen() {
         )}
       </View>
 
-      {/* 模型选择弹窗 */}
+      {/* 模型选择弹窗（两级） */}
       <Modal visible={modelOpen} transparent animationType="fade" onRequestClose={() => setModelOpen(false)}>
         <Pressable style={styles.modelOverlay} onPress={() => setModelOpen(false)}>
           <View style={styles.modelPanel}>
-            <Text style={styles.modelPanelTitle}>选择模型</Text>
-            {availableModels.map((m) => {
-              const active = curModel.model === m.model && curModel.provider === m.provider;
-              return (
-                <Pressable
-                  key={m.provider + m.model}
-                  style={[styles.modelCard, active && styles.modelCardOn]}
-                  onPress={() => {
-                    setCurModel({ provider: m.provider, model: m.model, label: m.label.split(" ").pop() || m.label });
-                    setModelOpen(false);
-                  }}
-                >
-                  <View style={styles.modelCardRow}>
-                    <View style={[styles.modelDot, active && styles.modelDotOn]} />
-                    <Text style={styles.modelCardText}>{m.label}</Text>
-                    {m.badge ? <Text style={styles.modelBadge}>{m.badge}</Text> : null}
-                  </View>
-                </Pressable>
-              );
-            })}
+            {modelLevel === 1 ? (
+              <>
+                <Text style={styles.modelPanelTitle}>选择供应商</Text>
+                {modelGroups.map((g, i) => {
+                  const currentIsInGroup = curModel.provider === g.provider;
+                  return (
+                    <Pressable
+                      key={g.provider}
+                      style={[styles.modelCard, currentIsInGroup && styles.modelCardOn]}
+                      onPress={() => { setSelectedGroupIdx(i); setModelLevel(2); }}
+                    >
+                      <View style={styles.modelCardRow}>
+                        {currentIsInGroup && <View style={[styles.modelDot, styles.modelDotOn]} />}
+                        <Text style={styles.modelCardText}>{g.providerLabel}</Text>
+                        {g.badge ? <Text style={styles.modelBadge}>{g.badge}</Text> : null}
+                        <Text style={styles.modelArrow}>›</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                <View style={styles.modelLevel2Head}>
+                  <Pressable onPress={() => setModelLevel(1)} style={styles.modelBackBtn}>
+                    <Text style={styles.modelBackText}>‹ 返回</Text>
+                  </Pressable>
+                  <Text style={styles.modelPanelTitle}>
+                    {modelGroups[selectedGroupIdx]?.providerLabel}
+                  </Text>
+                </View>
+                {modelGroups[selectedGroupIdx]?.models.map((m) => {
+                  const active = curModel.model === m.model && curModel.provider === modelGroups[selectedGroupIdx].provider;
+                  return (
+                    <Pressable
+                      key={m.model}
+                      style={[styles.modelCard, active && styles.modelCardOn]}
+                      onPress={() => {
+                        setCurModel({
+                          provider: modelGroups[selectedGroupIdx].provider,
+                          model: m.model,
+                          label: m.model.includes("flash") ? m.model.split("-")[0] + "-Flash" : m.model,
+                        });
+                        setModelOpen(false);
+                      }}
+                    >
+                      <View style={styles.modelCardRow}>
+                        <View style={[styles.modelDot, active && styles.modelDotOn]} />
+                        <Text style={styles.modelCardText}>{m.label}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </>
+            )}
             <Pressable
               style={styles.modelManage}
               onPress={() => {
