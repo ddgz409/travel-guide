@@ -48,15 +48,25 @@ export const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
+  cardActive: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
   cardRow: {
     flexDirection: "row",
     alignItems: "center",
   },
   cardDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     marginRight: 10,
+  },
+  cardDotOn: {
+    backgroundColor: colors.brand,
+  },
+  cardDotOff: {
+    backgroundColor: colors.line,
   },
   cardTitle: {
     fontSize: 15,
@@ -67,6 +77,26 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     marginTop: 2,
+  },
+  switchBtn: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.brand,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.brandSoft,
+  },
+  activeLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brandHot,
+  },
+  hint: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 4,
+    marginLeft: 4,
   },
   label: {
     fontSize: 13,
@@ -83,6 +113,24 @@ export const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: colors.ink,
+  },
+  keyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  eyeBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eyeBtnText: {
+    fontSize: 18,
   },
   btn: {
     backgroundColor: colors.brand,

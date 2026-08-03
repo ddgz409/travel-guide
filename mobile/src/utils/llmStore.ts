@@ -43,25 +43,36 @@ export const LOCAL_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
 };
 
-/** 返回 AI 助手可选的模型列表 */
-export function getAvailableModels(): Array<{
-  provider: string;
-  model: string;
-  label: string;
-  badge?: string;
-}> {
-  const list: Array<{ provider: string; model: string; label: string; badge?: string }> = [];
-  // 智谱默认可用
-  const zhipuModels = LOCAL_MODELS.zhipu || [];
-  for (const m of zhipuModels.slice(0,6)) {
-    const free = m.includes("flash") || m.includes("Flash");
+/** 返回 AI 助手可选的模型列表（含服务器默认 + 用户自定义供应商） */
+export async function getAvailableModels(): Promise<
+  Array<{ provider: string; model: string; label: string; badge?: string }>
+> {
+  const list: Array<{
+    provider: string;
+    model: string;
+    label: string;
+    badge?: string;
+  }> = [];
+
+  // 服务器默认模型（始终可用，不需要自己的 Key）
+  list.push({
+    provider: "zhipu",
+    model: "glm-4",
+    label: "GLM-4",
+    badge: "服务器默认",
+  });
+
+  // 用户保存的自定义供应商
+  const customs = await loadCustomProviders();
+  for (const c of customs) {
     list.push({
-      provider: "zhipu",
-      model: m,
-      label: `智谱 ${m}`,
-      badge: free ? "免费" : "联网",
+      provider: c.provider,
+      model: c.model,
+      label: c.name,
+      badge: "自定义",
     });
   }
+
   return list;
 }
 
@@ -75,16 +86,35 @@ export async function loadCustomProviders(): Promise<CustomProvider[]> {
   }
 }
 
-/** 保存自定义供应商 */
+/** 保存自定义供应商（不自动切换为当前模型） */
 export async function saveCustomProvider(p: CustomProvider): Promise<void> {
   const list = await loadCustomProviders();
   const idx = list.findIndex((x) => x.provider === p.provider);
   if (idx >= 0) list[idx] = p;
   else list.push(p);
   await AsyncStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
-  // 同时更新当前使用的 LLM
-  const cur = await loadLocalLlm();
-  await saveLocalLlm({ ...cur, provider: p.provider, model: p.model, apiKey: p.apiKey, baseUrl: p.baseUrl });
+}
+
+/** 删除自定义供应商 */
+export async function deleteCustomProvider(providerId: string): Promise<void> {
+  const list = await loadCustomProviders();
+  const filtered = list.filter((x) => x.provider !== providerId);
+  await AsyncStorage.setItem(CUSTOM_KEY, JSON.stringify(filtered));
+}
+
+/** 切换到某个已保存的供应商作为当前模型 */
+export async function switchToProvider(p: CustomProvider): Promise<void> {
+  await saveLocalLlm({
+    provider: p.provider,
+    model: p.model,
+    apiKey: p.apiKey,
+    baseUrl: p.baseUrl,
+  });
+}
+
+/** 切换回服务器默认 */
+export async function switchToDefault(): Promise<void> {
+  await saveLocalLlm(DEFAULT_LOCAL_LLM);
 }
 
 export async function loadLocalLlm(): Promise<LocalLlmConfig> {

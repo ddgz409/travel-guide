@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -49,7 +49,17 @@ export function ChatScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
 
-  const availableModels = getAvailableModels();
+  const [availableModels, setAvailableModels] = useState<Array<{
+    provider: string;
+    model: string;
+    label: string;
+    badge?: string;
+  }>>([{ provider: "zhipu", model: "glm-4", label: "GLM-4", badge: "服务器默认" }]);
+
+  // 加载可用模型列表（含自定义供应商）
+  useEffect(() => {
+    void getAvailableModels().then(setAvailableModels);
+  }, []);
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);

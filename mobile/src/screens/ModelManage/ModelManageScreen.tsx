@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -14,8 +16,10 @@ import type { AppStackParamList } from "../../navigation/types";
 import {
   saveCustomProvider,
   loadCustomProviders,
-  saveLocalLlm,
   loadLocalLlm,
+  switchToProvider,
+  switchToDefault,
+  deleteCustomProvider,
   DEFAULT_LOCAL_LLM,
   type CustomProvider,
   type LocalLlmConfig,
@@ -35,6 +39,7 @@ export function ModelManageScreen({ navigation }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
 
   const refresh = useCallback(async () => {
     const [llm, providers] = await Promise.all([
@@ -67,6 +72,10 @@ export function ModelManageScreen({ navigation }: Props) {
       Alert.alert("提示", "请输入 API Key");
       return;
     }
+    if (!trimmedModel) {
+      Alert.alert("提示", "请输入模型名");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -75,17 +84,16 @@ export function ModelManageScreen({ navigation }: Props) {
         provider: trimmedName.toLowerCase().replace(/\s+/g, "-"),
         baseUrl: trimmedBaseUrl,
         apiKey: trimmedApiKey,
-        model: trimmedModel || "default",
+        model: trimmedModel,
       };
       await saveCustomProvider(provider);
-      await saveLocalLlm({
-        provider: provider.provider,
-        model: provider.model,
-        apiKey: provider.apiKey,
-        baseUrl: provider.baseUrl,
-      });
-      Alert.alert("已保存");
-      navigation.goBack();
+      await switchToProvider(provider);
+      setName("");
+      setBaseUrl("");
+      setApiKey("");
+      setModel("");
+      await refresh();
+      Alert.alert("已保存并切换", `当前使用：${provider.name}`);
     } catch {
       Alert.alert("错误", "保存失败，请重试");
     } finally {
@@ -93,23 +101,49 @@ export function ModelManageScreen({ navigation }: Props) {
     }
   };
 
-  const handleRestoreDefault = async () => {
-    await saveLocalLlm(DEFAULT_LOCAL_LLM);
+  const handleSwitchToProvider = async (p: CustomProvider) => {
+    await switchToProvider(p);
     await refresh();
   };
 
+  const handleRestoreDefault = async () => {
+    await switchToDefault();
+    await refresh();
+  };
+
+  const handleDelete = (p: CustomProvider) => {
+    Alert.alert(
+      "删除供应商",
+      `确定删除「${p.name}」？`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: async () => {
+            await deleteCustomProvider(p.provider);
+            if (currentLlm.provider === p.provider) {
+              await switchToDefault();
+            }
+            await refresh();
+          },
+        },
+      ],
+    );
+  };
+
   const isDefaultActive =
-    currentLlm.provider === DEFAULT_LOCAL_LLM.provider &&
-    currentLlm.model === DEFAULT_LOCAL_LLM.model;
+    !currentLlm.apiKey ||
+    (currentLlm.provider === DEFAULT_LOCAL_LLM.provider &&
+     currentLlm.model === DEFAULT_LOCAL_LLM.model);
 
   return (
-    <View style={[styles.root, { paddingTop: Math.max(insets.top, 10) }]}>
-      {/* Header */}
+    <KeyboardAvoidingView
+      style={[styles.root, { paddingTop: Math.max(insets.top, 10) }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <View style={styles.header}>
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
+        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>{"\u2039"} 返回</Text>
         </Pressable>
         <Text style={styles.headerTitle}>管理模型</Text>
@@ -122,22 +156,15 @@ export function ModelManageScreen({ navigation }: Props) {
       >
         {/* 当前模型 */}
         <Text style={styles.sectionTitle}>当前模型</Text>
-        <View style={styles.card}>
+        <View style={[styles.card, styles.cardActive]}>
           <View style={styles.cardRow}>
-            <View
-              style={[
-                styles.cardDot,
-                { backgroundColor: colors.brand },
-              ]}
-            />
-            <View>
+            <View style={[styles.cardDot, styles.cardDotOn]} />
+            <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>
-                {currentLlm.provider} {"\u00B7"} {currentLlm.model}
+                {isDefaultActive ? "智谱 GLM · glm-4" : `${currentLlm.provider} · ${currentLlm.model}`}
               </Text>
               <Text style={styles.cardSub}>
-                {currentLlm.apiKey
-                  ? "已配置 API Key"
-                  : "使用服务器默认"}
+                {isDefaultActive ? "服务器默认模型" : "自定义供应商"}
               </Text>
             </View>
           </View>
@@ -145,31 +172,20 @@ export function ModelManageScreen({ navigation }: Props) {
 
         {/* 默认模型 */}
         <Pressable
-          style={[
-            styles.card,
-            isDefaultActive && { borderColor: colors.brand },
-          ]}
+          style={[styles.card, isDefaultActive && styles.cardActive]}
           onPress={handleRestoreDefault}
         >
           <View style={styles.cardRow}>
-            <View
-              style={[
-                styles.cardDot,
-                isDefaultActive
-                  ? { backgroundColor: colors.brand }
-                  : { backgroundColor: colors.muted },
-              ]}
-            />
-            <View>
-              <Text style={styles.cardTitle}>
-                智谱 GLM {"\u00B7"} glm-4
-              </Text>
-              <Text style={styles.cardSub}>服务器默认模型</Text>
+            <View style={[styles.cardDot, isDefaultActive ? styles.cardDotOn : styles.cardDotOff]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>智谱 GLM · glm-4</Text>
+              <Text style={styles.cardSub}>服务器默认（无需 API Key）</Text>
             </View>
+            {!isDefaultActive && <Text style={styles.switchBtn}>切换</Text>}
           </View>
         </Pressable>
 
-        {/* 已保存的自定义供应商 */}
+        {/* 已保存的供应商 */}
         {customProviders.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>已保存的供应商</Text>
@@ -178,28 +194,28 @@ export function ModelManageScreen({ navigation }: Props) {
                 currentLlm.provider === p.provider &&
                 currentLlm.model === p.model;
               return (
-                <View key={p.provider} style={styles.card}>
+                <Pressable
+                  key={p.provider}
+                  style={[styles.card, isActive && styles.cardActive]}
+                  onPress={() => handleSwitchToProvider(p)}
+                  onLongPress={() => handleDelete(p)}
+                >
                   <View style={styles.cardRow}>
-                    <View
-                      style={[
-                        styles.cardDot,
-                        isActive
-                          ? { backgroundColor: colors.brand }
-                          : { backgroundColor: colors.muted },
-                      ]}
-                    />
-                    <View>
-                      <Text style={styles.cardTitle}>
-                        {p.name} {"\u00B7"} {p.model}
-                      </Text>
-                      <Text style={styles.cardSub}>
-                        {p.baseUrl}
-                      </Text>
+                    <View style={[styles.cardDot, isActive ? styles.cardDotOn : styles.cardDotOff]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cardTitle}>{p.name} · {p.model}</Text>
+                      <Text style={styles.cardSub} numberOfLines={1}>{p.baseUrl}</Text>
                     </View>
+                    {isActive ? (
+                      <Text style={styles.activeLabel}>当前</Text>
+                    ) : (
+                      <Text style={styles.switchBtn}>切换</Text>
+                    )}
                   </View>
-                </View>
+                </Pressable>
               );
             })}
+            <Text style={styles.hint}>长按可删除供应商</Text>
           </>
         )}
 
@@ -229,16 +245,21 @@ export function ModelManageScreen({ navigation }: Props) {
         />
 
         <Text style={styles.label}>API Key</Text>
-        <TextInput
-          style={styles.input}
-          value={apiKey}
-          onChangeText={setApiKey}
-          placeholder="输入 API Key"
-          placeholderTextColor={colors.muted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
+        <View style={styles.keyRow}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            value={apiKey}
+            onChangeText={setApiKey}
+            placeholder="输入 API Key"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showKey}
+          />
+          <Pressable style={styles.eyeBtn} onPress={() => setShowKey(!showKey)}>
+            <Text style={styles.eyeBtnText}>{showKey ? "🙈" : "👁️"}</Text>
+          </Pressable>
+        </View>
 
         <Text style={styles.label}>模型名</Text>
         <TextInput
@@ -257,10 +278,10 @@ export function ModelManageScreen({ navigation }: Props) {
           disabled={saving}
         >
           <Text style={styles.btnText}>
-            {saving ? "保存中..." : "保存"}
+            {saving ? "保存中..." : "保存并切换"}
           </Text>
         </Pressable>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
