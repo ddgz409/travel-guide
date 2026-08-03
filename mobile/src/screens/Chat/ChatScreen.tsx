@@ -44,10 +44,14 @@ export function ChatScreen() {
   const [modelLevel, setModelLevel] = useState<1 | 2>(1);
   const [modelGroups, setModelGroups] = useState<Array<{
     provider: string; providerLabel: string; badge?: string;
+    apiKey?: string; baseUrl?: string;
     models: Array<{ model: string; label: string }>;
   }>>([]);
   const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
-  const [curModel, setCurModel] = useState({
+  const [curModel, setCurModel] = useState<{
+    provider: string; model: string; label: string;
+    apiKey?: string; baseUrl?: string;
+  }>({
     provider: "zhipu",
     model: "glm-4",
     label: "GLM-4",
@@ -84,10 +88,13 @@ export function ChatScreen() {
     abortRef.current = ctrl;
 
     try {
-      const res = await api.chat.stream(updated, {
+      const llmOverride: { provider: string; model: string; api_key?: string; base_url?: string } = {
         provider: curModel.provider,
         model: curModel.model,
-      });
+      };
+      if (curModel.apiKey) llmOverride.api_key = curModel.apiKey;
+      if (curModel.baseUrl) llmOverride.base_url = curModel.baseUrl;
+      const res = await api.chat.stream(updated, llmOverride);
 
       // 真流式读取：用 reader 逐块处理，实现逐字显示
       const reader = res.body?.getReader();
@@ -317,10 +324,13 @@ export function ChatScreen() {
                       key={m.model}
                       style={[styles.modelCard, active && styles.modelCardOn]}
                       onPress={() => {
+                        const grp = modelGroups[selectedGroupIdx];
                         setCurModel({
-                          provider: modelGroups[selectedGroupIdx].provider,
+                          provider: grp.provider,
                           model: m.model,
                           label: m.model.includes("flash") ? m.model.split("-")[0] + "-Flash" : m.model,
+                          apiKey: grp.apiKey,
+                          baseUrl: grp.baseUrl,
                         });
                         setModelOpen(false);
                       }}

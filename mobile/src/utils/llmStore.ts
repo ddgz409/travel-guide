@@ -43,12 +43,14 @@ export const LOCAL_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
 };
 
-/** 返回 AI 助手可选的模型列表（按供应商分组） */
+/** 返回 AI 助手可选的模型列表（按供应商分组，含完整配置） */
 export async function getAvailableModels(): Promise<
   Array<{
     provider: string;
     providerLabel: string;
     badge?: string;
+    apiKey?: string;
+    baseUrl?: string;
     models: Array<{ model: string; label: string }>;
   }>
 > {
@@ -56,10 +58,12 @@ export async function getAvailableModels(): Promise<
     provider: string;
     providerLabel: string;
     badge?: string;
+    apiKey?: string;
+    baseUrl?: string;
     models: Array<{ model: string; label: string }>;
   }> = [];
 
-  // 服务器默认供应商
+  // 服务器默认供应商（不传 api_key，让后端用自己的 Key）
   groups.push({
     provider: "zhipu",
     providerLabel: "智谱 GLM",
@@ -76,15 +80,19 @@ export async function getAvailableModels(): Promise<
   for (const c of customs) {
     const existing = groups.find((g) => g.provider === c.provider);
     if (existing) {
-      // 同一供应商下追加模型
       if (!existing.models.some((m) => m.model === c.model)) {
         existing.models.push({ model: c.model, label: c.model });
       }
+      // 更新 Key 和 baseUrl
+      existing.apiKey = c.apiKey;
+      existing.baseUrl = c.baseUrl;
     } else {
       groups.push({
         provider: c.provider,
         providerLabel: c.name,
         badge: "自定义",
+        apiKey: c.apiKey,
+        baseUrl: c.baseUrl,
         models: [{ model: c.model, label: c.model }],
       });
     }

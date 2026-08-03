@@ -49,8 +49,8 @@ export function TravelSearchScreen() {
   }
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.root, { paddingTop: Math.max(insets.top, 16) }]}>
+      <View style={[styles.header, { paddingTop: 8 }]}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.backBtn}>
           <Text style={styles.backText}>{"<"} 返回</Text>
         </Pressable>

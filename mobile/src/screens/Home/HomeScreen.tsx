@@ -321,11 +321,6 @@ export function HomeScreen({ navigation }: Props) {
               desc: "收藏与编辑",
               onPress: () => navigation.navigate("Trips"),
             },
-            {
-              title: "模型设置",
-              desc: "自带 LLM API Key",
-              onPress: () => navigation.navigate("Settings"),
-            },
           ].map((x, i) => (
             <PressScale
               key={x.title}

@@ -97,8 +97,9 @@ def chat_stream(
         yield {"type": "error", "content": "⚠️ 未配置 API Key，请在「设置」中填写。"}
         return
 
-    # 构造消息（系统提示 + 最近 N 条对话）
-    system_msg = {"role": "system", "content": SYSTEM_PROMPT}
+    # 构造系统提示（告知模型自己的身份和型号）
+    sys_content = SYSTEM_PROMPT + f"\n\n你当前使用的模型是 {model}（由 {provider} 提供）。如果用户问你正在和什么模型对话，请如实告知模型名称和供应商。"
+    system_msg = {"role": "system", "content": sys_content}
     recent = messages[-MAX_CONTEXT_MESSAGES:]
     payload_messages = [system_msg] + recent
 
