@@ -3,8 +3,11 @@ export type AppStackParamList = {
   Chat: undefined;
   Trips: undefined;
   Explore: undefined;
+  CityDetail: { city: string };
   TripDetail: { tripId: string };
-  Generate: { destination?: string; interests?: string[] } | undefined;
+  Generate:
+    | { destination?: string; interests?: string[]; mode?: "quick" | "custom" }
+    | undefined;
   Login: undefined;
   Register: undefined;
   Settings: undefined;

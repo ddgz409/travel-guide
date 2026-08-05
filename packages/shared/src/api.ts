@@ -3,6 +3,7 @@
 import type {
   ChatLlmOverride,
   ChatMessage,
+  CityInfo,
   DayRoutesResult,
   GenerateRequest,
   AndroidUpdateInfo,
@@ -10,6 +11,7 @@ import type {
   LlmSettingsUpdate,
   PoiSearchResult,
   QuickRecommendResponse,
+  RegeoResult,
   Token,
   Trip,
   TripListItem,
@@ -253,6 +255,17 @@ export function createApiClient(opts: CreateApiClientOptions) {
           body: JSON.stringify({ messages, llm: llm || null }),
         });
       },
+    },
+    destinations: {
+      info: (city: string) =>
+        request<CityInfo>(
+          `/destinations/info?city=${encodeURIComponent(city)}`,
+          { timeoutMs: 60000 },
+        ),
+      regeo: (lng: number, lat: number) =>
+        request<RegeoResult>(
+          `/destinations/regeo?lng=${lng}&lat=${lat}`,
+        ),
     },
   };
 }

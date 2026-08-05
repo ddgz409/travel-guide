@@ -3,7 +3,7 @@
     "name": "旅迹",
     "slug": "travel-guide",
     "owner": "ddgz409",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.travelguide.app",
-      "versionCode": 13,
+      "versionCode": 14,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {

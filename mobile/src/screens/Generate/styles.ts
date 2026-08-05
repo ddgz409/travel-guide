@@ -117,6 +117,20 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.brandHot,
   },
+  // 生成模型选择行（弹窗逻辑在 components/ModelPicker）
+  modelRow: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modelRowText: { fontSize: 15, color: colors.ink, fontWeight: "700" },
+  modelRowHint: { fontSize: 13, color: colors.brandHot, fontWeight: "600" },
   label: { fontSize: 13, color: colors.muted, marginTop: 14, marginBottom: 6 },
   hint: { fontSize: 12, color: colors.muted, marginTop: 10, marginBottom: 4 },
   input: {

@@ -124,7 +124,7 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
   },
   stopText: { color: "#fff", fontWeight: "800", fontSize: 12 },
-  // 模型按钮
+  // 模型按钮（弹窗样式已抽到 components/ModelPicker）
   modelBtn: {
     height: 32,
     paddingHorizontal: 10,
@@ -137,90 +137,4 @@ export const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
   modelBtnText: { fontSize: 12, fontWeight: "700", color: colors.brandHot },
-  // 模型弹窗
-  modelOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.15)",
-    justifyContent: "flex-end",
-  },
-  modelPanel: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingBottom: 30,
-  },
-  modelPanelTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: colors.ink,
-    marginBottom: 14,
-    textAlign: "center",
-  },
-  modelCard: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-  },
-  modelCardOn: {
-    borderColor: colors.brand,
-    backgroundColor: colors.brandSoft,
-  },
-  modelCardRow: { flexDirection: "row", alignItems: "center" },
-  modelDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.line,
-    marginRight: 10,
-  },
-  modelDotOn: { backgroundColor: colors.brand },
-  modelCardText: { fontSize: 14, fontWeight: "600", color: colors.ink, flex: 1 },
-  modelBadge: {
-    fontSize: 10,
-    color: colors.muted,
-    fontWeight: "600",
-    backgroundColor: colors.bg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  modelManage: {
-    marginTop: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-  },
-  modelManageText: { fontSize: 14, fontWeight: "600", color: colors.brand },
-  modelCloseBtn: {
-    marginTop: 4,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderRadius: 12,
-    backgroundColor: colors.bg,
-  },
-  modelCloseText: { fontSize: 14, color: colors.muted },
-  // 两级弹窗
-  modelArrow: { fontSize: 18, color: colors.muted, marginLeft: 6 },
-  modelLevel2Head: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  modelBackBtn: {
-    paddingRight: 12,
-    paddingVertical: 2,
-  },
-  modelBackText: {
-    fontSize: 15,
-    color: colors.brand,
-    fontWeight: "600",
-  },
 });

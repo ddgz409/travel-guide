@@ -296,3 +296,27 @@ export type ChatRequest = {
   messages: ChatMessage[];
   llm?: ChatLlmOverride | null;
 };
+
+// ---- 城市探索 ----
+
+export interface CityFood {
+  name: string;
+  desc: string;
+}
+
+export interface CitySpot {
+  name: string;
+  desc: string;
+}
+
+export interface CityInfo {
+  city: string;
+  foods: CityFood[];
+  spots: CitySpot[];
+}
+
+export interface RegeoResult {
+  city: string;
+  province: string;
+  adcode: string;
+}

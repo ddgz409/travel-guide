@@ -32,6 +32,11 @@ const ShareScreen = lazy(() =>
 const ExploreScreen = lazy(() =>
   import("./src/screens/Explore/ExploreScreen").then((m) => ({ default: m.ExploreScreen })),
 );
+const CityDetailScreen = lazy(() =>
+  import("./src/screens/CityDetail/CityDetailScreen").then((m) => ({
+    default: m.CityDetailScreen,
+  })),
+);
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
@@ -103,6 +108,11 @@ function RootNavigator() {
       />
 
       {/* 浏览流程页：翻页效果 */}
+      <Stack.Screen
+        name="CityDetail"
+        component={CityDetailScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
       <Stack.Screen
         name="TripDetail"
         component={TripDetailScreen}

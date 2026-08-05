@@ -379,6 +379,31 @@ class AmapClient:
             logger.warning("路线规划失败 %s -> %s (%s): %s", origin, destination, mode, e)
             return None
 
+    def regeo(self, lng: float, lat: float) -> dict:
+        """逆地理编码：坐标 -> 城市/省份。
+
+        返回 {"city": "...", "province": "...", "adcode": "..."}。
+        失败时抛出 AmapError。
+        """
+        resp = self._client.get(
+            f"{AMAP_BASE}/geocode/regeo",
+            params={"key": self.api_key, "location": f"{lng},{lat}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._check(data)
+        regeocode = data.get("regeocode") or {}
+        comp = regeocode.get("addressComponent") or {}
+        city = comp.get("city") or ""
+        province = comp.get("province") or ""
+        adcode = comp.get("adcode") or ""
+        # 直辖市 city 可能为空数组 []，取 province
+        if isinstance(city, list) or not city:
+            city = province if province else ""
+        if isinstance(province, list):
+            province = ""
+        return {"city": str(city), "province": str(province), "adcode": str(adcode)}
+
     def weather(self, adcode: str) -> dict | None:
         """天气查询。返回当天天气信息，失败返回 None。"""
         try:

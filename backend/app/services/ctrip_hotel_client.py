@@ -197,7 +197,7 @@ def _parse_list_html(html: str, max_results: int) -> list[CtripHotel]:
         if not name or name in _BAD_NAMES or hid in seen:
             continue
         seen.add(hid)
-        url = f"https://hotels.ctrip.com/hotel/{hid}.html"
+        url = f"ctrip://wireless/"
         good_rate = None
         if i < len(scores):
             good_rate = min(100.0, scores[i] * 20)
@@ -265,7 +265,7 @@ def _from_bing(destination: str, max_results: int) -> list[CtripHotel]:
             sn = r.get("snippet") or ""
             h = CtripHotel(
                 name=name,
-                url=f"https://hotels.ctrip.com/hotel/{m.group(1)}.html",
+                url="ctrip://wireless/",
                 snippet=sn[:300],
                 is_huazhu=_detect_huazhu(name, sn),
                 transport_hint=any(k in sn for k in ("地铁", "交通便利", "交通方便")),

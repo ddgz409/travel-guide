@@ -88,18 +88,51 @@ export const styles = StyleSheet.create({
   destCover: { width: "100%", height: "100%" },
   // 地图模块
   mapSection: { marginTop: 24, paddingHorizontal: 16 },
+  mapWrapper: {
+    position: "relative",
+    marginTop: 10,
+  },
   mapBox: {
-    height: 200, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
-    marginTop: 10, ...cardShadow,
+    height: 220, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
+    ...cardShadow,
   },
-  // 热门城市卡片
-  hotCityCard: {
+  mapLoading: {
+    flex: 1, justifyContent: "center", alignItems: "center",
+  },
+  mapTapHint: {
+    position: "absolute", right: 10, bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  mapTapText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  mapControls: {
+    position: "absolute", right: 8, bottom: 8, gap: 6,
+  },
+  mapCtrlBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: colors.line,
+    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  mapCtrlText: { fontSize: 18, fontWeight: "700", color: colors.ink, lineHeight: 20 },
+  mapLocateBtn: { marginTop: 2 },
+  mapLocateText: { fontSize: 10, fontWeight: "800", color: "#1a66ff" },
+  // 定位城市卡片
+  locCard: {
     marginHorizontal: 16, marginTop: 12, borderRadius: 18, overflow: "hidden",
-    backgroundColor: colors.card, ...cardShadow,
+    backgroundColor: colors.brandSoft, ...cardShadow,
   },
-  hotCityImg: { width: "100%", height: 120 },
-  hotCityBody: { padding: 14 },
-  hotCityTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
-  hotCityMeta: { fontSize: 12, color: colors.muted, marginTop: 4 },
-  hotCityDesc: { fontSize: 13, color: colors.ink, marginTop: 6, lineHeight: 20 },
+  locBody: { padding: 16, flexDirection: "row", alignItems: "center" },
+  locIcon: { fontSize: 28, marginRight: 14 },
+  locInfo: { flex: 1 },
+  locTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
+  locMeta: { fontSize: 12, color: colors.muted, marginTop: 3 },
+  locArrow: { fontSize: 20, color: colors.brand, fontWeight: "300" },
+  locHintCard: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 18,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line,
+    padding: 16, flexDirection: "row", alignItems: "center",
+  },
+  locHintText: { flex: 1, fontSize: 13, color: colors.muted, lineHeight: 20 },
 });

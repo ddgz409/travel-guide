@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   Text,
@@ -11,10 +10,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
 import { api } from "../../api/client";
 import { colors } from "../../theme";
-import { getAvailableModels, loadLocalLlm } from "../../utils/llmStore";
+import { useModelPicker } from "../../components/ModelPicker";
 import { styles } from "./styles";
 
 type Msg = {
@@ -36,38 +34,12 @@ const QUICK = [
 
 export function ChatScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const { curModel, openModelPopup, modelModal } = useModelPicker();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [modelOpen, setModelOpen] = useState(false);
-  const [modelLevel, setModelLevel] = useState<1 | 2>(1);
-  const [modelGroups, setModelGroups] = useState<Array<{
-    provider: string; providerLabel: string; badge?: string;
-    apiKey?: string; baseUrl?: string;
-    models: Array<{ model: string; label: string }>;
-  }>>([]);
-  const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
-  const [curModel, setCurModel] = useState<{
-    provider: string; model: string; label: string;
-    apiKey?: string; baseUrl?: string;
-  }>({
-    provider: "zhipu",
-    model: "glm-4",
-    label: "GLM-4",
-  });
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
-
-  // 加载可用模型分组
-  useEffect(() => {
-    void getAvailableModels().then(setModelGroups);
-  }, []);
-
-  function openModelPopup() {
-    // 每次打开刷新列表
-    void getAvailableModels().then((g) => { setModelGroups(g); setModelLevel(1); setModelOpen(true); });
-  }
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -282,83 +254,8 @@ export function ChatScreen() {
         )}
       </View>
 
-      {/* 模型选择弹窗（两级） */}
-      <Modal visible={modelOpen} transparent animationType="fade" onRequestClose={() => setModelOpen(false)}>
-        <Pressable style={styles.modelOverlay} onPress={() => setModelOpen(false)}>
-          <View style={styles.modelPanel}>
-            {modelLevel === 1 ? (
-              <>
-                <Text style={styles.modelPanelTitle}>选择供应商</Text>
-                {modelGroups.map((g, i) => {
-                  const currentIsInGroup = curModel.provider === g.provider;
-                  return (
-                    <Pressable
-                      key={g.provider}
-                      style={[styles.modelCard, currentIsInGroup && styles.modelCardOn]}
-                      onPress={() => { setSelectedGroupIdx(i); setModelLevel(2); }}
-                    >
-                      <View style={styles.modelCardRow}>
-                        {currentIsInGroup && <View style={[styles.modelDot, styles.modelDotOn]} />}
-                        <Text style={styles.modelCardText}>{g.providerLabel}</Text>
-                        {g.badge ? <Text style={styles.modelBadge}>{g.badge}</Text> : null}
-                        <Text style={styles.modelArrow}>›</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </>
-            ) : (
-              <>
-                <View style={styles.modelLevel2Head}>
-                  <Pressable onPress={() => setModelLevel(1)} style={styles.modelBackBtn}>
-                    <Text style={styles.modelBackText}>‹ 返回</Text>
-                  </Pressable>
-                  <Text style={styles.modelPanelTitle}>
-                    {modelGroups[selectedGroupIdx]?.providerLabel}
-                  </Text>
-                </View>
-                {modelGroups[selectedGroupIdx]?.models.map((m) => {
-                  const active = curModel.model === m.model && curModel.provider === modelGroups[selectedGroupIdx].provider;
-                  return (
-                    <Pressable
-                      key={m.model}
-                      style={[styles.modelCard, active && styles.modelCardOn]}
-                      onPress={() => {
-                        const grp = modelGroups[selectedGroupIdx];
-                        setCurModel({
-                          provider: grp.provider,
-                          model: m.model,
-                          label: m.model.includes("flash") ? m.model.split("-")[0] + "-Flash" : m.model,
-                          apiKey: grp.apiKey,
-                          baseUrl: grp.baseUrl,
-                        });
-                        setModelOpen(false);
-                      }}
-                    >
-                      <View style={styles.modelCardRow}>
-                        <View style={[styles.modelDot, active && styles.modelDotOn]} />
-                        <Text style={styles.modelCardText}>{m.label}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </>
-            )}
-            <Pressable
-              style={styles.modelManage}
-              onPress={() => {
-                setModelOpen(false);
-                navigation.navigate("ModelManage" as never);
-              }}
-            >
-              <Text style={styles.modelManageText}>管理模型 →</Text>
-            </Pressable>
-            <Pressable style={styles.modelCloseBtn} onPress={() => setModelOpen(false)}>
-              <Text style={styles.modelCloseText}>关闭</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
+      {/* 模型选择弹窗（两级，与专属定制共用） */}
+      {modelModal}
     </KeyboardAvoidingView>
   );
 }

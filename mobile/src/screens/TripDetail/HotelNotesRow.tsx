@@ -4,11 +4,10 @@ import type { ExternalRefs, HotelCandidate } from "@travel-guide/shared";
 import { openExternal } from "../../utils/openExternal";
 import { styles } from "./styles";
 
-function hotelOpenUrl(h: HotelCandidate, destination: string): string {
+function hotelOpenUrl(h: HotelCandidate, _destination: string): string {
   const raw = (h.url || "").trim();
   if (raw) return raw;
-  const q = encodeURIComponent(`${destination} ${h.name}`.trim());
-  return `https://hotels.ctrip.com/hotels/list?keyword=${q}`;
+  return "ctrip://wireless/";
 }
 
 export function HotelNotesRow({
