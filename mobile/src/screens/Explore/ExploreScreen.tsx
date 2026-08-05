@@ -472,6 +472,7 @@ export function ExploreScreen() {
                   javaScriptEnabled
                   domStorageEnabled
                   scrollEnabled={false}
+                  pointerEvents="none"
                   androidLayerType="hardware"
                   onMessage={(e) => {
                     try {
