@@ -1,4 +1,4 @@
-/** 打开外链：小红书优先跳 App，失败再打开网页；其它用系统浏览器 */
+/** 打开外链：小红书/携程优先跳 App 深链，失败再打开网页 */
 
 import { Linking, Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
@@ -15,6 +15,10 @@ function extractXhsKeyword(url: string, title?: string): string {
 
 function isXhsUrl(url: string): boolean {
   return /xiaohongshu\.com|xhsdiscover:\/\/|xhsdiscovery:\/\//i.test(url);
+}
+
+function isCtripUrl(url: string): boolean {
+  return /ctrip:\/\/|^https?:\/\/[^/]*ctrip\.com/i.test(url);
 }
 
 /** 小红书：先试 App 深链，再打开 www 搜索页（系统浏览器，避免内置 WebView 空白） */
@@ -66,7 +70,20 @@ export async function openExternal(
   const u = (url || "").trim();
   if (!u) return;
 
-  if (isXhsUrl(u) || meta?.app_url || meta?.keyword) {
+  // 携程：直接打开 ctrip:// 深链
+  const ctripUrl = meta?.app_url || (isCtripUrl(u) ? u : "");
+  if (ctripUrl && ctripUrl.startsWith("ctrip://")) {
+    try {
+      await Linking.openURL(ctripUrl);
+      return;
+    } catch {
+      /* App 未安装，静默忽略 */
+      return;
+    }
+  }
+
+  // 小红书：走 XHS 深链逻辑
+  if (isXhsUrl(u) || (meta?.app_url && meta.app_url.startsWith("xhsdiscover")) || meta?.keyword) {
     await openXiaohongshu({
       keyword: meta?.keyword || extractXhsKeyword(u, title),
       webUrl: u.startsWith("http") ? u : undefined,
@@ -76,13 +93,24 @@ export async function openExternal(
     return;
   }
 
+  // 其他 http(s) 链接：系统浏览器
+  if (u.startsWith("http")) {
+    try {
+      await Linking.openURL(u);
+    } catch {
+      try {
+        await WebBrowser.openBrowserAsync(u);
+      } catch {
+        /* ignore */
+      }
+    }
+    return;
+  }
+
+  // 其他自定义 scheme：直接尝试打开
   try {
     await Linking.openURL(u);
   } catch {
-    try {
-      await WebBrowser.openBrowserAsync(u);
-    } catch {
-      /* ignore */
-    }
+    /* ignore */
   }
 }

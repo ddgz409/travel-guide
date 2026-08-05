@@ -442,7 +442,7 @@ class GuideGenerator:
                 q = quote(f"{destination} {p.name}".strip())
                 cand = {
                     "name": p.name,
-                    "url": f"https://hotels.ctrip.com/hotels/list?keyword={q}",
+                    "url": "ctrip://wireless/",
                     "score": 0,
                     "tags": [],
                     "good_rate": (p.rating or 0) * 20 if p.rating else None,
@@ -453,8 +453,7 @@ class GuideGenerator:
                     "metro_distance_m": None,
                 }
             if not (cand.get("url") or "").strip():
-                q = quote(f"{destination} {p.name}".strip())
-                cand["url"] = f"https://hotels.ctrip.com/hotels/list?keyword={q}"
+                cand["url"] = "ctrip://wireless/"
             dist = self._mean_dist_to_anchors(p, anchors)
             nearest_name, nearest_m = self._nearest_anchor(p, anchors)
             if dist is not None:
