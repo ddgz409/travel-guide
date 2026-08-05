@@ -92,19 +92,16 @@ export const styles = StyleSheet.create({
     height: 220, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
     marginTop: 10, ...cardShadow,
   },
+  mapWebView: { ...StyleSheet.absoluteFill } as Record<string, unknown>,
   mapLoading: {
     flex: 1, justifyContent: "center", alignItems: "center",
   },
   mapTapHint: {
-    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    position: "absolute", right: 10, bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5,
   },
-  mapTapBadge: {
-    position: "absolute", top: 8, left: 8,
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: colors.line,
-  },
-  mapTapText: { fontSize: 11, color: colors.muted, fontWeight: "600" },
+  mapTapText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   mapControls: {
     position: "absolute", right: 8, bottom: 8, gap: 6,
   },

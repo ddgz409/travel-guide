@@ -7,6 +7,7 @@ import {
   NativeSyntheticEvent,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
@@ -464,15 +465,17 @@ export function ExploreScreen() {
                     <ActivityIndicator color={colors.brand} />
                   </View>
                 ) : null}
+                {/* DayMap 同款：WebView 穿透 + Pressable 覆盖 */}
                 <WebView
                   ref={webRef}
                   originWhitelist={["*"]}
                   source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
-                  style={{ flex: 1 }}
+                  style={styles.mapWebView}
                   javaScriptEnabled
                   domStorageEnabled
                   scrollEnabled={false}
                   pointerEvents="none"
+                  setSupportMultipleWindows={false}
                   androidLayerType="hardware"
                   onMessage={(e) => {
                     try {
@@ -489,16 +492,12 @@ export function ExploreScreen() {
                     }, 800);
                   }}
                 />
-                {/* 点击放大遮罩 */}
-                <Pressable
-                  style={styles.mapTapHint}
-                  onPress={openFullMap}
-                >
-                  <View style={styles.mapTapBadge}>
+                <Pressable style={StyleSheet.absoluteFill} onPress={openFullMap}>
+                  <View style={styles.mapTapHint}>
                     <Text style={styles.mapTapText}>点击放大地图</Text>
                   </View>
                 </Pressable>
-                {/* 右下角控件：加减号 + 定位 */}
+                {/* 右下角控件：加减号 + 定位，浮在 mapBox 右下角 */}
                 <View style={styles.mapControls} pointerEvents="box-none">
                   <Pressable
                     style={styles.mapCtrlBtn}
