@@ -89,12 +89,35 @@ export const styles = StyleSheet.create({
   // 地图模块
   mapSection: { marginTop: 24, paddingHorizontal: 16 },
   mapBox: {
-    height: 200, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
+    height: 220, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
     marginTop: 10, ...cardShadow,
   },
   mapLoading: {
     flex: 1, justifyContent: "center", alignItems: "center",
   },
+  mapTapHint: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+  },
+  mapTapBadge: {
+    position: "absolute", top: 8, left: 8,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: colors.line,
+  },
+  mapTapText: { fontSize: 11, color: colors.muted, fontWeight: "600" },
+  mapControls: {
+    position: "absolute", right: 8, bottom: 8, gap: 6,
+  },
+  mapCtrlBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: colors.line,
+    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  mapCtrlText: { fontSize: 18, fontWeight: "700", color: colors.ink, lineHeight: 20 },
+  mapLocateBtn: { marginTop: 2 },
+  mapLocateText: { fontSize: 10, fontWeight: "800", color: "#1a66ff" },
   // 定位城市卡片
   locCard: {
     marginHorizontal: 16, marginTop: 12, borderRadius: 18, overflow: "hidden",

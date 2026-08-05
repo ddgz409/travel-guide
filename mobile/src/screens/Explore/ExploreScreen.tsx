@@ -5,7 +5,6 @@ import {
   Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -17,13 +16,18 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 import { WebView } from "react-native-webview";
+import * as Location from "expo-location";
 import { citiesGrouped } from "../../data/cities";
 import { FadeSlideIn, PressScale, enterFade, AnimatedDot } from "../../utils/motion";
 import { colors, pastels } from "../../theme";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
-import { getDeviceLocation } from "../../utils/location";
+import { getDeviceLocation, describeLocationError } from "../../utils/location";
+import {
+  loadLocationConsent,
+  saveLocationConsent,
+} from "../../utils/locationPrefs";
 import { SLIDES, DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
 
@@ -43,13 +47,18 @@ export function ExploreScreen() {
   /** 防止快速双击 city chip 触发两次 navigate */
   const navigatingRef = useRef(false);
 
-  // 地图加载状态
-  const [mapLoaded, setMapLoaded] = useState(false);
+  // 地图相关
   const amapKey = getAmapJsKey();
+  const webRef = useRef<WebView>(null);
+  const mapReadyRef = useRef(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   // 定位城市状态
   const [locCity, setLocCity] = useState<string | null>(null);
+  const [locCoord, setLocCoord] = useState<{ lng: number; lat: number } | null>(null);
   const [locLoading, setLocLoading] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
+  const [locBtnLoading, setLocBtnLoading] = useState(false);
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
@@ -73,27 +82,61 @@ export function ExploreScreen() {
     };
   }, []);
 
-  // 页面加载时尝试获取定位城市（静默，失败不报错）
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLocLoading(true);
-      try {
-        const { lng, lat } = await getDeviceLocation();
-        const result = await api.destinations.regeo(lng, lat);
-        if (!cancelled && result.city) {
-          setLocCity(result.city);
-        }
-      } catch {
-        // 定位失败静默忽略，不显示卡片
-      } finally {
-        if (!cancelled) setLocLoading(false);
+  // 获取定位城市：先请求系统权限，再定位 + regeo
+  const fetchLocation = useCallback(async (silent: boolean) => {
+    if (silent) setLocLoading(true);
+    else setLocBtnLoading(true);
+    setLocError(null);
+    try {
+      // 1. 检查 app 内 consent
+      let consent = await loadLocationConsent();
+      if (consent === null) {
+        // 首次静默时不弹窗，直接尝试请求系统权限
+        // 如果系统权限已授予，consent 设为 granted
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      if (consent === "denied") {
+        if (!silent) {
+          setLocError("定位权限已关闭，可在设置中开启");
+        }
+        return;
+      }
+
+      // 2. 请求系统定位权限
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        await saveLocationConsent("denied");
+        if (!silent) {
+          setLocError("系统未授权定位，请在设置中允许");
+        }
+        return;
+      }
+      await saveLocationConsent("granted");
+
+      // 3. 获取 GPS 坐标
+      const { lng, lat } = await getDeviceLocation();
+      setLocCoord({ lng, lat });
+
+      // 4. 逆地理编码获取城市名
+      const result = await api.destinations.regeo(lng, lat);
+      if (result.city) {
+        setLocCity(result.city);
+      }
+    } catch (e) {
+      const msg = describeLocationError(e);
+      setLocError(msg);
+      if (!silent) {
+        // 非静默模式下（点按钮触发）显示错误
+      }
+    } finally {
+      setLocLoading(false);
+      setLocBtnLoading(false);
+    }
   }, []);
+
+  // 页面加载时静默尝试获取定位城市
+  useEffect(() => {
+    fetchLocation(true);
+  }, [fetchLocation]);
 
   function onHeroScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
@@ -115,7 +158,6 @@ export function ExploreScreen() {
       destination: dest,
       interests,
     });
-    // 导航后重置，允许下次点击（延迟到动画结束）
     setTimeout(() => {
       navigatingRef.current = false;
     }, 500);
@@ -135,25 +177,28 @@ export function ExploreScreen() {
   // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
-  // 地图标记：8 个热门城市
-  const cityMarkers: MapMarker[] = useMemo(
-    () =>
-      DESTINATIONS.map((d) => ({
-        lng: d.lng,
-        lat: d.lat,
-        name: d.name,
-      })),
-    [],
-  );
+  // 地图标记：用户当前所在城市（有坐标时显示），否则空
+  const cityMarkers: MapMarker[] = useMemo(() => {
+    if (locCoord && locCity) {
+      return [{ lng: locCoord.lng, lat: locCoord.lat, name: locCity }];
+    }
+    return [];
+  }, [locCoord, locCity]);
 
   const mapHtml = useMemo(() => {
     if (!amapKey) return "";
+    mapReadyRef.current = false;
     return buildAmapHtml({
       key: amapKey,
       markers: cityMarkers,
       interactive: true,
+      userLocation: locCoord,
     });
-  }, [amapKey, cityMarkers]);
+  }, [amapKey, cityMarkers, locCoord]);
+
+  const inject = useCallback((js: string) => {
+    webRef.current?.injectJavaScript(`${js}; true;`);
+  }, []);
 
   // 定位城市卡片用的描述（从 DESTINATIONS 找，找不到用默认）
   const locDesc = useMemo(() => {
@@ -163,6 +208,15 @@ export function ExploreScreen() {
     );
     return d ? d.desc : "点击查看详情";
   }, [locCity]);
+
+  // 地图点击放大 -> 跳转 MapFull
+  function openFullMap() {
+    if (cityMarkers.length === 0) return;
+    (navigation as any).navigate("MapFull", {
+      title: locCity || "我的位置",
+      markers: cityMarkers,
+    });
+  }
 
   return (
     <View style={styles.root}>
@@ -279,8 +333,6 @@ export function ExploreScreen() {
                               q.trim() === name && styles.cityChipOn,
                             ]}
                             onPress={() => {
-                              // 先收键盘并标记失焦，避免 onBlur 的 180ms 延迟
-                              // 在导航前卸载面板、吞掉点击。
                               Keyboard.dismiss();
                               setQ(name);
                               setSearchFocus(false);
@@ -399,8 +451,11 @@ export function ExploreScreen() {
           </View>
         </FadeSlideIn>
 
+        {/* 地图模块：用户当前所在城市 */}
         <FadeSlideIn delay={320} style={styles.mapSection}>
-          <Text style={styles.sectionTitle}>探索热门城市</Text>
+          <Text style={styles.sectionTitle}>
+            {locCity ? `${locCity} · 我的位置` : "我的位置"}
+          </Text>
           <View style={styles.mapBox}>
             {amapKey && mapHtml ? (
               <>
@@ -410,6 +465,7 @@ export function ExploreScreen() {
                   </View>
                 ) : null}
                 <WebView
+                  ref={webRef}
                   originWhitelist={["*"]}
                   source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
                   style={{ flex: 1 }}
@@ -417,13 +473,65 @@ export function ExploreScreen() {
                   domStorageEnabled
                   scrollEnabled={false}
                   androidLayerType="hardware"
-                  onLoadEnd={() => setMapLoaded(true)}
+                  onMessage={(e) => {
+                    try {
+                      const msg = JSON.parse(e.nativeEvent.data);
+                      if (msg?.type === "ready") mapReadyRef.current = true;
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  onLoadEnd={() => {
+                    setMapLoaded(true);
+                    setTimeout(() => {
+                      mapReadyRef.current = true;
+                    }, 800);
+                  }}
                 />
+                {/* 点击放大遮罩 */}
+                <Pressable
+                  style={styles.mapTapHint}
+                  onPress={openFullMap}
+                >
+                  <View style={styles.mapTapBadge}>
+                    <Text style={styles.mapTapText}>点击放大地图</Text>
+                  </View>
+                </Pressable>
+                {/* 右下角控件：加减号 + 定位 */}
+                <View style={styles.mapControls} pointerEvents="box-none">
+                  <Pressable
+                    style={styles.mapCtrlBtn}
+                    onPress={() => inject("window.zoomIn && window.zoomIn()")}
+                  >
+                    <Text style={styles.mapCtrlText}>＋</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.mapCtrlBtn}
+                    onPress={() => inject("window.zoomOut && window.zoomOut()")}
+                  >
+                    <Text style={styles.mapCtrlText}>－</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
+                    onPress={() => void fetchLocation(false)}
+                    disabled={locBtnLoading}
+                  >
+                    {locBtnLoading ? (
+                      <ActivityIndicator color="#1a66ff" size="small" />
+                    ) : (
+                      <Text style={styles.mapLocateText}>定位</Text>
+                    )}
+                  </Pressable>
+                </View>
               </>
             ) : (
               <View style={styles.mapLoading}>
                 <Text style={{ fontSize: 15, color: colors.muted }}>
-                  地图未配置，请检查高德 Key
+                  {locLoading
+                    ? "正在获取位置…"
+                    : locError
+                      ? locError
+                      : "地图未配置，请检查高德 Key"}
                 </Text>
               </View>
             )}
@@ -458,7 +566,7 @@ export function ExploreScreen() {
             <View style={styles.locHintCard}>
               <Text style={styles.locIcon}>📍</Text>
               <Text style={styles.locHintText}>
-                开启定位可查看你所在城市的信息
+                {locError || "开启定位可查看你所在城市的信息"}
               </Text>
             </View>
           )}
