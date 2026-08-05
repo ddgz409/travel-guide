@@ -457,84 +457,86 @@ export function ExploreScreen() {
           <Text style={styles.sectionTitle}>
             {locCity ? `${locCity} · 我的位置` : "我的位置"}
           </Text>
-          <View style={styles.mapBox}>
-            {amapKey && mapHtml ? (
-              <>
-                {!mapLoaded ? (
-                  <View style={styles.mapLoading}>
-                    <ActivityIndicator color={colors.brand} />
-                  </View>
-                ) : null}
-                {/* DayMap 同款：WebView 穿透 + Pressable 覆盖 */}
-                <WebView
-                  ref={webRef}
-                  originWhitelist={["*"]}
-                  source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
-                  style={styles.mapWebView}
-                  javaScriptEnabled
-                  domStorageEnabled
-                  scrollEnabled={false}
-                  pointerEvents="none"
-                  setSupportMultipleWindows={false}
-                  androidLayerType="hardware"
-                  onMessage={(e) => {
-                    try {
-                      const msg = JSON.parse(e.nativeEvent.data);
-                      if (msg?.type === "ready") mapReadyRef.current = true;
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  onLoadEnd={() => {
-                    setMapLoaded(true);
-                    setTimeout(() => {
-                      mapReadyRef.current = true;
-                    }, 800);
-                  }}
-                />
-                <Pressable style={StyleSheet.absoluteFill} onPress={openFullMap}>
-                  <View style={styles.mapTapHint}>
-                    <Text style={styles.mapTapText}>点击放大地图</Text>
-                  </View>
-                </Pressable>
-                {/* 右下角控件：加减号 + 定位，浮在 mapBox 右下角 */}
-                <View style={styles.mapControls} pointerEvents="box-none">
-                  <Pressable
-                    style={styles.mapCtrlBtn}
-                    onPress={() => inject("window.zoomIn && window.zoomIn()")}
-                  >
-                    <Text style={styles.mapCtrlText}>＋</Text>
+          <View style={styles.mapWrapper}>
+            <View style={styles.mapBox}>
+              {amapKey && mapHtml ? (
+                <>
+                  {!mapLoaded ? (
+                    <View style={styles.mapLoading}>
+                      <ActivityIndicator color={colors.brand} />
+                    </View>
+                  ) : null}
+                  {/* ↓↓↓ 和 DayMap 完全一样的结构 ↓↓↓ */}
+                  <WebView
+                    ref={webRef}
+                    originWhitelist={["*"]}
+                    source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
+                    style={StyleSheet.absoluteFill}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    scrollEnabled={false}
+                    pointerEvents="none"
+                    setSupportMultipleWindows={false}
+                    androidLayerType="hardware"
+                    onMessage={(e) => {
+                      try {
+                        const msg = JSON.parse(e.nativeEvent.data);
+                        if (msg?.type === "ready") mapReadyRef.current = true;
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    onLoadEnd={() => {
+                      setMapLoaded(true);
+                      setTimeout(() => {
+                        mapReadyRef.current = true;
+                      }, 800);
+                    }}
+                  />
+                  <Pressable style={StyleSheet.absoluteFill} onPress={openFullMap}>
+                    <View style={styles.mapTapHint}>
+                      <Text style={styles.mapTapText}>点击放大地图</Text>
+                    </View>
                   </Pressable>
-                  <Pressable
-                    style={styles.mapCtrlBtn}
-                    onPress={() => inject("window.zoomOut && window.zoomOut()")}
-                  >
-                    <Text style={styles.mapCtrlText}>－</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
-                    onPress={() => void fetchLocation(false)}
-                    disabled={locBtnLoading}
-                  >
-                    {locBtnLoading ? (
-                      <ActivityIndicator color="#1a66ff" size="small" />
-                    ) : (
-                      <Text style={styles.mapLocateText}>定位</Text>
-                    )}
-                  </Pressable>
+                </>
+              ) : (
+                <View style={styles.mapLoading}>
+                  <Text style={{ fontSize: 15, color: colors.muted }}>
+                    {locLoading
+                      ? "正在获取位置…"
+                      : locError
+                        ? locError
+                        : "地图未配置，请检查高德 Key"}
+                  </Text>
                 </View>
-              </>
-            ) : (
-              <View style={styles.mapLoading}>
-                <Text style={{ fontSize: 15, color: colors.muted }}>
-                  {locLoading
-                    ? "正在获取位置…"
-                    : locError
-                      ? locError
-                      : "地图未配置，请检查高德 Key"}
-                </Text>
-              </View>
-            )}
+              )}
+            </View>
+            {/* 控件浮在 mapBox 右下角，不干扰 Pressable */}
+            <View style={styles.mapControls} pointerEvents="box-none">
+              <Pressable
+                style={styles.mapCtrlBtn}
+                onPress={() => inject("window.zoomIn && window.zoomIn()")}
+              >
+                <Text style={styles.mapCtrlText}>＋</Text>
+              </Pressable>
+              <Pressable
+                style={styles.mapCtrlBtn}
+                onPress={() => inject("window.zoomOut && window.zoomOut()")}
+              >
+                <Text style={styles.mapCtrlText}>－</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
+                onPress={() => void fetchLocation(false)}
+                disabled={locBtnLoading}
+              >
+                {locBtnLoading ? (
+                  <ActivityIndicator color="#1a66ff" size="small" />
+                ) : (
+                  <Text style={styles.mapLocateText}>定位</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
         </FadeSlideIn>
 

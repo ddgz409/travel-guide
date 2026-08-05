@@ -88,11 +88,14 @@ export const styles = StyleSheet.create({
   destCover: { width: "100%", height: "100%" },
   // 地图模块
   mapSection: { marginTop: 24, paddingHorizontal: 16 },
+  mapWrapper: {
+    position: "relative",
+    marginTop: 10,
+  },
   mapBox: {
     height: 220, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
-    marginTop: 10, ...cardShadow,
+    ...cardShadow,
   },
-  mapWebView: { ...StyleSheet.absoluteFill } as Record<string, unknown>,
   mapLoading: {
     flex: 1, justifyContent: "center", alignItems: "center",
   },
