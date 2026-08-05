@@ -1,7 +1,7 @@
 {
-  "versionCode": 13,
-  "versionName": "2.0.0",
+  "versionCode": 14,
+  "versionName": "2.1.0",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.0 大版本更新：底部导航栏（行程/+/探索），天蓝色全新视觉，探索页面+高德地图，+号AI生成攻略",
+  "notes": "2.1.0：+号菜单拆分「快速模式/专属定制」；专属定制页可切换生成模型（与AI助手一致），设置里切换模型立即生效",
   "force": false
 }
