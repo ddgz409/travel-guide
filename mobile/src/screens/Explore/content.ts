@@ -43,46 +43,64 @@ const DESTINATIONS: Array<{
   name: string;
   desc: string;
   img: ImageSourcePropType;
+  lng: number;
+  lat: number;
 }> = [
   {
     name: "北京",
     desc: "故宫长城 · 皇城根下",
     img: require("../../../assets/covers/beijing_anime.png"),
+    lng: 116.407,
+    lat: 39.904,
   },
   {
     name: "成都",
     desc: "熊猫火锅 · 慢生活",
     img: require("../../../assets/covers/chengdu.jpg"),
+    lng: 104.066,
+    lat: 30.572,
   },
   {
     name: "杭州",
     desc: "西湖龙井 · 江南烟雨",
     img: require("../../../assets/covers/hangzhou_anime.png"),
+    lng: 120.155,
+    lat: 30.274,
   },
   {
     name: "大理",
     desc: "风花雪月 · 苍山洱海",
     img: require("../../../assets/covers/dali_anime.png"),
+    lng: 100.226,
+    lat: 25.605,
   },
   {
     name: "西安",
     desc: "兵马俑 · 古城墙",
     img: require("../../../assets/covers/xian.jpg"),
+    lng: 108.94,
+    lat: 34.341,
   },
   {
     name: "厦门",
     desc: "鼓浪屿 · 海边慢行",
     img: require("../../../assets/covers/xiamen.jpg"),
+    lng: 118.089,
+    lat: 24.479,
   },
   {
     name: "上海",
     desc: "外滩夜景 · 魔都节奏",
     img: require("../../../assets/covers/shanghai_anime.png"),
+    lng: 121.473,
+    lat: 31.23,
   },
   {
     name: "三亚",
     desc: "热带海岛 · 阳光沙滩",
     img: require("../../../assets/covers/sanya_anime.png"),
+    lng: 109.508,
+    lat: 18.247,
   },
 ];
 

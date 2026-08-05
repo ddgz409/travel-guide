@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -14,11 +16,18 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
+import { WebView } from "react-native-webview";
 import { citiesGrouped } from "../../data/cities";
 import { FadeSlideIn, PressScale, enterFade, AnimatedDot } from "../../utils/motion";
-import { accentPastels, pastels, colors } from "../../theme";
+import { colors, pastels } from "../../theme";
+import { api } from "../../api/client";
+import { getAmapJsKey } from "../../api/config";
+import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
+import { getDeviceLocation } from "../../utils/location";
 import { SLIDES, DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
+
+const CARD_COLORS_ARR = pastels;
 
 export function ExploreScreen() {
   const insets = useSafeAreaInsets();
@@ -33,6 +42,14 @@ export function ExploreScreen() {
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 防止快速双击 city chip 触发两次 navigate */
   const navigatingRef = useRef(false);
+
+  // 地图加载状态
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const amapKey = getAmapJsKey();
+
+  // 定位城市状态
+  const [locCity, setLocCity] = useState<string | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
@@ -53,6 +70,28 @@ export function ExploreScreen() {
   useEffect(() => {
     return () => {
       if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    };
+  }, []);
+
+  // 页面加载时尝试获取定位城市（静默，失败不报错）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLocLoading(true);
+      try {
+        const { lng, lat } = await getDeviceLocation();
+        const result = await api.destinations.regeo(lng, lat);
+        if (!cancelled && result.city) {
+          setLocCity(result.city);
+        }
+      } catch {
+        // 定位失败静默忽略，不显示卡片
+      } finally {
+        if (!cancelled) setLocLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -82,12 +121,48 @@ export function ExploreScreen() {
     }, 500);
   }
 
+  function goCityDetail(city: string) {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    (navigation as any).navigate("CityDetail", { city });
+    setTimeout(() => {
+      navigatingRef.current = false;
+    }, 500);
+  }
+
   // 卡片左右各 margin 6；分区左右 padding 20
   const shortcutW = (screenW - 30 - 20) / 2;
   // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
-  const hotCity = DESTINATIONS[0];
+  // 地图标记：8 个热门城市
+  const cityMarkers: MapMarker[] = useMemo(
+    () =>
+      DESTINATIONS.map((d) => ({
+        lng: d.lng,
+        lat: d.lat,
+        name: d.name,
+      })),
+    [],
+  );
+
+  const mapHtml = useMemo(() => {
+    if (!amapKey) return "";
+    return buildAmapHtml({
+      key: amapKey,
+      markers: cityMarkers,
+      interactive: true,
+    });
+  }, [amapKey, cityMarkers]);
+
+  // 定位城市卡片用的描述（从 DESTINATIONS 找，找不到用默认）
+  const locDesc = useMemo(() => {
+    if (!locCity) return "";
+    const d = DESTINATIONS.find(
+      (x) => x.name === locCity || locCity.includes(x.name) || x.name.includes(locCity),
+    );
+    return d ? d.desc : "点击查看详情";
+  }, [locCity]);
 
   return (
     <View style={styles.root}>
@@ -95,7 +170,7 @@ export function ExploreScreen() {
         entering={enterFade(0)}
         style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <Text style={styles.logo}>圆周旅迹</Text>
+        <Text style={styles.logo}>旅迹</Text>
         <View style={styles.topActions}>
           <PressScale
             style={styles.topActionItem}
@@ -209,7 +284,7 @@ export function ExploreScreen() {
                               Keyboard.dismiss();
                               setQ(name);
                               setSearchFocus(false);
-                              goGenerate(name);
+                              goCityDetail(name);
                             }}
                           >
                             <Text
@@ -293,7 +368,7 @@ export function ExploreScreen() {
                 key={d.name}
                 style={[styles.destCardPress, { width: destW }]}
                 scaleTo={0.985}
-                onPress={() => goGenerate(d.name)}
+                onPress={() => goCityDetail(d.name)}
               >
                 <View
                   style={[
@@ -327,39 +402,66 @@ export function ExploreScreen() {
         <FadeSlideIn delay={320} style={styles.mapSection}>
           <Text style={styles.sectionTitle}>探索热门城市</Text>
           <View style={styles.mapBox}>
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ fontSize: 15, color: colors.muted }}>
-                🗺️ 地图加载中…
-              </Text>
-            </View>
+            {amapKey && mapHtml ? (
+              <>
+                {!mapLoaded ? (
+                  <View style={styles.mapLoading}>
+                    <ActivityIndicator color={colors.brand} />
+                  </View>
+                ) : null}
+                <WebView
+                  originWhitelist={["*"]}
+                  source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
+                  style={{ flex: 1 }}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  scrollEnabled={false}
+                  androidLayerType="hardware"
+                  onLoadEnd={() => setMapLoaded(true)}
+                />
+              </>
+            ) : (
+              <View style={styles.mapLoading}>
+                <Text style={{ fontSize: 15, color: colors.muted }}>
+                  地图未配置，请检查高德 Key
+                </Text>
+              </View>
+            )}
           </View>
         </FadeSlideIn>
 
+        {/* 定位城市卡片 */}
         <FadeSlideIn delay={380}>
-          <PressScale
-            style={styles.hotCityCard}
-            scaleTo={0.98}
-            onPress={() => goGenerate(hotCity.name)}
-          >
-            <Image
-              source={require("../../../assets/covers/beijing_anime.png")}
-              style={styles.hotCityImg}
-              resizeMode="cover"
-            />
-            <View style={styles.hotCityBody}>
-              <Text style={styles.hotCityTitle}>{hotCity.name}</Text>
-              <Text style={styles.hotCityMeta}>本月出行 1.2万人</Text>
-              <Text style={styles.hotCityDesc} numberOfLines={2}>
-                {hotCity.desc}
+          {locCity ? (
+            <PressScale
+              style={styles.locCard}
+              scaleTo={0.98}
+              onPress={() => goCityDetail(locCity)}
+            >
+              <View style={styles.locBody}>
+                <Text style={styles.locIcon}>📍</Text>
+                <View style={styles.locInfo}>
+                  <Text style={styles.locTitle}>你在 {locCity}</Text>
+                  <Text style={styles.locMeta}>{locDesc}</Text>
+                </View>
+                <Text style={styles.locArrow}>›</Text>
+              </View>
+            </PressScale>
+          ) : locLoading ? (
+            <View style={styles.locHintCard}>
+              <ActivityIndicator color={colors.brand} size="small" />
+              <Text style={[styles.locHintText, { marginLeft: 12 }]}>
+                正在获取你的位置…
               </Text>
             </View>
-          </PressScale>
+          ) : (
+            <View style={styles.locHintCard}>
+              <Text style={styles.locIcon}>📍</Text>
+              <Text style={styles.locHintText}>
+                开启定位可查看你所在城市的信息
+              </Text>
+            </View>
+          )}
         </FadeSlideIn>
       </ScrollView>
     </View>

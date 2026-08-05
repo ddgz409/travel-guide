@@ -92,14 +92,24 @@ export const styles = StyleSheet.create({
     height: 200, borderRadius: 16, overflow: "hidden", backgroundColor: "#eef2f7",
     marginTop: 10, ...cardShadow,
   },
-  // 热门城市卡片
-  hotCityCard: {
-    marginHorizontal: 16, marginTop: 12, borderRadius: 18, overflow: "hidden",
-    backgroundColor: colors.card, ...cardShadow,
+  mapLoading: {
+    flex: 1, justifyContent: "center", alignItems: "center",
   },
-  hotCityImg: { width: "100%", height: 120 },
-  hotCityBody: { padding: 14 },
-  hotCityTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
-  hotCityMeta: { fontSize: 12, color: colors.muted, marginTop: 4 },
-  hotCityDesc: { fontSize: 13, color: colors.ink, marginTop: 6, lineHeight: 20 },
+  // 定位城市卡片
+  locCard: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 18, overflow: "hidden",
+    backgroundColor: colors.brandSoft, ...cardShadow,
+  },
+  locBody: { padding: 16, flexDirection: "row", alignItems: "center" },
+  locIcon: { fontSize: 28, marginRight: 14 },
+  locInfo: { flex: 1 },
+  locTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
+  locMeta: { fontSize: 12, color: colors.muted, marginTop: 3 },
+  locArrow: { fontSize: 20, color: colors.brand, fontWeight: "300" },
+  locHintCard: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 18,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line,
+    padding: 16, flexDirection: "row", alignItems: "center",
+  },
+  locHintText: { flex: 1, fontSize: 13, color: colors.muted, lineHeight: 20 },
 });
