@@ -1,13 +1,12 @@
-import React, { Suspense, lazy, useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import React, { Suspense, lazy, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
 import { maybePromptUpdateOnLaunch } from "./src/utils/appUpdate";
 import type { AppStackParamList } from "./src/navigation/types";
-import { HomeScreen } from "./src/screens/Home/HomeScreen";
 import { LoginScreen } from "./src/screens/Login/LoginScreen";
 import { RegisterScreen } from "./src/screens/Register/RegisterScreen";
 import { TripsScreen } from "./src/screens/Trips/TripsScreen";
@@ -18,9 +17,10 @@ import { ChatScreen } from "./src/screens/Chat/ChatScreen";
 import { TravelSearchScreen } from "./src/screens/TravelSearch/TravelSearchScreen";
 import { PortalSelectScreen } from "./src/screens/PortalSelect/PortalSelectScreen";
 import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
+import { CustomTabBar } from "./src/components/CustomTabBar";
 import { colors } from "./src/theme";
 
-/** 推迟加载带地图的页面，避免启动时拉起 react-native-maps 导致闪退 */
+/** 推迟加载带地图的页面 */
 const TripDetailScreen = lazy(() =>
   import("./src/screens/TripDetail/TripDetailScreen").then((m) => ({
     default: m.TripDetailScreen,
@@ -29,13 +29,31 @@ const TripDetailScreen = lazy(() =>
 const ShareScreen = lazy(() =>
   import("./src/screens/Share/ShareScreen").then((m) => ({ default: m.ShareScreen })),
 );
+const ExploreScreen = lazy(() =>
+  import("./src/screens/Explore/ExploreScreen").then((m) => ({ default: m.ExploreScreen })),
+);
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
+
+/** 底部 Tab 容器（行程 / + / 探索） */
+function MainScreen() {
+  const [tab, setTab] = useState<"Trips" | "Explore">("Explore");
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={{ flex: 1 }}>
+        {tab === "Trips" ? <TripsScreen /> : <ExploreScreen />}
+      </View>
+      <CustomTabBar activeTab={tab} onTabChange={setTab} />
+    </View>
+  );
+}
 
 function RootNavigator() {
   return (
     <Stack.Navigator
-      initialRouteName="Home"
+      initialRouteName="Main"
       screenOptions={{
         headerStyle: { backgroundColor: colors.card },
         headerTintColor: colors.ink,
@@ -45,11 +63,11 @@ function RootNavigator() {
         fullScreenGestureEnabled: true,
       }}
     >
-      {/* Home 保持淡入 */}
+      {/* 底部导航主页 */}
       <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ headerShown: false, animation: "fade" }}
+        name="Main"
+        component={MainScreen}
+        options={{ headerShown: false }}
       />
 
       {/* 辅助功能页：底部滑入 */}
@@ -85,11 +103,6 @@ function RootNavigator() {
       />
 
       {/* 浏览流程页：翻页效果 */}
-      <Stack.Screen
-        name="Trips"
-        component={TripsScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
-      />
       <Stack.Screen
         name="TripDetail"
         component={TripDetailScreen}

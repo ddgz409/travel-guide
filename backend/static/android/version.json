@@ -1,7 +1,7 @@
 {
-  "versionCode": 12,
-  "versionName": "1.0.9",
+  "versionCode": 13,
+  "versionName": "2.0.0",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "出行搜索+平台比价、AI模型切换与管理、页面动画优化",
+  "notes": "2.0 大版本更新：底部导航栏（行程/+/探索），天蓝色全新视觉，探索页面+高德地图，+号AI生成攻略",
   "force": false
 }

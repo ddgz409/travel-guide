@@ -207,4 +207,20 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   modelCloseText: { fontSize: 14, color: colors.muted },
+  // 两级弹窗
+  modelArrow: { fontSize: 18, color: colors.muted, marginLeft: 6 },
+  modelLevel2Head: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  modelBackBtn: {
+    paddingRight: 12,
+    paddingVertical: 2,
+  },
+  modelBackText: {
+    fontSize: 15,
+    color: colors.brand,
+    fontWeight: "600",
+  },
 });

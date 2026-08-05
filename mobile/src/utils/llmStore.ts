@@ -43,26 +43,62 @@ export const LOCAL_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
 };
 
-/** 返回 AI 助手可选的模型列表 */
-export function getAvailableModels(): Array<{
-  provider: string;
-  model: string;
-  label: string;
-  badge?: string;
-}> {
-  const list: Array<{ provider: string; model: string; label: string; badge?: string }> = [];
-  // 智谱默认可用
-  const zhipuModels = LOCAL_MODELS.zhipu || [];
-  for (const m of zhipuModels.slice(0,6)) {
-    const free = m.includes("flash") || m.includes("Flash");
-    list.push({
-      provider: "zhipu",
-      model: m,
-      label: `智谱 ${m}`,
-      badge: free ? "免费" : "联网",
-    });
+/** 返回 AI 助手可选的模型列表（按供应商分组，含完整配置） */
+export async function getAvailableModels(): Promise<
+  Array<{
+    provider: string;
+    providerLabel: string;
+    badge?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    models: Array<{ model: string; label: string }>;
+  }>
+> {
+  const groups: Array<{
+    provider: string;
+    providerLabel: string;
+    badge?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    models: Array<{ model: string; label: string }>;
+  }> = [];
+
+  // 服务器默认供应商（不传 api_key，让后端用自己的 Key）
+  groups.push({
+    provider: "zhipu",
+    providerLabel: "智谱 GLM",
+    badge: "服务器默认",
+    models: [
+      { model: "glm-4", label: "GLM-4" },
+      { model: "glm-4-flash", label: "GLM-4-Flash（免费）" },
+      { model: "glm-4.7-flash", label: "GLM-4.7-Flash（免费）" },
+    ],
+  });
+
+  // 用户保存的自定义供应商（同 provider 合并）
+  const customs = await loadCustomProviders();
+  for (const c of customs) {
+    const existing = groups.find((g) => g.provider === c.provider);
+    if (existing) {
+      if (!existing.models.some((m) => m.model === c.model)) {
+        existing.models.push({ model: c.model, label: c.model });
+      }
+      // 更新 Key 和 baseUrl
+      existing.apiKey = c.apiKey;
+      existing.baseUrl = c.baseUrl;
+    } else {
+      groups.push({
+        provider: c.provider,
+        providerLabel: c.name,
+        badge: "自定义",
+        apiKey: c.apiKey,
+        baseUrl: c.baseUrl,
+        models: [{ model: c.model, label: c.model }],
+      });
+    }
   }
-  return list;
+
+  return groups;
 }
 
 /** 加载自定义供应商列表 */
@@ -75,16 +111,35 @@ export async function loadCustomProviders(): Promise<CustomProvider[]> {
   }
 }
 
-/** 保存自定义供应商 */
+/** 保存自定义供应商（不自动切换为当前模型） */
 export async function saveCustomProvider(p: CustomProvider): Promise<void> {
   const list = await loadCustomProviders();
   const idx = list.findIndex((x) => x.provider === p.provider);
   if (idx >= 0) list[idx] = p;
   else list.push(p);
   await AsyncStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
-  // 同时更新当前使用的 LLM
-  const cur = await loadLocalLlm();
-  await saveLocalLlm({ ...cur, provider: p.provider, model: p.model, apiKey: p.apiKey, baseUrl: p.baseUrl });
+}
+
+/** 删除自定义供应商 */
+export async function deleteCustomProvider(providerId: string): Promise<void> {
+  const list = await loadCustomProviders();
+  const filtered = list.filter((x) => x.provider !== providerId);
+  await AsyncStorage.setItem(CUSTOM_KEY, JSON.stringify(filtered));
+}
+
+/** 切换到某个已保存的供应商作为当前模型 */
+export async function switchToProvider(p: CustomProvider): Promise<void> {
+  await saveLocalLlm({
+    provider: p.provider,
+    model: p.model,
+    apiKey: p.apiKey,
+    baseUrl: p.baseUrl,
+  });
+}
+
+/** 切换回服务器默认 */
+export async function switchToDefault(): Promise<void> {
+  await saveLocalLlm(DEFAULT_LOCAL_LLM);
 }
 
 export async function loadLocalLlm(): Promise<LocalLlmConfig> {

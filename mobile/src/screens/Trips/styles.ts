@@ -52,7 +52,7 @@ export const styles = StyleSheet.create({
     marginRight: 10,
   },
   bannerLink: { fontSize: 13, fontWeight: "700", color: colors.brandHot },
-  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  list: { paddingHorizontal: 16, paddingBottom: 80 },
   emptyWrap: { flexGrow: 1, justifyContent: "center", padding: 32 },
   emptyBox: { alignItems: "center" },
   empty: {

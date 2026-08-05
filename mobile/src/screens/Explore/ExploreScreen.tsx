@@ -11,40 +11,22 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
-import { api } from "../../api/client";
-import { useAuth } from "../../auth/AuthContext";
 import { citiesGrouped } from "../../data/cities";
-import { loadLocalLlm } from "../../utils/llmStore";
-import {
-  AnimatedDot,
-  FadeSlideIn,
-  PressScale,
-  enterFade,
-} from "../../utils/motion";
-import { colors } from "../../theme";
-import type { AppStackParamList } from "../../navigation/types";
+import { FadeSlideIn, PressScale, enterFade, AnimatedDot } from "../../utils/motion";
+import { accentPastels, pastels, colors } from "../../theme";
+import { SLIDES, DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
-import {
-  SLIDES,
-  DESTINATIONS,
-  INTERESTS,
-  CARD_COLORS,
-  SHORTCUT_COLORS,
-} from "./content";
 
-type Props = any;
-
-export function HomeScreen({ navigation }: Props) {
+export function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
-  const { user, isGuest, enterGuest } = useAuth();
+  const navigation = useNavigation();
   const [slide, setSlide] = useState(0);
   const [q, setQ] = useState("");
   const [searchFocus, setSearchFocus] = useState(false);
-  const [llmStatus, setLlmStatus] = useState("检测 LLM 配置…");
   const heroRef = useRef<ScrollView>(null);
   const pauseAutoUntil = useRef(0);
   /** 防止 onBlur 的 180ms 定时器堆积：每次新失焦清除旧定时器 */
@@ -87,52 +69,17 @@ export function HomeScreen({ navigation }: Props) {
     pauseAutoUntil.current = Date.now() + 10000;
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (user) {
-          const s = await api.auth.getLlmSettings();
-          if (cancelled) return;
-          setLlmStatus(
-            s.has_api_key
-              ? `LLM：账号 Key（${s.provider} / ${s.model}）`
-              : `LLM：服务器默认（${s.provider} / ${s.model}）`,
-          );
-        } else {
-          const local = await loadLocalLlm();
-          if (cancelled) return;
-          setLlmStatus(
-            local.apiKey
-              ? `LLM：本机 Key（${local.provider} / ${local.model}）`
-              : "LLM：未配置 Key，将用服务器默认",
-          );
-        }
-      } catch {
-        if (!cancelled) setLlmStatus("LLM：配置读取失败");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  async function ensureCanGenerate() {
-    if (!user && !isGuest) await enterGuest();
-  }
-
   function goGenerate(dest?: string, interests?: string[]) {
     if (navigatingRef.current) return;
     navigatingRef.current = true;
-    // 游客态进阶只是本地写 AsyncStorage，fire-and-forget 即可；
-    // GenerateScreen 的 onSubmit 另有守卫兜底。
-    void ensureCanGenerate();
-    navigation.navigate("Generate", {
+    (navigation as any).navigate("Generate", {
       destination: dest,
       interests,
     });
     // 导航后重置，允许下次点击（延迟到动画结束）
-    setTimeout(() => { navigatingRef.current = false; }, 500);
+    setTimeout(() => {
+      navigatingRef.current = false;
+    }, 500);
   }
 
   // 卡片左右各 margin 6；分区左右 padding 20
@@ -140,47 +87,29 @@ export function HomeScreen({ navigation }: Props) {
   // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
+  const hotCity = DESTINATIONS[0];
+
   return (
     <View style={styles.root}>
       <Animated.View
         entering={enterFade(0)}
         style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <Text style={styles.logo}>旅迹</Text>
+        <Text style={styles.logo}>圆周旅迹</Text>
         <View style={styles.topActions}>
           <PressScale
             style={styles.topActionItem}
-            onPress={() => navigation.navigate("Settings")}
+            onPress={() => (navigation as any).navigate("Settings")}
           >
             <Text style={styles.topCta}>设置</Text>
           </PressScale>
-          {user || isGuest ? (
-            <PressScale
-              style={styles.topActionItem}
-              onPress={() => navigation.navigate("Trips")}
-            >
-              <Text style={styles.topLink}>我的</Text>
-            </PressScale>
-          ) : null}
-          {user ? (
-            <Text style={[styles.topMuted, styles.topActionItem]}>
-              {user.username}
-            </Text>
-          ) : (
-            <PressScale
-              style={styles.topActionItem}
-              onPress={() => navigation.navigate("Login")}
-            >
-              <Text style={styles.topLink}>登录</Text>
-            </PressScale>
-          )}
         </View>
       </Animated.View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
         <View style={styles.hero}>
           <ScrollView
@@ -197,7 +126,7 @@ export function HomeScreen({ navigation }: Props) {
               <Pressable
                 key={s.dest}
                 style={[styles.heroPage, { width: screenW }]}
-                onPress={() => void goGenerate(s.dest)}
+                onPress={() => goGenerate(s.dest)}
               >
                 <Image
                   source={s.img}
@@ -229,19 +158,22 @@ export function HomeScreen({ navigation }: Props) {
               onFocus={() => setSearchFocus(true)}
               onBlur={() => {
                 if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-                blurTimerRef.current = setTimeout(() => setSearchFocus(false), 180);
+                blurTimerRef.current = setTimeout(
+                  () => setSearchFocus(false),
+                  180,
+                );
               }}
               placeholder="搜目的地，或从下方选城市"
               placeholderTextColor={colors.muted}
               returnKeyType="search"
               onSubmitEditing={() => {
-                if (q.trim()) void goGenerate(q.trim());
+                if (q.trim()) goGenerate(q.trim());
               }}
             />
             <Pressable
               style={styles.searchBtn}
               onPress={() => {
-                if (q.trim()) void goGenerate(q.trim());
+                if (q.trim()) goGenerate(q.trim());
               }}
             >
               <Text style={styles.searchBtnText}>搜索</Text>
@@ -304,22 +236,12 @@ export function HomeScreen({ navigation }: Props) {
             {
               title: "AI 助手",
               desc: "旅游问题随时问",
-              onPress: () => navigation.navigate("Chat"),
+              onPress: () => (navigation as any).navigate("Chat"),
             },
             {
               title: "出行搜索",
               desc: "机票火车票比价",
-              onPress: () => navigation.navigate("TravelSearch"),
-            },
-            {
-              title: "AI 生成攻略",
-              desc: "一键定制行程",
-              onPress: () => goGenerate(),
-            },
-            {
-              title: "我的行程",
-              desc: "收藏与编辑",
-              onPress: () => navigation.navigate("Trips"),
+              onPress: () => (navigation as any).navigate("TravelSearch"),
             },
           ].map((x, i) => (
             <PressScale
@@ -361,7 +283,7 @@ export function HomeScreen({ navigation }: Props) {
             </Text>
             <PressScale onPress={() => goGenerate()}>
               <Text style={[styles.sectionLink, { marginBottom: 0 }]}>
-                AI 生成 {'→'}
+                AI 生成 {"->"}
               </Text>
             </PressScale>
           </View>
@@ -402,28 +324,40 @@ export function HomeScreen({ navigation }: Props) {
           </View>
         </FadeSlideIn>
 
-        <FadeSlideIn delay={320}>
-          <PressScale
-            style={styles.bigCta}
-            onPress={() => goGenerate()}
-            scaleTo={0.98}
-          >
-            <Text style={styles.bigCtaTitle}>开始定制行程</Text>
-            <Text style={styles.bigCtaSub}>
-              可先在「模型设置」填入自己的 LLM API Key
-            </Text>
-          </PressScale>
+        <FadeSlideIn delay={320} style={styles.mapSection}>
+          <Text style={styles.sectionTitle}>探索热门城市</Text>
+          <View style={styles.mapBox}>
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 15, color: colors.muted }}>
+                🗺️ 地图加载中…
+              </Text>
+            </View>
+          </View>
         </FadeSlideIn>
 
         <FadeSlideIn delay={380}>
           <PressScale
-            style={styles.llmBar}
-            onPress={() => navigation.navigate("Settings")}
+            style={styles.hotCityCard}
+            scaleTo={0.98}
+            onPress={() => goGenerate(hotCity.name)}
           >
-            <View style={styles.llmDot} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.llmMsg}>{llmStatus}</Text>
-              <Text style={styles.llmUrl}>点此配置智谱 / DeepSeek 等 API Key</Text>
+            <Image
+              source={require("../../../assets/covers/beijing_anime.png")}
+              style={styles.hotCityImg}
+              resizeMode="cover"
+            />
+            <View style={styles.hotCityBody}>
+              <Text style={styles.hotCityTitle}>{hotCity.name}</Text>
+              <Text style={styles.hotCityMeta}>本月出行 1.2万人</Text>
+              <Text style={styles.hotCityDesc} numberOfLines={2}>
+                {hotCity.desc}
+              </Text>
             </View>
           </PressScale>
         </FadeSlideIn>

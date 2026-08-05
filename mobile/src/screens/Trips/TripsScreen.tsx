@@ -8,8 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { TripListItem } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
@@ -18,17 +17,15 @@ import { api, apiBase } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { enterUp } from "../../utils/motion";
 import { colors } from "../../theme";
-import type { AppStackParamList } from "../../navigation/types";
 import { parseDate } from "../../utils/date";
 import { tripToListItem } from "./helpers";
 import { TripCard } from "./TripCard";
 import { styles } from "./styles";
 
-type Props = NativeStackScreenProps<AppStackParamList, "Trips">;
-
-export function TripsScreen({ navigation }: Props) {
+export function TripsScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isGuest, logout, guestTripIds } = useAuth();
+  const navigation = useNavigation();
+  const { user, isGuest, guestTripIds } = useAuth();
   const [trips, setTrips] = useState<TripListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,11 +71,6 @@ export function TripsScreen({ navigation }: Props) {
     }, [load]),
   );
 
-  async function onExit() {
-    await logout();
-    navigation.navigate("Home");
-  }
-
   const sorted = useMemo(() => {
     return [...trips].sort((a, b) => {
       const ta = parseDate(a.start_date)?.getTime() ?? 0;
@@ -90,41 +82,22 @@ export function TripsScreen({ navigation }: Props) {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <Pressable onPress={() => navigation.navigate("Home")} hitSlop={8}>
-          <Text style={styles.brand}>旅迹</Text>
-        </Pressable>
-        <View style={styles.headerActions}>
+        <Text style={styles.pageTitle}>我的行程</Text>
+        {!user && !isGuest && (
           <Pressable
-            style={styles.genBtn}
-            onPress={() => navigation.navigate("Generate")}
+            onPress={() => (navigation as any).navigate("Login")}
           >
-            <Text style={styles.genBtnText}>生成</Text>
+            <Text style={styles.logout}>登录</Text>
           </Pressable>
-          {user || isGuest ? (
-            <Pressable onPress={onExit} style={styles.headerLink}>
-              <Text style={styles.logout}>
-                {isGuest ? "退出游客" : "退出"}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => navigation.navigate("Login")}
-              style={styles.headerLink}
-            >
-              <Text style={styles.logout}>登录</Text>
-            </Pressable>
-          )}
-        </View>
+        )}
       </View>
-
-      <Text style={styles.pageTitle}>我的行程</Text>
 
       {isGuest ? (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>
             游客可生成并查看攻略；登录后可云端保存
           </Text>
-          <Pressable onPress={() => navigation.navigate("Login")}>
+          <Pressable onPress={() => (navigation as any).navigate("Login")}>
             <Text style={styles.bannerLink}>去登录</Text>
           </Pressable>
         </View>
@@ -135,7 +108,7 @@ export function TripsScreen({ navigation }: Props) {
           <Text style={styles.empty}>登录或游客体验后可查看攻略</Text>
           <Pressable
             style={styles.emptyBtn}
-            onPress={() => navigation.navigate("Login")}
+            onPress={() => (navigation as any).navigate("Login")}
           >
             <Text style={styles.emptyBtnText}>去登录</Text>
           </Pressable>
@@ -169,15 +142,9 @@ export function TripsScreen({ navigation }: Props) {
             <View style={styles.emptyBox}>
               <Text style={styles.empty}>
                 {isGuest
-                  ? "还没有行程，点右上角「生成」试一份"
-                  : "还没有行程，点右上角「生成」开始"}
+                  ? "还没有行程，点中间 + 号开始"
+                  : "还没有行程，点中间 + 号开始"}
               </Text>
-              <Pressable
-                style={styles.emptyBtn}
-                onPress={() => navigation.navigate("Generate")}
-              >
-                <Text style={styles.emptyBtnText}>开始生成</Text>
-              </Pressable>
             </View>
           }
           renderItem={({ item, index }) => (
@@ -187,7 +154,7 @@ export function TripsScreen({ navigation }: Props) {
                 index={index}
                 username={user?.username}
                 onPress={() =>
-                  navigation.navigate("TripDetail", { tripId: item.id })
+                  (navigation as any).navigate("TripDetail", { tripId: item.id })
                 }
                 onLongPress={
                   !user || isGuest
