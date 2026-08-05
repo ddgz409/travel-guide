@@ -212,7 +212,6 @@ export function ExploreScreen() {
 
   // 地图点击放大 -> 跳转 MapFull
   function openFullMap() {
-    if (cityMarkers.length === 0) return;
     (navigation as any).navigate("MapFull", {
       title: locCity || "我的位置",
       markers: cityMarkers,
