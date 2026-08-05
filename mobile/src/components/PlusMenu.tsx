@@ -1,4 +1,4 @@
-/** + 按钮弹出菜单：AI 生成攻略 / 手动创建行程 */
+/** + 按钮弹出菜单：快速模式 / AI 专属定制 */
 
 import React from "react";
 import { Modal, Pressable, Text, View } from "react-native";
@@ -13,12 +13,12 @@ type Props = {
 export function PlusMenu({ visible, onClose }: Props) {
   const navigation = useNavigation();
 
-  function go(option: "ai" | "manual") {
+  function go(mode: "quick" | "custom") {
     onClose();
-    if (option === "ai") {
-      (navigation as any).navigate("Generate", undefined);
+    if (mode === "custom") {
+      (navigation as any).navigate("Generate", { mode: "custom" });
     } else {
-      (navigation as any).navigate("Generate", { destination: "" });
+      (navigation as any).navigate("Generate", { mode: "quick" });
     }
   }
 
@@ -60,7 +60,7 @@ export function PlusMenu({ visible, onClose }: Props) {
               borderBottomWidth: 1,
               borderBottomColor: colors.line,
             }}
-            onPress={() => go("ai")}
+            onPress={() => go("custom")}
           >
             <Text style={{ fontSize: 24, marginRight: 14 }}>🤖</Text>
             <View style={{ flex: 1 }}>
@@ -68,7 +68,7 @@ export function PlusMenu({ visible, onClose }: Props) {
                 AI 智能生成行程
               </Text>
               <Text style={{ fontSize: 13, color: colors.muted, marginTop: 2 }}>
-                输入目的地，AI 自动规划每日行程
+                AI 生成每日行程与路线
               </Text>
             </View>
             <Text style={{ fontSize: 18, color: colors.muted }}>›</Text>
@@ -80,15 +80,15 @@ export function PlusMenu({ visible, onClose }: Props) {
               alignItems: "center",
               paddingVertical: 16,
             }}
-            onPress={() => go("manual")}
+            onPress={() => go("quick")}
           >
-            <Text style={{ fontSize: 24, marginRight: 14 }}>✏️</Text>
+            <Text style={{ fontSize: 24, marginRight: 14 }}>⚡</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 16, fontWeight: "700", color: colors.ink }}>
-                手动自建行程
+                快速模式
               </Text>
               <Text style={{ fontSize: 13, color: colors.muted, marginTop: 2 }}>
-                自由编辑每一天的景点和安排
+                秒出小红书 / 携程参考链接
               </Text>
             </View>
             <Text style={{ fontSize: 18, color: colors.muted }}>›</Text>

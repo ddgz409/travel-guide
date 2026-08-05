@@ -5,7 +5,9 @@ export type AppStackParamList = {
   Explore: undefined;
   CityDetail: { city: string };
   TripDetail: { tripId: string };
-  Generate: { destination?: string; interests?: string[] } | undefined;
+  Generate:
+    | { destination?: string; interests?: string[]; mode?: "quick" | "custom" }
+    | undefined;
   Login: undefined;
   Register: undefined;
   Settings: undefined;

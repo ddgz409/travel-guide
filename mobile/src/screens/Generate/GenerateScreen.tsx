@@ -22,7 +22,7 @@ import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { landmarksFor } from "../../data/landmarks";
-import { localLlmOverride } from "../../utils/llmStore";
+import { useModelPicker } from "../../components/ModelPicker";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
 import { openExternal } from "../../utils/openExternal";
 import { colors } from "../../theme";
@@ -50,7 +50,10 @@ type GenMode = "quick" | "custom";
 
 export function GenerateScreen({ navigation, route }: Props) {
   const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
-  const [genMode, setGenMode] = useState<GenMode>("quick");
+  const { curModel, openModelPopup, modelModal } = useModelPicker();
+  const [genMode, setGenMode] = useState<GenMode>(
+    route.params?.mode || "quick",
+  );
   const [destination, setDestination] = useState(
     route.params?.destination || "",
   );
@@ -259,7 +262,18 @@ export function GenerateScreen({ navigation, route }: Props) {
         await enterGuest();
         guest = true;
       }
-      const llm = !user ? await localLlmOverride() : null;
+      // 与 AI 助手一致：始终携带所选模型（有 Key/BaseURL 时一并带上）
+      const llm: {
+        provider: string;
+        model: string;
+        api_key?: string;
+        base_url?: string;
+      } = {
+        provider: curModel.provider,
+        model: curModel.model,
+      };
+      if (curModel.apiKey) llm.api_key = curModel.apiKey;
+      if (curModel.baseUrl) llm.base_url = curModel.baseUrl;
       const payload = {
         destination: destination.trim(),
         start_date: startDate,
@@ -271,7 +285,7 @@ export function GenerateScreen({ navigation, route }: Props) {
           transport,
         },
         must_include: mustInclude.length ? mustInclude : undefined,
-        llm: llm || undefined,
+        llm,
       };
       const trip = guest
         ? await api.trips.guestGenerate(payload)
@@ -462,19 +476,29 @@ export function GenerateScreen({ navigation, route }: Props) {
                   onPress={() => navigation.navigate("Settings")}
                 >
                   <Text style={styles.noteText}>
-                    已登录：生成优先用账号里的 LLM Key。点此管理 {'→'}
+                    可在下方切换生成模型；点此管理账号 LLM Key {'→'}
                   </Text>
                 </PressScale>
               ) : (
                 <View style={styles.note}>
                   <Text style={styles.noteText}>
-                    可在「设置」填写自己的 LLM API Key；未填则用服务器默认模型。
+                    可在下方切换模型；未配 Key 时用服务器默认模型。
                   </Text>
                   <PressScale onPress={() => navigation.navigate("Settings")}>
                     <Text style={styles.noteLink}>去配置 LLM API {'→'}</Text>
                   </PressScale>
                 </View>
               )}
+
+              <Text style={styles.label}>生成模型</Text>
+              <PressScale
+                style={styles.modelRow}
+                onPress={openModelPopup}
+                scaleTo={0.98}
+              >
+                <Text style={styles.modelRowText}>{curModel.label}</Text>
+                <Text style={styles.modelRowHint}>点击切换 {'›'}</Text>
+              </PressScale>
 
               <Text style={styles.label}>开始日期</Text>
               <PressScale
@@ -737,6 +761,8 @@ export function GenerateScreen({ navigation, route }: Props) {
           )}
         </FadeSwitch>
       </ScrollView>
+      {/* 模型选择弹窗（两级，与 AI 助手共用） */}
+      {modelModal}
     </KeyboardAvoidingView>
   );
 }
