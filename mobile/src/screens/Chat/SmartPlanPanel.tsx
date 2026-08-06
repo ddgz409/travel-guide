@@ -14,6 +14,7 @@ import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { useModelPicker } from "../../components/ModelPicker";
 import {
+  buildExpandedQuery,
   detectPlanIntent,
   parseSmartPlanKeywords,
   searchPlanSuggestions,
@@ -69,12 +70,56 @@ export function SmartPlanPanel({
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [placeCheck, setPlaceCheck] = useState<{
+    valid: boolean;
+    message: string;
+    suggestions: string[];
+  } | null>(null);
+  const [placeChecking, setPlaceChecking] = useState(false);
   const optimizeSeqRef = useRef(0);
+  const placeValidateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const suggestions = useMemo(
     () => searchPlanSuggestions(keywords),
     [keywords],
   );
+
+  useEffect(() => {
+    const q = keywords.trim();
+    if (placeValidateRef.current) clearTimeout(placeValidateRef.current);
+    if (q.length < 2) {
+      setPlaceCheck(null);
+      setPlaceChecking(false);
+      return;
+    }
+    if (
+      suggestions.smartPlan ||
+      suggestions.incompletePlan ||
+      suggestions.cities.length > 0
+    ) {
+      setPlaceCheck(null);
+      setPlaceChecking(false);
+      return;
+    }
+    if (!suggestions.unknownInput) {
+      setPlaceCheck(null);
+      setPlaceChecking(false);
+      return;
+    }
+
+    setPlaceChecking(true);
+    placeValidateRef.current = setTimeout(() => {
+      void api.trips
+        .validateDestination(q)
+        .then((res) => setPlaceCheck(res))
+        .catch(() => setPlaceCheck(null))
+        .finally(() => setPlaceChecking(false));
+    }, 450);
+
+    return () => {
+      if (placeValidateRef.current) clearTimeout(placeValidateRef.current);
+    };
+  }, [keywords, suggestions]);
 
   const fetchOptimizedQuery = useCallback(
     async (next: SmartPlanDraft) => {
@@ -109,7 +154,7 @@ export function SmartPlanPanel({
               ? e.message
               : "AI 优化失败，请手动编辑或重试";
         setOptimizeError(msg);
-        setEditableQuery(next.keywords);
+        setEditableQuery(buildExpandedQuery(next));
       } finally {
         if (seq === optimizeSeqRef.current) setOptimizing(false);
       }
@@ -203,9 +248,11 @@ export function SmartPlanPanel({
   }
 
   function selectCity(city: string) {
-    const next = parseSmartPlanKeywords(city);
+    const next =
+      parseSmartPlanKeywords(city) ??
+      parseSmartPlanKeywords(`${city}2天`);
     if (!next) return;
-    void startPlan(next.action);
+    openDraft(next);
   }
 
   if (draft) {
@@ -289,7 +336,7 @@ export function SmartPlanPanel({
       <Text style={styles.heroTitle}>
         试试说你「想去哪、几天」{"\n"}我来帮你智能规划
       </Text>
-      <Text style={styles.heroHint}>输入目的地和时间，开始检索</Text>
+      <Text style={styles.heroHint}>输入「地名 + 天数/时间」，如：杭州3天、北京明天</Text>
 
       <View style={styles.searchBox}>
         <Text style={styles.searchIcon}>✦</Text>
@@ -323,6 +370,25 @@ export function SmartPlanPanel({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {suggestions.incompletePlan ? (
+            <Pressable
+              style={styles.incompleteRow}
+              onPress={() => openDraft(suggestions.incompletePlan!)}
+            >
+              <View style={styles.smartRowMain}>
+                <Text style={styles.smartRowTitle}>
+                  {suggestions.incompletePlan.destination}
+                </Text>
+                <Text style={styles.smartRowSub}>
+                  缺行程时长 · AI 帮你补全后规划
+                </Text>
+              </View>
+              <View style={styles.smartRowGo}>
+                <Text style={styles.smartRowGoText}>→</Text>
+              </View>
+            </Pressable>
+          ) : null}
+
           {suggestions.smartPlan ? (
             <Pressable
               style={styles.smartRow}
@@ -330,7 +396,9 @@ export function SmartPlanPanel({
             >
               <View style={styles.smartRowMain}>
                 <Text style={styles.smartRowTitle}>{keywords.trim()}</Text>
-                <Text style={styles.smartRowSub}>点击体验智能规划</Text>
+                <Text style={styles.smartRowSub}>
+                  {suggestions.smartPlan.destination} · {suggestions.smartPlan.days} 天 · 开始规划
+                </Text>
               </View>
               <View style={styles.smartRowGo}>
                 <Text style={styles.smartRowGoText}>→</Text>
@@ -346,7 +414,7 @@ export function SmartPlanPanel({
             >
               <View style={styles.cityRowMain}>
                 <Text style={styles.cityRowTitle}>{city}</Text>
-                <Text style={styles.cityRowSub}>点击开始智能规划</Text>
+                <Text style={styles.cityRowSub}>点击选择 · AI 补全行程</Text>
               </View>
               <View style={styles.cityRowGo}>
                 <Text style={styles.cityRowGoText}>→</Text>
@@ -354,8 +422,40 @@ export function SmartPlanPanel({
             </Pressable>
           ))}
 
-          {!suggestions.smartPlan && suggestions.cities.length === 0 ? (
-            <Text style={styles.emptyHint}>未找到匹配结果，请换个关键词</Text>
+          {!suggestions.smartPlan &&
+          !suggestions.incompletePlan &&
+          suggestions.cities.length === 0 ? (
+            placeChecking ? (
+              <Text style={styles.emptyHint}>正在校验地名…</Text>
+            ) : placeCheck && !placeCheck.valid ? (
+              <View style={styles.invalidBox}>
+                <Text style={styles.invalidTitle}>
+                  {placeCheck.message || `未找到「${keywords.trim()}」`}
+                </Text>
+                {placeCheck.suggestions.length > 0 ? (
+                  <View style={styles.invalidChips}>
+                    {placeCheck.suggestions.map((c) => (
+                      <Pressable
+                        key={c}
+                        style={styles.invalidChip}
+                        onPress={() => {
+                          setKeywords(c);
+                          setPlaceCheck(null);
+                        }}
+                      >
+                        <Text style={styles.invalidChipText}>{c}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : suggestions.unknownInput ? (
+              <Text style={styles.emptyHint}>
+                未找到匹配城市，请检查地名或从热门城市中选择
+              </Text>
+            ) : (
+              <Text style={styles.emptyHint}>未找到匹配结果，请换个关键词</Text>
+            )
           ) : null}
           {submitError ? (
             <Text style={styles.optimizeError}>{submitError}</Text>

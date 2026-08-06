@@ -25,8 +25,13 @@ export type SmartPlanDraft = {
 };
 
 export type SmartPlanSuggestion = {
+  /** 地名 + 时长都齐全，可直接确认规划 */
   smartPlan: SmartPlanDraft | null;
+  /** 仅有合理地名，缺时长等信息，需 AI 补全 */
+  incompletePlan: SmartPlanDraft | null;
   cities: string[];
+  /** 输入不像已知城市且暂无匹配建议 */
+  unknownInput: boolean;
 };
 
 const MAJOR_CITIES = [
@@ -37,7 +42,15 @@ const MAJOR_CITIES = [
   "昆明", "贵阳", "南宁", "海口", "福州", "济南", "郑州", "合肥", "南昌",
   "太原", "沈阳", "长春", "宁波", "无锡", "常州", "温州", "珠海", "桂林",
   "敦煌", "洛阳", "开封", "扬州", "威海", "烟台", "秦皇岛", "北戴河",
+  "淮安", "徐州", "盐城", "泰州", "镇江", "宿迁", "顺德", "佛山", "东莞",
 ] as const;
+
+const KNOWN_CITY_SET = new Set<string>(
+  [
+    ...MAJOR_CITIES,
+    ...CITIES.map((c) => c.name.replace(/市$/, "")),
+  ].map((n) => n.replace(/市$/, "")),
+);
 
 const PLAN_RE =
   /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划)|(?:行程|攻略|旅行计划|旅游计划)|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
@@ -64,6 +77,22 @@ function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function normalizeCity(name: string): string {
+  return name.replace(/市$/, "").trim();
+}
+
+export function isKnownCityName(name: string): boolean {
+  const n = normalizeCity(name);
+  return n.length >= 2 && KNOWN_CITY_SET.has(n);
+}
+
+export function hasPlanDuration(text: string): boolean {
+  return (
+    parseDayCount(text) !== null ||
+    /明天|后天|大后天|今天|周末|小长假|规划|行程|攻略|日游/.test(text)
+  );
+}
+
 function parseDates(text: string): { start: string; end: string } {
   const today = new Date();
   today.setHours(12, 0, 0, 0);
@@ -86,10 +115,14 @@ function extractCity(text: string): string | null {
   for (const city of [...MAJOR_CITIES].sort((a, b) => b.length - a.length)) {
     if (text.includes(city)) return city;
   }
+  for (const { name } of CITIES) {
+    const short = normalizeCity(name);
+    if (text.includes(short)) return short;
+  }
   const m1 = text.match(/去([\u4e00-\u9fff]{2,8}?)(?:的|玩|旅游|行)/);
-  if (m1?.[1] && m1[1].length >= 2) return m1[1];
-  const m2 = text.match(/([\u4e00-\u9fff]{2,4})(?:市|城)?(?:的)?(?:行程|攻略|旅游)/);
-  if (m2?.[1]) return m2[1];
+  if (m1?.[1] && isKnownCityName(m1[1])) return normalizeCity(m1[1]);
+  const m2 = text.match(/([\u4e00-\u9fff]{2,6})(?:市|城)?(?:的)?(?:行程|攻略|旅游)/);
+  if (m2?.[1] && isKnownCityName(m2[1])) return normalizeCity(m2[1]);
   return null;
 }
 
@@ -114,7 +147,7 @@ const CN_DAY_MAP: Record<string, number> = {
   九: 9,
 };
 
-function parseDayCount(text: string): number | null {
+export function parseDayCount(text: string): number | null {
   const m = text.match(/(\d+)\s*天/);
   if (m) return Math.max(1, Math.min(parseInt(m[1], 10), 14));
   const m2 = text.match(/([一二两三四五六七八九])\s*日游/);
@@ -139,18 +172,62 @@ function defaultDays(text: string): number {
 
 function extractCityFromKeywords(text: string): string | null {
   const raw = text.trim();
+  if (!raw) return null;
+
   for (const city of [...MAJOR_CITIES].sort((a, b) => b.length - a.length)) {
     if (raw.includes(city)) return city;
   }
   for (const { name } of CITIES) {
-    const short = name.replace(/市$/, "");
-    if (raw.includes(short) || short.startsWith(raw) || raw.startsWith(short)) {
-      return short;
+    const short = normalizeCity(name);
+    if (raw.includes(short)) return short;
+  }
+
+  const exact = normalizeCity(raw);
+  if (isKnownCityName(exact)) return exact;
+
+  const m = raw.match(/^([\u4e00-\u9fff]{2,6})/);
+  if (m?.[1] && isKnownCityName(m[1])) return normalizeCity(m[1]);
+
+  return null;
+}
+
+export function matchCityCandidates(query: string, limit = 6): string[] {
+  const q = query.trim();
+  if (!q) return [];
+
+  const scored: { name: string; score: number }[] = [];
+  for (const { name } of CITIES) {
+    const short = normalizeCity(name);
+    if (short === q) {
+      scored.push({ name: short, score: 0 });
+      continue;
+    }
+    if (short.startsWith(q)) {
+      scored.push({ name: short, score: 1 + (short.length - q.length) * 0.01 });
+      continue;
+    }
+    if (q.length >= 2 && short.includes(q)) {
+      scored.push({ name: short, score: 10 + short.length });
     }
   }
-  const m = raw.match(/^([\u4e00-\u9fff]{2,4})/);
-  if (m?.[1] && m[1].length >= 2) return m[1];
-  return null;
+  for (const city of MAJOR_CITIES) {
+    if (city.startsWith(q)) {
+      scored.push({ name: city, score: 1 });
+    } else if (q.length >= 2 && city.includes(q)) {
+      scored.push({ name: city, score: 10 });
+    }
+  }
+
+  scored.sort((a, b) => a.score - b.score || a.name.length - b.name.length);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const { name } of scored) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 function parseDatesWithDays(text: string, days: number): { start: string; end: string } {
@@ -169,11 +246,25 @@ function parseDatesWithDays(text: string, days: number): { start: string; end: s
   return { start: iso(start), end: iso(end) };
 }
 
+export function buildExpandedQuery(draft: SmartPlanDraft): string {
+  const dest = draft.destination;
+  const days = draft.days;
+  const raw = draft.keywords;
+  if (/规划|行程|攻略/.test(raw) && raw.length > 8) {
+    return raw.startsWith("帮我") ? raw : `帮我${raw}`;
+  }
+  const timeHint = raw.match(/明天|后天|大后天|今天|周末/)?.[0];
+  if (timeHint) {
+    return `帮我规划${timeHint}去${dest}的${days}日行程，体验当地文化与美食`;
+  }
+  return `帮我规划${draft.start_date}起${dest}${days}日游，体验当地文化与美食`;
+}
+
 export function parseSmartPlanKeywords(keywords: string): SmartPlanDraft | null {
   const raw = (keywords || "").trim();
   if (raw.length < 2) return null;
   const destination = extractCityFromKeywords(raw);
-  if (!destination) return null;
+  if (!destination || !isKnownCityName(destination)) return null;
 
   const days = defaultDays(raw);
   const { start, end } = parseDatesWithDays(raw, days);
@@ -201,44 +292,58 @@ export function parseSmartPlanKeywords(keywords: string): SmartPlanDraft | null 
 }
 
 function isCompleteSmartPlanQuery(q: string, draft: SmartPlanDraft): boolean {
+  if (!isKnownCityName(draft.destination)) return false;
+  if (!hasPlanDuration(q)) return false;
   const dest = draft.destination;
-  if (q === dest || q === `${dest}市`) return true;
-  if (dest.startsWith(q) && q.length < dest.length) return false;
-  if (q.includes(dest)) {
-    return (
-      parseDayCount(q) !== null ||
-      /明天|后天|大后天|今天|周末|规划|行程|攻略|日游/.test(q)
-    );
-  }
-  return q.length >= dest.length;
+  if (dest.startsWith(q.trim()) && q.trim().length < dest.length) return false;
+  return true;
 }
 
 export function searchPlanSuggestions(query: string): SmartPlanSuggestion {
   const q = query.trim();
-  if (!q) return { smartPlan: null, cities: [] };
+  if (!q) {
+    return { smartPlan: null, incompletePlan: null, cities: [], unknownInput: false };
+  }
 
   const parsed = parseSmartPlanKeywords(q);
-  const smartPlan =
-    parsed && isCompleteSmartPlanQuery(q, parsed) ? parsed : null;
-
-  const cities = CITIES.filter(
-    (c) => c.name.includes(q) || q.includes(c.name.replace(/市$/, "")),
-  )
-    .slice(0, 6)
-    .map((c) => c.name.replace(/市$/, ""));
-
-  const deduped = [...new Set(cities)].filter(
-    (name) => name !== smartPlan?.destination,
+  const cities = matchCityCandidates(q).filter(
+    (name) => name !== parsed?.destination,
   );
 
-  return { smartPlan, cities: deduped };
+  if (parsed && isCompleteSmartPlanQuery(q, parsed)) {
+    return {
+      smartPlan: parsed,
+      incompletePlan: null,
+      cities,
+      unknownInput: false,
+    };
+  }
+
+  if (parsed && isKnownCityName(parsed.destination)) {
+    return {
+      smartPlan: null,
+      incompletePlan: parsed,
+      cities,
+      unknownInput: false,
+    };
+  }
+
+  const unknownInput =
+    q.length >= 2 && cities.length === 0 && !/^\d+$/.test(q);
+
+  return {
+    smartPlan: null,
+    incompletePlan: null,
+    cities,
+    unknownInput,
+  };
 }
 
 export function detectPlanIntent(text: string): PlanNavigateAction | null {
   const raw = (text || "").trim();
   if (raw.length < 4 || !PLAN_RE.test(raw)) return null;
   const destination = extractCity(raw);
-  if (!destination) return null;
+  if (!destination || !isKnownCityName(destination)) return null;
   const { start, end } = parseDates(raw);
   return {
     action: "navigate_generate",
