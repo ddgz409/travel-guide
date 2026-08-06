@@ -172,12 +172,14 @@ export function SmartPlanPanel({
     });
   }
 
-  function appendCity(city: string) {
-    const next = keywords.trim() ? `${keywords.trim()} ${city}` : city;
-    setKeywords(next);
-    setDraft(null);
-    setEditableQuery("");
-    setOptimizeError(null);
+  function selectCity(city: string) {
+    Keyboard.dismiss();
+    const next = parseSmartPlanKeywords(city);
+    if (!next) return;
+    navigation.navigate("Generate", {
+      ...planActionToGenerateParams(next.action),
+      fromSmartPlan: true,
+    });
   }
 
   if (draft) {
@@ -298,13 +300,15 @@ export function SmartPlanPanel({
             <Pressable
               key={city}
               style={styles.cityRow}
-              onPress={() => appendCity(city)}
+              onPress={() => selectCity(city)}
             >
               <View style={styles.cityRowMain}>
                 <Text style={styles.cityRowTitle}>{city}</Text>
-                <Text style={styles.cityRowSub}>继续输入天数，如「明天」「3天」</Text>
+                <Text style={styles.cityRowSub}>点击开始智能规划</Text>
               </View>
-              <Text style={styles.cityRowPlus}>+</Text>
+              <View style={styles.cityRowGo}>
+                <Text style={styles.cityRowGoText}>→</Text>
+              </View>
             </Pressable>
           ))}
 

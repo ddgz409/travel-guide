@@ -200,11 +200,27 @@ export function parseSmartPlanKeywords(keywords: string): SmartPlanDraft | null 
   };
 }
 
+function isCompleteSmartPlanQuery(q: string, draft: SmartPlanDraft): boolean {
+  const dest = draft.destination;
+  if (q === dest || q === `${dest}市`) return true;
+  if (dest.startsWith(q) && q.length < dest.length) return false;
+  if (q.includes(dest)) {
+    return (
+      parseDayCount(q) !== null ||
+      /明天|后天|大后天|今天|周末|规划|行程|攻略|日游/.test(q)
+    );
+  }
+  return q.length >= dest.length;
+}
+
 export function searchPlanSuggestions(query: string): SmartPlanSuggestion {
   const q = query.trim();
   if (!q) return { smartPlan: null, cities: [] };
 
-  const smartPlan = parseSmartPlanKeywords(q);
+  const parsed = parseSmartPlanKeywords(q);
+  const smartPlan =
+    parsed && isCompleteSmartPlanQuery(q, parsed) ? parsed : null;
+
   const cities = CITIES.filter(
     (c) => c.name.includes(q) || q.includes(c.name.replace(/市$/, "")),
   )

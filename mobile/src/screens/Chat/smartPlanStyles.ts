@@ -107,11 +107,18 @@ export const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
-  cityRowPlus: {
-    fontSize: 22,
-    color: colors.muted,
-    fontWeight: "300",
-    paddingHorizontal: 8,
+  cityRowGo: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cityRowGoText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
   },
   emptyHint: {
     fontSize: 14,
