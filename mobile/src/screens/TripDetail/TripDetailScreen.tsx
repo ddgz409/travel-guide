@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   Share as RnShare,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -24,8 +23,6 @@ import { ApiError } from "@travel-guide/shared";
 import { api, apiBase, getStoredToken } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
-import { DayMap } from "../../components/DayMap/DayMap";
-import { TripDetailSheet } from "../../components/TripDetailSheet";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
@@ -336,40 +333,47 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={[StyleSheet.absoluteFill, styles.heroMapLayer]}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
         <Pressable
-          style={[styles.mapBackBtn, { top: Math.max(insets.top, 8) + 4 }]}
           onPress={() => navigation.goBack()}
           hitSlop={8}
+          style={styles.topBackBtn}
         >
-          <Text style={styles.mapBackText}>‹ 返回</Text>
+          <Text style={styles.topBackText}>‹ 返回</Text>
         </Pressable>
-        <FadeSwitch
-          switchKey={`${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
-        >
-          <HeroRouteMap
-            ref={heroMapRef}
-            fill
-            tripId={trip.id}
-            dayId={currentDay?.id}
-            items={selectedItems}
-            destination={trip.destination}
-            title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
-            showCategoryChips
-            onMapGestureChange={(active) => setPageScrollEnabled(!active)}
-          />
-        </FadeSwitch>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          {trip.title}
+        </Text>
+        <View style={styles.topBackBtn} />
       </View>
 
-      <TripDetailSheet initialRatio={0.38}>
-        <ScrollView
-          style={styles.scrollBody}
-          contentContainerStyle={styles.content}
-          nestedScrollEnabled
-          scrollEnabled={pageScrollEnabled}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.content}
+        nestedScrollEnabled
+        scrollEnabled={pageScrollEnabled}
+        waitFor={heroMapRef}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <FadeSwitch
+            switchKey={`${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+          >
+            <HeroRouteMap
+              ref={heroMapRef}
+              height={280}
+              tripId={trip.id}
+              dayId={currentDay?.id}
+              items={selectedItems}
+              destination={trip.destination}
+              title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
+              showCategoryChips
+              onMapGestureChange={(active) => setPageScrollEnabled(!active)}
+            />
+          </FadeSwitch>
+        </View>
+
         <Text style={styles.title}>{trip.title}</Text>
       <Text style={styles.meta}>
         {trip.destination} · {trip.start_date} → {trip.end_date} ·{" "}
@@ -498,16 +502,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
           </FadeSlideIn>
         ) : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>当日路线地图</Text>
-          <DayMap
-            tripId={trip.id}
-            dayId={currentDay?.id}
-            items={selectedItems}
-            title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
-          />
-        </View>
-
         <Text style={styles.sectionTitle}>
           精选行程 · {selectedItems.length} 个安排
         </Text>
@@ -552,8 +546,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           refs={trip.external_refs}
         />
       </FadeSwitch>
-        </ScrollView>
-      </TripDetailSheet>
+      </ScrollView>
     </View>
   );
 }

@@ -1,14 +1,15 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
-  StyleSheet,
+  Pressable,
   Text,
   View,
 } from "react-native";
+import { NativeViewGestureHandler, ScrollView } from "react-native-gesture-handler";
+import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Trip } from "@travel-guide/shared";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
-import { TripDetailSheet } from "../../components/TripDetailSheet";
 import { colors } from "../../theme";
 import { styles } from "./styles";
 
@@ -35,7 +36,11 @@ export function TripGeneratingView({
   phase,
   streaming,
 }: Props) {
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
+  const heroMapRef = useRef<NativeViewGestureHandler>(null);
+  const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
   const firstDay = trip.days?.[0];
   const dayItems = useMemo(
     () => firstDay?.items?.filter((it) => it.selected) || [],
@@ -50,26 +55,44 @@ export function TripGeneratingView({
 
   return (
     <View style={styles.genRoot}>
-      <View style={StyleSheet.absoluteFill}>
-        <HeroRouteMap
-          fill
-          tripId={trip.id}
-          dayId={firstDay?.id}
-          items={dayItems}
-          destination={trip.destination}
-          title={`${trip.destination} 路线规划`}
-          showCategoryChips
-        />
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={8}
+          style={styles.topBackBtn}
+        >
+          <Text style={styles.topBackText}>‹ 返回</Text>
+        </Pressable>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          规划行程
+        </Text>
+        <View style={styles.topBackBtn} />
       </View>
 
-      <TripDetailSheet initialRatio={0.48}>
-        <ScrollView
-          style={styles.genBodyScroll}
-          contentContainerStyle={styles.genBody}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.genHero}>AI 正在为你规划行程</Text>
+      <ScrollView
+        style={styles.genBodyScroll}
+        contentContainerStyle={styles.genBody}
+        nestedScrollEnabled
+        scrollEnabled={pageScrollEnabled}
+        waitFor={heroMapRef}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <HeroRouteMap
+            ref={heroMapRef}
+            height={280}
+            tripId={trip.id}
+            dayId={firstDay?.id}
+            items={dayItems}
+            destination={trip.destination}
+            title={`${trip.destination} 路线规划`}
+            showCategoryChips
+            onMapGestureChange={(active) => setPageScrollEnabled(!active)}
+          />
+        </View>
+
+        <Text style={styles.genHero}>AI 正在为你规划行程</Text>
           <View style={styles.genPhaseRow}>
             {PHASES.map((p, i) => {
               const done = phaseIdx > i;
@@ -119,8 +142,7 @@ export function TripGeneratingView({
               <Text style={styles.genStreamCursor}>▍</Text>
             ) : null}
           </View>
-        </ScrollView>
-      </TripDetailSheet>
+      </ScrollView>
     </View>
   );
 }

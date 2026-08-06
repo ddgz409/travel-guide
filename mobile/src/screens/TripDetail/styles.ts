@@ -5,18 +5,32 @@ import { GRID_GAP } from "./constants";
 export const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   scrollBody: { flex: 1 },
-  content: { padding: 16, paddingBottom: 48 },
-  mapBackBtn: {
-    position: "absolute",
-    left: 12,
-    zIndex: 30,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  content: { paddingHorizontal: 16, paddingBottom: 48 },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
   },
-  mapBackText: { fontSize: 15, fontWeight: "700", color: colors.ink },
-  heroMapLayer: { zIndex: 0 },
+  topBackBtn: { minWidth: 56 },
+  topBackText: { fontSize: 15, fontWeight: "700", color: colors.brand },
+  topTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.ink,
+  },
+  hero: {
+    height: 280,
+    backgroundColor: "#eef2f7",
+    overflow: "hidden",
+  },
+  title: { fontSize: 24, fontWeight: "800", color: colors.ink, marginTop: 16 },
   center: {
     flex: 1,
     justifyContent: "center",
@@ -24,7 +38,6 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     padding: 24,
   },
-  title: { fontSize: 24, fontWeight: "800", color: colors.ink },
   meta: { marginTop: 8, fontSize: 14, color: colors.muted, lineHeight: 20 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
   actionBtn: {
@@ -312,7 +325,7 @@ export const styles = StyleSheet.create({
   genBodyScroll: { flex: 1 },
   genBody: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 0,
     paddingBottom: 32,
   },
   genHero: {
