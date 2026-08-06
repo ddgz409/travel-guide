@@ -91,8 +91,8 @@ export function CityDetailScreen({ navigation, route }: Props) {
       setLoading(false);
     } else {
       setLoading(true);
-      setStreamPhase("search");
-      setStreamMessage(`正在搜索 ${city} 真实信息…`);
+      setStreamPhase("fallback");
+      setStreamMessage(`正在检索 ${city} 热门地点…`);
       setStreamPreview("");
     }
 
@@ -128,7 +128,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
       if (!result && !isStale()) {
         setStreamPhase("location");
-        setStreamMessage(`正在搜索 ${city} 真实信息…`);
+        setStreamMessage(`正在检索 ${city} 热门地点…`);
         result = await api.destinations.info(city);
       }
 

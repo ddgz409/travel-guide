@@ -14,10 +14,9 @@ import Animated, {
 import { colors, cardShadow } from "../../theme";
 
 const PHASES = [
-  { id: "search", label: "联网搜索" },
-  { id: "fallback", label: "本地 POI" },
+  { id: "fallback", label: "检索 POI" },
+  { id: "search", label: "AI 补充" },
   { id: "location", label: "补全坐标" },
-  { id: "images", label: "真实图片" },
 ] as const;
 
 type Props = {
