@@ -1,4 +1,4 @@
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { colors, cardShadow } from "../../theme";
 
 export const styles = StyleSheet.create({
@@ -211,7 +211,23 @@ export const styles = StyleSheet.create({
   },
   overlayTitle: { fontSize: 18, fontWeight: "800", color: colors.ink, marginLeft: 4 },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
-  loadingText: { marginTop: 12, fontSize: 14, color: colors.muted },
+  loadingText: { marginTop: 12, fontSize: 14, color: colors.muted, textAlign: "center" },
+  streamPreviewScroll: {
+    marginTop: 16,
+    maxHeight: 220,
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 14,
+    ...cardShadow,
+  },
+  streamPreviewContent: { padding: 14 },
+  streamPreviewText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.ink,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  streamPreviewCursor: { fontSize: 13, color: colors.brand, marginTop: 4 },
   errorText: { fontSize: 15, color: colors.danger, textAlign: "center", lineHeight: 22 },
   emptyText: { fontSize: 14, color: colors.muted, textAlign: "center" },
   retryBtn: {

@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -318,6 +319,203 @@ def get_place_images(
     }
 
 
+def _merge_llm_amap(llm_result: dict[str, Any], city: str) -> dict[str, Any]:
+    """LLM 结果不足时用高德 POI 补全。"""
+    if llm_result["foods"] and llm_result["spots"]:
+        return llm_result
+
+    amap_result = _fallback_from_amap(city)
+    if not llm_result["foods"]:
+        llm_result["foods"] = amap_result["foods"]
+    if not llm_result["spots"]:
+        llm_result["spots"] = amap_result["spots"]
+    if not llm_result["foods"] and not llm_result["spots"]:
+        return amap_result
+    return llm_result
+
+
+def _finalize_city_info(city: str, result: dict[str, Any]) -> dict[str, Any]:
+    _enrich_with_amap_location(city, result.get("foods") or [], "foods")
+    _enrich_with_amap_location(city, result.get("spots") or [], "spots")
+    _enrich_with_xhs_images(city, result.get("foods") or [], "foods")
+    _enrich_with_xhs_images(city, result.get("spots") or [], "spots")
+    return result
+
+
+def _stream_llm_city_search(
+    city: str,
+    user: "User | None",
+) -> Generator[dict[str, Any], None, None]:
+    """流式 LLM 联网搜索；末尾 yield {"_internal": "result", "data": ...}。"""
+    config = resolve_llm_config(user=user)
+    provider = config["provider"]
+    api_key = config["api_key"]
+    model = config["model"]
+    base_url = config["base_url"]
+
+    empty: dict[str, Any] = {"city": city, "foods": [], "spots": []}
+    if not api_key:
+        logger.warning("get_city_info: 未配置 LLM API Key")
+        yield {"_internal": "result", "data": empty}
+        return
+
+    url = f"{base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"城市：{city}\n\n请联网搜索这个城市的特色美食和热门景点。",
+            },
+        ],
+        "temperature": 0.6,
+        "max_tokens": 1024,
+        "response_format": {"type": "json_object"},
+        "stream": True,
+    }
+
+    if provider == "zhipu":
+        body["tools"] = [{
+            "type": "web_search",
+            "web_search": {"enable": True, "search_result": False},
+        }]
+
+    logger.info(
+        "City info LLM stream city=%s provider=%s model=%s",
+        city,
+        provider,
+        model,
+    )
+
+    accumulated = ""
+    try:
+        with httpx.Client(timeout=90.0) as client:
+            with client.stream("POST", url, headers=headers, json=body) as resp:
+                if resp.status_code >= 400:
+                    err_text = resp.read().decode("utf-8", errors="replace")[:300]
+                    logger.warning(
+                        "City info stream HTTP %s: %s",
+                        resp.status_code,
+                        err_text,
+                    )
+                    yield {
+                        "type": "error",
+                        "message": f"联网搜索失败 (HTTP {resp.status_code})",
+                    }
+                    yield {"_internal": "result", "data": empty}
+                    return
+
+                for raw_line in resp.iter_lines():
+                    line = raw_line.strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        reasoning = delta.get("reasoning_content", "")
+                        if reasoning:
+                            yield {"type": "reasoning", "content": reasoning}
+                        content = delta.get("content", "")
+                        if content:
+                            accumulated += content
+                            yield {"type": "preview", "content": content}
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        pass
+    except httpx.HTTPError as e:
+        logger.exception("City info stream HTTP error city=%s", city)
+        yield {"type": "error", "message": f"网络错误：{e}"}
+        yield {"_internal": "result", "data": empty}
+        return
+    except Exception as e:
+        logger.exception("City info stream error city=%s", city)
+        yield {"type": "error", "message": f"搜索出错：{e}"}
+        yield {"_internal": "result", "data": empty}
+        return
+
+    if not accumulated.strip():
+        yield {"_internal": "result", "data": empty}
+        return
+
+    try:
+        parsed = _parse_json_content(accumulated)
+        foods = _normalize_items(parsed.get("foods", []), fallback_desc="当地特色美食")
+        spots = _normalize_items(parsed.get("spots", []), fallback_desc="热门打卡地")
+        yield {
+            "_internal": "result",
+            "data": {"city": city, "foods": foods, "spots": spots},
+        }
+    except Exception:
+        logger.exception("City info stream parse failed city=%s", city)
+        yield {
+            "type": "status",
+            "phase": "parse",
+            "message": "正在解析搜索结果…",
+        }
+        yield {"_internal": "result", "data": empty}
+
+
+def city_info_stream(
+    city: str,
+    user: "User | None" = None,
+) -> Generator[dict[str, Any], None, None]:
+    """SSE 流式返回城市真实信息搜索进度与 LLM 预览。"""
+    city = (city or "").strip()
+    if not city:
+        yield {"type": "result", "data": {"city": city, "foods": [], "spots": []}}
+        return
+
+    yield {
+        "type": "status",
+        "phase": "search",
+        "message": f"正在联网搜索 {city} 的真实信息…",
+    }
+
+    llm_result: dict[str, Any] = {"city": city, "foods": [], "spots": []}
+    try:
+        for evt in _stream_llm_city_search(city, user):
+            if evt.get("_internal") == "result":
+                llm_result = evt["data"]
+            else:
+                yield evt
+    except Exception:
+        logger.exception("city_info_stream LLM failed for city=%s", city)
+
+    if not (llm_result["foods"] and llm_result["spots"]):
+        yield {
+            "type": "status",
+            "phase": "fallback",
+            "message": f"正在从高德检索 {city} 本地 POI…",
+        }
+
+    result = _merge_llm_amap(llm_result, city)
+
+    yield {
+        "type": "status",
+        "phase": "location",
+        "message": "正在补全地点坐标与地址…",
+    }
+    _enrich_with_amap_location(city, result.get("foods") or [], "foods")
+    _enrich_with_amap_location(city, result.get("spots") or [], "spots")
+
+    yield {
+        "type": "status",
+        "phase": "images",
+        "message": "正在抓取小红书真实图片…",
+    }
+    _enrich_with_xhs_images(city, result.get("foods") or [], "foods")
+    _enrich_with_xhs_images(city, result.get("spots") or [], "spots")
+
+    yield {"type": "result", "data": result}
+
+
 def get_city_info(city: str, user: "User | None" = None) -> dict[str, Any]:
     """返回城市美食 + 景点。LLM 优先，不足时用高德 POI 降级。"""
     city = (city or "").strip()
@@ -330,21 +528,5 @@ def get_city_info(city: str, user: "User | None" = None) -> dict[str, Any]:
         logger.exception("get_city_info LLM failed for city=%s", city)
         llm_result = {"city": city, "foods": [], "spots": []}
 
-    if llm_result["foods"] and llm_result["spots"]:
-        result = llm_result
-    else:
-        amap_result = _fallback_from_amap(city)
-        if not llm_result["foods"]:
-            llm_result["foods"] = amap_result["foods"]
-        if not llm_result["spots"]:
-            llm_result["spots"] = amap_result["spots"]
-        if not llm_result["foods"] and not llm_result["spots"]:
-            result = amap_result
-        else:
-            result = llm_result
-
-    _enrich_with_amap_location(city, result.get("foods") or [], "foods")
-    _enrich_with_amap_location(city, result.get("spots") or [], "spots")
-    _enrich_with_xhs_images(city, result.get("foods") or [], "foods")
-    _enrich_with_xhs_images(city, result.get("spots") or [], "spots")
-    return result
+    result = _merge_llm_amap(llm_result, city)
+    return _finalize_city_info(city, result)

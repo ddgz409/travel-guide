@@ -4,6 +4,7 @@ import type {
   ChatLlmOverride,
   ChatMessage,
   CityInfo,
+  CityInfoStreamEvent,
   PlaceImagesResult,
   DayRoutesResult,
   GenerateRequest,
@@ -299,6 +300,18 @@ export function createApiClient(opts: CreateApiClientOptions) {
           `/destinations/info?city=${encodeURIComponent(city)}`,
           { timeoutMs: 90000 },
         ),
+      /** 流式搜索城市真实信息（SSE），返回 URL 与鉴权头供 readSSE 使用 */
+      infoStream: async (city: string) => {
+        const token = await tokenStore.getToken();
+        const headers: Record<string, string> = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        return {
+          url:
+            `${apiBase}/destinations/info-stream?city=` +
+            `${encodeURIComponent(city)}`,
+          headers,
+        };
+      },
       regeo: (lng: number, lat: number) =>
         request<RegeoResult>(
           `/destinations/regeo?lng=${lng}&lat=${lat}`,

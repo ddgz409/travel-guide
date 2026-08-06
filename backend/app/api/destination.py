@@ -1,14 +1,20 @@
 """城市探索路由：城市信息搜索 + 逆地理编码。"""
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_optional_user
 from app.models import User
 from app.services.amap_client import AmapError, get_amap_client
-from app.services.destination_service import get_city_info, get_place_images
+from app.services.destination_service import (
+    city_info_stream,
+    get_city_info,
+    get_place_images,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +33,32 @@ def city_info(
     """
     result = get_city_info(city.strip(), user)
     return result
+
+
+@router.get("/info-stream")
+def city_info_stream_endpoint(
+    city: str = Query(..., min_length=1, max_length=128),
+    user: User | None = Depends(get_optional_user),
+):
+    """SSE 流式搜索城市真实信息：进度、LLM 预览、最终结果。"""
+
+    def generate():
+        try:
+            for chunk in city_info_stream(city.strip(), user):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.exception("City info stream error")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/place-images")

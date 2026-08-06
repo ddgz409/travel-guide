@@ -1,25 +1,25 @@
 /** React Native 兼容的 SSE 读取（fetch.body 不可用时降级 XHR） */
 
-import type { GenerateProgressEvent } from "@travel-guide/shared";
+import type { CityInfoStreamEvent, GenerateProgressEvent } from "@travel-guide/shared";
 
-function parseSSEChunk(text: string, onEvent: (evt: GenerateProgressEvent) => void) {
+function parseSSEChunk<T>(text: string, onEvent: (evt: T) => void) {
   const lines = text.split("\n");
   for (const line of lines) {
     if (!line.startsWith("data: ")) continue;
     const data = line.slice(6).trim();
-    if (!data) continue;
+    if (!data || data === "[DONE]") continue;
     try {
-      onEvent(JSON.parse(data) as GenerateProgressEvent);
+      onEvent(JSON.parse(data) as T);
     } catch {
       /* ignore */
     }
   }
 }
 
-export async function readGenerateSSE(
+export async function readSSE<T>(
   url: string,
   headers: Record<string, string>,
-  onEvent: (evt: GenerateProgressEvent) => void,
+  onEvent: (evt: T) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
   try {
@@ -43,13 +43,13 @@ export async function readGenerateSSE(
     /* fallback below */
   }
 
-  return readGenerateSSXHR(url, headers, onEvent, signal);
+  return readSSXHR(url, headers, onEvent, signal);
 }
 
-function readGenerateSSXHR(
+function readSSXHR<T>(
   url: string,
   headers: Record<string, string>,
-  onEvent: (evt: GenerateProgressEvent) => void,
+  onEvent: (evt: T) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
   return new Promise((resolve) => {
@@ -84,4 +84,22 @@ function readGenerateSSXHR(
     }
     xhr.send();
   });
+}
+
+export async function readGenerateSSE(
+  url: string,
+  headers: Record<string, string>,
+  onEvent: (evt: GenerateProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return readSSE(url, headers, onEvent, signal);
+}
+
+export async function readCityInfoSSE(
+  url: string,
+  headers: Record<string, string>,
+  onEvent: (evt: CityInfoStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return readSSE(url, headers, onEvent, signal);
 }

@@ -13,7 +13,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { ApiError } from "@travel-guide/shared";
-import type { CityFood, CitySpot } from "@travel-guide/shared";
+import type { CityFood, CityInfo, CitySpot } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { PlaceImage } from "../../components/PlaceImage";
@@ -23,6 +23,7 @@ import { getDeviceLocation } from "../../utils/location";
 import { loadLocationConsent, saveLocationConsent } from "../../utils/locationPrefs";
 import { hasCoords, type LatLng } from "../../utils/geo";
 import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
+import { readCityInfoSSE } from "../../utils/sseClient";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { openXiaohongshu } from "../../utils/openExternal";
@@ -48,6 +49,8 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [streamMessage, setStreamMessage] = useState("");
+  const [streamPreview, setStreamPreview] = useState("");
   const [foods, setFoods] = useState<CityFood[]>([]);
   const [spots, setSpots] = useState<CitySpot[]>([]);
   const [category, setCategory] = useState<ExploreCategory>("spots");
@@ -58,6 +61,8 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const previewScrollRef = useRef<ScrollView>(null);
   const baseCoord = useMemo(() => cityCoord(city), [city]);
 
   const applyResult = useCallback((result: { foods?: CityFood[]; spots?: CitySpot[] }) => {
@@ -69,6 +74,10 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
   const load = useCallback(async () => {
     setError(null);
+    streamAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
+
     const cached = await getCachedCityInfo(city);
     const hasCache =
       cached && ((cached.foods?.length ?? 0) > 0 || (cached.spots?.length ?? 0) > 0);
@@ -78,20 +87,47 @@ export function CityDetailScreen({ navigation, route }: Props) {
       setLoading(false);
     } else {
       setLoading(true);
+      setStreamMessage(`正在搜索 ${city} 真实信息…`);
+      setStreamPreview("");
     }
 
     try {
-      const result = await api.destinations.info(city);
-      applyResult(result);
-      if ((result.foods?.length ?? 0) > 0 || (result.spots?.length ?? 0) > 0) {
-        await setCachedCityInfo(city, result);
+      let result: CityInfo | null = null;
+      const { url, headers } = await api.destinations.infoStream(city);
+
+      await readCityInfoSSE(
+        url,
+        headers,
+        (evt) => {
+          if (evt.type === "status") {
+            setStreamMessage(evt.message);
+          } else if (evt.type === "preview" || evt.type === "reasoning") {
+            setStreamPreview((prev) => prev + evt.content);
+          } else if (evt.type === "result") {
+            result = evt.data;
+          } else if (evt.type === "error") {
+            if (!hasCache) setError(evt.message);
+          }
+        },
+        ctrl.signal,
+      );
+
+      if (result) {
+        applyResult(result);
+        if ((result.foods?.length ?? 0) > 0 || (result.spots?.length ?? 0) > 0) {
+          await setCachedCityInfo(city, result);
+        }
+      } else if (!hasCache) {
+        setError("搜索失败，请重试");
       }
     } catch (e) {
-      if (!hasCache) {
+      if (!hasCache && !ctrl.signal.aborted) {
         setError(e instanceof ApiError ? e.message : "搜索失败，请重试");
       }
     } finally {
       setLoading(false);
+      setStreamPreview("");
+      setStreamMessage("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city, applyResult]);
@@ -99,8 +135,15 @@ export function CityDetailScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       load();
+      return () => streamAbortRef.current?.abort();
     }, [load]),
   );
+
+  useEffect(() => {
+    if (streamPreview) {
+      previewScrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [streamPreview]);
 
   const fetchUserLocation = useCallback(async () => {
     try {
@@ -226,7 +269,20 @@ export function CityDetailScreen({ navigation, route }: Props) {
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.brand} size="large" />
-            <Text style={styles.loadingText}>正在搜索 {city} 真实信息…</Text>
+            <Text style={styles.loadingText}>
+              {streamMessage || `正在搜索 ${city} 真实信息…`}
+            </Text>
+            {streamPreview ? (
+              <ScrollView
+                ref={previewScrollRef}
+                style={styles.streamPreviewScroll}
+                contentContainerStyle={styles.streamPreviewContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={styles.streamPreviewText}>{streamPreview}</Text>
+                <Text style={styles.streamPreviewCursor}>▍</Text>
+              </ScrollView>
+            ) : null}
           </View>
         ) : error ? (
           <View style={styles.center}>

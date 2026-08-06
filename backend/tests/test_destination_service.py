@@ -2,7 +2,11 @@
 from unittest.mock import MagicMock, patch
 
 from app.services.amap_client import Poi
-from app.services.destination_service import _fallback_from_amap, get_city_info
+from app.services.destination_service import (
+    _fallback_from_amap,
+    city_info_stream,
+    get_city_info,
+)
 
 
 def test_fallback_from_amap_builds_foods_and_spots():
@@ -91,3 +95,31 @@ def test_get_city_info_enriches_location_and_images():
                 get_city_info("北京")
                 assert mock_loc.call_count == 2
                 assert mock_enrich.call_count == 2
+
+
+def test_city_info_stream_yields_status_and_result():
+    llm_events = [
+        {"type": "preview", "content": '{"foods":'},
+        {
+            "_internal": "result",
+            "data": {
+                "city": "杭州",
+                "foods": [{"name": "西湖醋鱼", "desc": "特色"}],
+                "spots": [{"name": "西湖", "desc": "必去"}],
+            },
+        },
+    ]
+
+    with patch(
+        "app.services.destination_service._stream_llm_city_search",
+        return_value=iter(llm_events),
+    ):
+        with patch("app.services.destination_service._enrich_with_amap_location"):
+            with patch("app.services.destination_service._enrich_with_xhs_images"):
+                events = list(city_info_stream("杭州"))
+
+    types = [e["type"] for e in events]
+    assert "status" in types
+    assert "preview" in types
+    assert events[-1]["type"] == "result"
+    assert events[-1]["data"]["foods"][0]["name"] == "西湖醋鱼"

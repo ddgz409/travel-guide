@@ -367,6 +367,14 @@ export interface CityInfo {
   spots: CitySpot[];
 }
 
+/** 城市真实信息 SSE 流事件 */
+export type CityInfoStreamEvent =
+  | { type: "status"; phase: string; message: string }
+  | { type: "preview"; content: string }
+  | { type: "reasoning"; content: string }
+  | { type: "result"; data: CityInfo }
+  | { type: "error"; message: string };
+
 export interface RegeoResult {
   city: string;
   province: string;
