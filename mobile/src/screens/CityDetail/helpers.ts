@@ -1,4 +1,6 @@
 import { DESTINATIONS } from "../Explore/content";
+import { landmarksFor } from "../../data/landmarks";
+import type { CityInfo } from "@travel-guide/shared";
 
 export type ExploreCategory = "spots" | "foods";
 
@@ -17,6 +19,46 @@ export function cityCoord(city: string): { lng: number; lat: number } {
     (x) => city.includes(x.name) || x.name.includes(city),
   );
   return d ? { lng: d.lng, lat: d.lat } : { lng: 116.407, lat: 39.904 };
+}
+
+const LOCAL_FOODS: Record<string, string[]> = {
+  北京: ["北京烤鸭", "炸酱面", "涮羊肉"],
+  上海: ["小笼包", "生煎", "本帮菜"],
+  成都: ["火锅", "龙抄手", "担担面"],
+  杭州: ["西湖醋鱼", "东坡肉", "片儿川"],
+  西安: ["肉夹馍", "羊肉泡馍", "凉皮"],
+  厦门: ["沙茶面", "土笋冻", "海蛎煎"],
+  三亚: ["海鲜", "清补凉", "椰子鸡"],
+  大理: ["乳扇", "饵丝", "酸辣鱼"],
+};
+
+/** 本地精选：热门城市秒开预览，不等待网络 */
+export function buildLocalCityPreview(city: string): CityInfo | null {
+  const c = (city || "").trim();
+  if (!c) return null;
+
+  const spotNames = landmarksFor(c).slice(0, 4);
+  if (!spotNames.length) return null;
+
+  let foodNames: string[] = [];
+  for (const [key, names] of Object.entries(LOCAL_FOODS)) {
+    if (c.includes(key) || key.includes(c)) {
+      foodNames = names;
+      break;
+    }
+  }
+  if (!foodNames.length) {
+    foodNames = ["当地特色菜", "网红小吃", "老字号"];
+  }
+
+  return {
+    city: c,
+    spots: spotNames.map((name) => ({ name, desc: `${c}热门必去` })),
+    foods: foodNames.slice(0, 3).map((name) => ({
+      name,
+      desc: "本地特色美食",
+    })),
+  };
 }
 
 export function itemCoord(

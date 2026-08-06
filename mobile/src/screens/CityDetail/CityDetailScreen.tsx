@@ -13,7 +13,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { ApiError } from "@travel-guide/shared";
-import type { CityFood, CityInfo, CitySpot } from "@travel-guide/shared";
+import type { CityFood, CitySpot } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { PlaceImage } from "../../components/PlaceImage";
@@ -23,11 +23,11 @@ import { getDeviceLocation } from "../../utils/location";
 import { loadLocationConsent, saveLocationConsent } from "../../utils/locationPrefs";
 import { hasCoords, type LatLng } from "../../utils/geo";
 import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
-import { readCityInfoSSE } from "../../utils/sseClient";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { openXiaohongshu } from "../../utils/openExternal";
 import {
+  buildLocalCityPreview,
   CATEGORIES,
   cityCoord,
   cityIntro,
@@ -49,10 +49,8 @@ export function CityDetailScreen({ navigation, route }: Props) {
   const { city } = route.params;
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [streamMessage, setStreamMessage] = useState("");
-  const [streamPreview, setStreamPreview] = useState("");
-  const [streamPhase, setStreamPhase] = useState("search");
   const [foods, setFoods] = useState<CityFood[]>([]);
   const [spots, setSpots] = useState<CitySpot[]>([]);
   const [category, setCategory] = useState<ExploreCategory>("spots");
@@ -63,9 +61,8 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
-  const previewScrollRef = useRef<ScrollView>(null);
   const loadGenRef = useRef(0);
+  const localPreview = useMemo(() => buildLocalCityPreview(city), [city]);
   const baseCoord = useMemo(() => cityCoord(city), [city]);
 
   const applyResult = useCallback((result: { foods?: CityFood[]; spots?: CitySpot[] }) => {
@@ -78,9 +75,6 @@ export function CityDetailScreen({ navigation, route }: Props) {
   const load = useCallback(async () => {
     const loadGen = ++loadGenRef.current;
     setError(null);
-    streamAbortRef.current?.abort();
-    const ctrl = new AbortController();
-    streamAbortRef.current = ctrl;
 
     const cached = await getCachedCityInfo(city);
     const hasCache =
@@ -89,85 +83,44 @@ export function CityDetailScreen({ navigation, route }: Props) {
     if (hasCache) {
       applyResult(cached!);
       setLoading(false);
+      setRefreshing(false);
+    } else if (localPreview) {
+      applyResult(localPreview);
+      setLoading(false);
+      setRefreshing(true);
     } else {
       setLoading(true);
-      setStreamPhase("fallback");
-      setStreamMessage(`正在检索 ${city} 热门地点…`);
-      setStreamPreview("");
+      setRefreshing(false);
     }
 
-    const isStale = () => loadGen !== loadGenRef.current || ctrl.signal.aborted;
+    const isStale = () => loadGen !== loadGenRef.current;
 
     try {
-      let result: CityInfo | null = null;
-      try {
-        const { url, headers } = await api.destinations.infoStream(city);
-        if (!isStale()) {
-          await readCityInfoSSE(
-            url,
-            headers,
-            (evt) => {
-              if (isStale()) return;
-              if (evt.type === "status") {
-                setStreamPhase(evt.phase);
-                setStreamMessage(evt.message);
-              } else if (evt.type === "preview" || evt.type === "reasoning") {
-                setStreamPreview((prev) => prev + evt.content);
-              } else if (evt.type === "result") {
-                result = evt.data;
-              } else if (evt.type === "error" && !hasCache) {
-                setError(evt.message);
-              }
-            },
-            ctrl.signal,
-          );
-        }
-      } catch {
-        /* SSE 不可用时不阻断，继续 REST 降级 */
-      }
-
-      if (!result && !isStale()) {
-        setStreamPhase("location");
-        setStreamMessage(`正在检索 ${city} 热门地点…`);
-        result = await api.destinations.info(city);
-      }
-
+      const result = await api.destinations.info(city);
       if (isStale()) return;
 
-      if (result) {
-        applyResult(result);
-        setError(null);
-        if ((result.foods?.length ?? 0) > 0 || (result.spots?.length ?? 0) > 0) {
-          await setCachedCityInfo(city, result);
-        }
-      } else if (!hasCache) {
-        setError("搜索失败，请重试");
+      applyResult(result);
+      setError(null);
+      if ((result.foods?.length ?? 0) > 0 || (result.spots?.length ?? 0) > 0) {
+        await setCachedCityInfo(city, result);
       }
     } catch (e) {
-      if (!isStale() && !hasCache) {
-        setError(e instanceof ApiError ? e.message : "搜索失败，请重试");
+      if (!isStale() && !hasCache && !localPreview) {
+        setError(e instanceof ApiError ? e.message : "加载失败，请重试");
       }
     } finally {
       if (loadGen === loadGenRef.current) {
         setLoading(false);
-        setStreamPreview("");
-        setStreamMessage("");
+        setRefreshing(false);
       }
     }
-  }, [city, applyResult]);
+  }, [city, localPreview, applyResult]);
 
   useFocusEffect(
     useCallback(() => {
       load();
-      return () => streamAbortRef.current?.abort();
     }, [load]),
   );
-
-  useEffect(() => {
-    if (streamPreview) {
-      previewScrollRef.current?.scrollToEnd({ animated: true });
-    }
-  }, [streamPreview]);
 
   const fetchUserLocation = useCallback(async () => {
     try {
@@ -291,13 +244,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
           <Text style={styles.overlayTitle}>{city}</Text>
         </View>
         {loading ? (
-          <CityInfoLoadingView
-            city={city}
-            message={streamMessage}
-            phase={streamPhase}
-            preview={streamPreview}
-            previewScrollRef={previewScrollRef}
-          />
+          <CityInfoLoadingView city={city} />
         ) : error ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>{error}</Text>
@@ -357,6 +304,13 @@ export function CityDetailScreen({ navigation, route }: Props) {
           <Text style={styles.searchIcon}>🔍</Text>
         </Pressable>
       </View>
+
+      {refreshing ? (
+        <View style={[styles.refreshBanner, { top: topPad + 52 }]}>
+          <ActivityIndicator size="small" color={colors.brand} />
+          <Text style={styles.refreshBannerText}>正在更新推荐…</Text>
+        </View>
+      ) : null}
 
       <View style={[styles.filterBar, { top: filterTop }]}>
         <ScrollView
