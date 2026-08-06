@@ -1,6 +1,8 @@
 """攻略路由：生成 / 列表 / 详情 / 编辑 / 重新生成 / 分享 / 导出。"""
 import io
+import json
 import secrets
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
@@ -22,11 +24,15 @@ from app.schemas import (
     TripListItem,
     TripOut,
     TripUpdate,
+    ValidateDestinationRequest,
+    ValidateDestinationResponse,
 )
 from app.services.generator import GeneratorError, get_generator
 from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
 from app.services.quick_recommend import build_quick_recommend
+from app.services.destination_validator import check_destination
+from app.services.generation_progress import get_progress
 from app.services.trip_cache import (
     build_cache_key,
     save_trip_to_cache,
@@ -34,6 +40,13 @@ from app.services.trip_cache import (
 )
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
+
+
+def _require_valid_destination(destination: str) -> None:
+    """无效地名直接 400，避免创建 generating 行程后再失败。"""
+    result = check_destination(destination)
+    if not result.valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
 
 
 def _trip_or_404(trip_id: str, db: Session, user_id: str | None = None) -> Trip:
@@ -57,6 +70,8 @@ def generate(
     """
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
+
+    _require_valid_destination(payload.destination)
 
     title = f"{payload.destination}之旅"
     if payload.start_date != payload.end_date:
@@ -192,6 +207,8 @@ def guest_generate(
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
 
+    _require_valid_destination(payload.destination)
+
     guest = _ensure_guest_user(db)
 
     title = f"{payload.destination}之旅"
@@ -256,11 +273,24 @@ def quick_recommend(payload: QuickRecommendRequest):
     return build_quick_recommend(payload.destination)
 
 
+@router.post("/validate-destination", response_model=ValidateDestinationResponse)
+def validate_destination(payload: ValidateDestinationRequest):
+    """校验目的地是否真实存在（高德地理编码）。"""
+    return check_destination(payload.destination).to_dict()
+
+
+@router.get("/validate-destination", response_model=ValidateDestinationResponse)
+def validate_destination_get(destination: str):
+    """校验目的地（GET，兼容旧网关或未部署 POST 路由的环境）。"""
+    return check_destination(destination).to_dict()
+
+
 @router.get("/pois/search")
 def search_pois(
     q: str,
     city: str = "",
     limit: int = 10,
+    broad: bool = False,
     db: Session = Depends(get_db),
 ):
     """搜索景点（供前端搜索框使用）。强制按城市限定，避免串到故宫/长城。"""
@@ -270,54 +300,84 @@ def search_pois(
     city_s = city.strip()
     keyword = q.strip()
     try:
-        # 多取一些再按名称相关度重排：高德常把热门公园（天坛等）排在「故宫」前面
-        fetch_n = min(max(limit * 3, 15), 25)
-        results = amap.search_poi_by_keyword(
-            keyword=keyword,
-            city=city_s or None,
-            limit=fetch_n,
-            city_limit=bool(city_s),
-            poi_type=POI_TYPES["attraction"],
-        )
-        # 无结果时放宽类型再搜一次（仍限城市）
-        if not results and city_s:
+        cap = min(max(limit, 1), 100 if broad else 20)
+
+        if broad:
+            merged: list = []
+            seen_ids: set[str] = set()
+            per_page = 25
+            max_pages = min(4, max(1, (cap + per_page - 1) // per_page))
+            for page in range(1, max_pages + 1):
+                batch = amap.search_poi_by_keyword(
+                    keyword=keyword,
+                    city=city_s or None,
+                    limit=per_page,
+                    page=page,
+                    city_limit=bool(city_s),
+                )
+                if not batch and page == 1 and city_s:
+                    batch = amap.search_poi_by_keyword(
+                        keyword=keyword,
+                        city=city_s,
+                        limit=per_page,
+                        page=page,
+                        city_limit=True,
+                    )
+                for p in batch:
+                    if p.id in seen_ids:
+                        continue
+                    seen_ids.add(p.id)
+                    merged.append(p)
+                    if len(merged) >= cap:
+                        break
+                if len(merged) >= cap or len(batch) < per_page:
+                    break
+            final = merged[:cap]
+        else:
+            fetch_n = min(max(limit * 3, 15), 25)
             results = amap.search_poi_by_keyword(
                 keyword=keyword,
-                city=city_s,
+                city=city_s or None,
                 limit=fetch_n,
-                city_limit=True,
+                city_limit=bool(city_s),
+                poi_type=POI_TYPES["attraction"],
             )
+            if not results and city_s:
+                results = amap.search_poi_by_keyword(
+                    keyword=keyword,
+                    city=city_s,
+                    limit=fetch_n,
+                    city_limit=True,
+                )
 
-        def _name_score(name: str) -> int:
-            n = (name or "").strip()
-            if not n:
-                return -1
-            if n == keyword:
-                return 1000
-            if n.startswith(keyword) or keyword.startswith(n):
-                return 900
-            if keyword in n:
-                return 800
-            if n in keyword:
-                return 700
-            # 核心词（去常见后缀）命中
-            core = (
-                keyword.replace("博物院", "")
-                .replace("博物馆", "")
-                .replace("风景名胜区", "")
-                .replace("风景区", "")
-                .replace("公园", "")
-                .replace("广场", "")
-                .strip()
-            )
-            if core and len(core) >= 2 and core in n:
-                return 650
-            return 0
+            def _name_score(name: str) -> int:
+                n = (name or "").strip()
+                if not n:
+                    return -1
+                if n == keyword:
+                    return 1000
+                if n.startswith(keyword) or keyword.startswith(n):
+                    return 900
+                if keyword in n:
+                    return 800
+                if n in keyword:
+                    return 700
+                core = (
+                    keyword.replace("博物院", "")
+                    .replace("博物馆", "")
+                    .replace("风景名胜区", "")
+                    .replace("风景区", "")
+                    .replace("公园", "")
+                    .replace("广场", "")
+                    .strip()
+                )
+                if core and len(core) >= 2 and core in n:
+                    return 650
+                return 0
 
-        ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
-        # 有名称命中时丢掉完全不相关的热门串项
-        relevant = [p for p in ranked if _name_score(p.name) > 0]
-        final = (relevant or ranked)[: min(limit, 20)]
+            ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
+            relevant = [p for p in ranked if _name_score(p.name) > 0]
+            final = (relevant or ranked)[: min(limit, 20)]
 
         return [
             {
@@ -331,6 +391,8 @@ def search_pois(
                 "rating": p.rating,
                 "type": p.type,
                 "address": p.address,
+                "tel": p.tel or "",
+                "opentime": p.opentime or "",
             }
             for p in final
         ]
@@ -359,6 +421,66 @@ def list_trips(current: User = Depends(get_current_user), db: Session = Depends(
         .order_by(Trip.created_at.desc())
     )
     return list(db.scalars(stmt))
+
+
+@router.get("/{trip_id}/generate-stream")
+def trip_generate_stream(
+    trip_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """SSE 推送行程生成进度与 LLM 流式预览。"""
+    _trip_or_404(trip_id, db, current.id if current else None)
+
+    def event_stream():
+        last_sig = ""
+        while True:
+            trip = db.get(Trip, trip_id)
+            if trip is None:
+                yield f"data: {json.dumps({'status': 'failed', 'message': '攻略不存在'}, ensure_ascii=False)}\n\n"
+                break
+            prog = get_progress(trip_id)
+            payload = {
+                "status": trip.status,
+                "phase": prog.get("phase", ""),
+                "message": prog.get("message", ""),
+                "preview": prog.get("preview", ""),
+                "readable": prog.get("readable", ""),
+            }
+            sig = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+            if sig != last_sig:
+                yield f"data: {sig}\n\n"
+                last_sig = sig
+            if trip.status in ("ready", "failed"):
+                yield f"data: {json.dumps({'status': trip.status, 'done': True, 'error_msg': trip.error_msg, 'readable': prog.get('readable', '')}, ensure_ascii=False)}\n\n"
+                break
+            time.sleep(0.2)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{trip_id}/progress")
+def trip_generate_progress(
+    trip_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """轮询行程生成进度（React Native SSE 降级用）。"""
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    prog = get_progress(trip_id)
+    return {
+        "status": trip.status,
+        "phase": prog.get("phase", ""),
+        "message": prog.get("message", ""),
+        "preview": prog.get("preview", ""),
+        "readable": prog.get("readable", ""),
+        "done": trip.status in ("ready", "failed"),
+        "error_msg": trip.error_msg,
+    }
 
 
 @router.get("/{trip_id}", response_model=TripOut)

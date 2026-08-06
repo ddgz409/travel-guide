@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
   ctrlBtn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 32, borderCurve: "continuous",
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
@@ -41,7 +41,7 @@ export const styles = StyleSheet.create({
     left: 14,
     right: 70,
     backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,

@@ -265,7 +265,7 @@ export function RouteBoard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mb-5 w-full text-left rounded-xl border border-[#d6e4ff] bg-gradient-to-r from-[#f0f7ff] to-white px-3.5 py-3 shadow-sm hover:border-[#3370ff] transition-colors group"
+        className="mb-5 w-full text-left rounded-2xl border border-[#d6e4ff] bg-gradient-to-r from-[#f0f7ff] to-white px-3.5 py-3 shadow-sm hover:border-[#3370ff] transition-colors group"
       >
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#1a66ff]">
@@ -292,7 +292,7 @@ export function RouteBoard({
             aria-label="关闭"
             onClick={() => setOpen(false)}
           />
-          <div className="relative z-10 w-full sm:max-w-[520px] max-h-[92vh] overflow-hidden rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl flex flex-col">
+          <div className="relative z-10 w-full sm:max-w-[520px] max-h-[92vh] overflow-hidden rounded-t-2xl sm:rounded-3xl bg-white shadow-2xl flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--line)]">
               <div>
                 <h3 className="font-semibold text-[16px] text-[var(--ink)]">路线规划</h3>
@@ -347,7 +347,7 @@ export function RouteBoard({
                   height="220px"
                 />
                 {loading && (
-                  <div className="absolute inset-3 rounded-xl bg-white/55 flex items-center justify-center text-[12px] text-[#1a66ff] font-semibold">
+                  <div className="absolute inset-3 rounded-2xl bg-white/55 flex items-center justify-center text-[12px] text-[#1a66ff] font-semibold">
                     更新路线中…
                   </div>
                 )}
@@ -361,7 +361,7 @@ export function RouteBoard({
                 </div>
               )}
               {error && (
-                <div className="mb-3 rounded-lg bg-red-50 text-red-600 text-[13px] px-3 py-2">
+                <div className="mb-3 rounded-xl bg-red-50 text-red-600 text-[13px] px-3 py-2">
                   {error}
                 </div>
               )}
@@ -376,7 +376,7 @@ export function RouteBoard({
                       key={i}
                       type="button"
                       onClick={() => applyScheme(i)}
-                      className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                      className={`w-full text-left rounded-2xl border px-3 py-2.5 transition-colors ${
                         schemeIndex === i
                           ? "border-[#1a66ff] bg-[#f0f7ff]"
                           : "border-[var(--line)] hover:border-[#1a66ff]/40"

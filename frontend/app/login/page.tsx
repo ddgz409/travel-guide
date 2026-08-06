@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4 py-14">
-      <div className="w-full max-w-md bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] p-8">
+      <div className="w-full max-w-md bg-white rounded-3xl border border-[var(--line)] shadow-[var(--shadow)] p-8">
         <div className="font-display text-[26px] font-semibold text-[var(--ink)] mb-1">
           欢迎回来
         </div>
@@ -46,7 +46,7 @@ export default function LoginPage() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder="请输入用户名"
             />
           </div>
@@ -59,13 +59,13 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder="至少 6 位"
             />
           </div>
 
           {error && (
-            <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+            <div className="rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
               {error}
             </div>
           )}
@@ -73,7 +73,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full btn-brand rounded-xl py-3 disabled:opacity-50"
+            className="w-full btn-brand rounded-2xl py-3 disabled:opacity-50"
           >
             {submitting ? "登录中…" : "登录"}
           </button>

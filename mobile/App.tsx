@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
@@ -26,6 +27,11 @@ const TripDetailScreen = lazy(() =>
     default: m.TripDetailScreen,
   })),
 );
+const TripItemDetailScreen = lazy(() =>
+  import("./src/screens/TripDetail/TripItemDetailScreen").then((m) => ({
+    default: m.TripItemDetailScreen,
+  })),
+);
 const ShareScreen = lazy(() =>
   import("./src/screens/Share/ShareScreen").then((m) => ({ default: m.ShareScreen })),
 );
@@ -37,10 +43,15 @@ const CityDetailScreen = lazy(() =>
     default: m.CityDetailScreen,
   })),
 );
+const CheckInMapFullScreen = lazy(() =>
+  import("./src/screens/CheckInMap/CheckInMapFullScreen").then((m) => ({
+    default: m.CheckInMapFullScreen,
+  })),
+);
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
-/** 底部 Tab 容器（行程 / + / 探索） */
+/** 底部 Tab 容器（探索 / + / 行程） */
 function MainScreen() {
   const [tab, setTab] = useState<"Trips" | "Explore">("Explore");
   const insets = useSafeAreaInsets();
@@ -109,6 +120,11 @@ function RootNavigator() {
 
       {/* 浏览流程页：翻页效果 */}
       <Stack.Screen
+        name="CheckInMapFull"
+        component={CheckInMapFullScreen}
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
         name="CityDetail"
         component={CityDetailScreen}
         options={{ headerShown: false, animation: "slide_from_right" }}
@@ -116,7 +132,12 @@ function RootNavigator() {
       <Stack.Screen
         name="TripDetail"
         component={TripDetailScreen}
-        options={{ title: "行程详情", animation: "slide_from_right" }}
+        options={{ title: "行程详情", headerShown: false, animation: "slide_from_right" }}
+      />
+      <Stack.Screen
+        name="TripItemDetail"
+        component={TripItemDetailScreen}
+        options={{ title: "安排详情", animation: "slide_from_right" }}
       />
       <Stack.Screen
         name="Generate"
@@ -192,11 +213,13 @@ function Root() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="dark" animated />
         <Root />
       </AuthProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

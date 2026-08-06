@@ -153,7 +153,7 @@ export default function ChatPage() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--line)] shrink-0">
         <div>
           <h1 className="text-lg font-bold text-[var(--ink)]">AI 旅行助手</h1>
-          <p className="text-xs text-[var(--muted)]">智谱 GLM-4 · 联网搜索</p>
+          <p className="text-xs text-[var(--muted)]">GLM-4 · 智谱联网搜索（可切换模型）</p>
         </div>
         {messages.length > 0 && (
           <button
@@ -192,14 +192,14 @@ export default function ChatPage() {
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap ${
+                className={`max-w-[85%] rounded-3xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap ${
                   msg.role === "user"
                     ? "bg-[var(--brand)] text-white"
                     : "bg-[var(--card)] text-[var(--ink)] border border-[var(--line)]"
                 }`}
               >
                 {msg.reasoning ? (
-                  <div className="mb-2 px-3 py-2 rounded-xl bg-[var(--bg)] text-xs text-[var(--muted)] leading-relaxed">
+                  <div className="mb-2 px-3 py-2 rounded-2xl bg-[var(--bg)] text-xs text-[var(--muted)] leading-relaxed">
                     <div className="font-bold mb-1">
                       {loading && i === messages.length - 1 ? "思考中…" : "思考过程"}
                     </div>
@@ -229,7 +229,7 @@ export default function ChatPage() {
             onKeyDown={handleKeyDown}
             placeholder="输入旅行问题…"
             rows={1}
-            className="flex-1 resize-none rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--brand)] transition-colors"
+            className="flex-1 resize-none rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--brand)] transition-colors"
             style={{ maxHeight: "120px" }}
             onInput={(e) => {
               const el = e.target as HTMLTextAreaElement;
@@ -241,7 +241,7 @@ export default function ChatPage() {
           {loading ? (
             <button
               onClick={stopStream}
-              className="shrink-0 h-[48px] w-[48px] rounded-xl bg-[var(--danger)] text-white font-bold text-sm hover:opacity-80 transition-opacity"
+              className="shrink-0 h-[48px] w-[48px] rounded-2xl bg-[var(--danger)] text-white font-bold text-sm hover:opacity-80 transition-opacity"
             >
               停
             </button>
@@ -249,7 +249,7 @@ export default function ChatPage() {
             <button
               onClick={() => send()}
               disabled={!input.trim()}
-              className="shrink-0 h-[48px] px-5 rounded-xl bg-[var(--brand)] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-40"
+              className="shrink-0 h-[48px] px-5 rounded-2xl bg-[var(--brand)] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-40"
             >
               发送
             </button>

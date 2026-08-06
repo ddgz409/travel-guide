@@ -99,7 +99,7 @@ export function TransportRouteSheet({
               scheme_index: 0,
             })
           : await api.trips.getItemRoute(tripId, itemId, m);
-      const next = res as TransportToNext;
+      const next = res as unknown as TransportToNext;
       setData(next);
       setMode((next.mode as Mode) || m);
       onUpdated?.(next);

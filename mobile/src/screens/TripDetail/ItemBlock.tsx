@@ -9,6 +9,7 @@ import type { Item, TransportToNext, Trip } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { TransportRouteSheet } from "../../components/TransportRouteSheet";
+import { PoiPortalLinks } from "../../components/PoiPortalLinks";
 import { colors } from "../../theme";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { styles } from "./styles";
@@ -27,25 +28,29 @@ const ROUTE_STUB: TransportToNext = {
 export const ItemBlock = memo(function ItemBlock({
   item,
   tripId,
+  destination = "",
   canEdit,
   onChanged,
   hasNextRoute,
+  showRoute = true,
 }: {
   item: Item;
   tripId: string;
+  destination?: string;
   canEdit: boolean;
   onChanged: (trip: Trip) => void;
   hasNextRoute: boolean;
+  showRoute?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [localTransport, setLocalTransport] = useState<TransportToNext | null>(
     item.transport_to_next,
   );
   const alts = item.alternatives || [];
-  const showRoute =
-    item.selected && hasNextRoute && hasCoords(item.location);
+  const showRouteBtn =
+    showRoute && item.selected && hasNextRoute && hasCoords(item.location);
   const transportForSheet =
-    localTransport || item.transport_to_next || (showRoute ? ROUTE_STUB : null);
+    localTransport || item.transport_to_next || (showRouteBtn ? ROUTE_STUB : null);
 
   useEffect(() => {
     setLocalTransport(item.transport_to_next);
@@ -107,7 +112,12 @@ export const ItemBlock = memo(function ItemBlock({
           <Text style={styles.itemMeta}>评分 {item.rating}</Text>
         ) : null}
       </View>
-      {showRoute && transportForSheet ? (
+      <PoiPortalLinks
+        city={destination}
+        name={item.name}
+        itemType={item.type}
+      />
+      {showRouteBtn && transportForSheet ? (
         <TransportRouteSheet
           tripId={tripId}
           itemId={item.id}

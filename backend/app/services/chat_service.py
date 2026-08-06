@@ -1,20 +1,28 @@
 """AI 旅行助手聊天服务（httpx 直调，流式 SSE）。
 
 不复用 LLMClient.chat_json（它强制 json_object），
-而是参照其 URL/headers/body 构造逻辑，添加 streaming + 智谱联网搜索。
+而是参照其 URL/headers/body 构造逻辑，添加 streaming + 联网搜索。
 不依赖 LangChain —— 避免其版本适配问题。
+
+联网策略（可在 llm 参数里用 web_search 覆盖）：
+- zhipu + auto/on  → 智谱原生 web_search 工具
+- 其他 + auto/on   → 服务端 Bing 搜索，结果注入 system prompt
+- off              → 不联网，纯模型知识
 """
 from __future__ import annotations
 
 import json
 import logging
 from datetime import date
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator
 
 import httpx
 
 from app.core.config import get_settings
 from app.services.llm_client import DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_PRESETS
+from app.services.chat_intent import detect_plan_intent
+from app.services.web_search import format_web_snippets, search_web_snippets
 
 if TYPE_CHECKING:
     from app.models import User
@@ -24,7 +32,7 @@ settings = get_settings()
 
 MAX_CONTEXT_MESSAGES = 10
 
-SYSTEM_PROMPT = """你是「旅迹」AI 旅行助手，专注于旅行领域。
+SYSTEM_PROMPT_BASE = """你是「旅迹」AI 旅行助手，专注于旅行领域。
 
 你可以帮助用户：
 - 推荐目的地、景点、美食、住宿
@@ -32,10 +40,129 @@ SYSTEM_PROMPT = """你是「旅迹」AI 旅行助手，专注于旅行领域。
 - 回答签证、天气、文化习俗等旅行问题
 - 提供实用的旅行建议和避坑指南
 
-今天是 {today}。回答时请注意时效性，优先给出最新的信息。
-回答简洁实用，用中文，可用 Markdown 格式化。""".format(
+今天是 {today}。回答简洁实用，用中文，可用 Markdown 格式化。""".format(
     today=date.today().isoformat(),
 )
+
+
+class WebSearchMode(str, Enum):
+    OFF = "off"
+    ZHIPU_NATIVE = "zhipu_native"
+    BING = "bing"
+
+
+def resolve_web_search_mode(provider: str, llm_override: dict | None = None) -> WebSearchMode:
+    """解析联网模式。llm_override.web_search: true | false | 'auto'（默认 auto）。"""
+    raw = None
+    if llm_override:
+        raw = llm_override.get("web_search")
+    if raw is False or raw == "off":
+        return WebSearchMode.OFF
+    if raw is True or raw == "on":
+        return WebSearchMode.ZHIPU_NATIVE if provider == "zhipu" else WebSearchMode.BING
+    # auto：智谱走原生，其它走 Bing fallback
+    if provider == "zhipu":
+        return WebSearchMode.ZHIPU_NATIVE
+    return WebSearchMode.BING
+
+
+def web_search_mode_label(mode: WebSearchMode) -> str:
+    if mode == WebSearchMode.ZHIPU_NATIVE:
+        return "智谱联网搜索"
+    if mode == WebSearchMode.BING:
+        return "网页搜索"
+    return "离线模式"
+
+
+def _last_user_message(messages: list[dict[str, str]]) -> str:
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            return (msg.get("content") or "").strip()
+    return ""
+
+
+def build_system_prompt(
+    *,
+    provider: str,
+    model: str,
+    mode: WebSearchMode,
+    bing_context: str = "",
+    trip_context: str = "",
+) -> str:
+    parts = [SYSTEM_PROMPT_BASE]
+    parts.append(f"\n你当前使用的模型是 {model}（由 {provider} 提供）。")
+    parts.append(
+        "\n当用户明确要求「规划/安排/生成」完整旅游行程时，客户端会自动跳转专属定制页；"
+        "你可用一句话确认并提示「正在打开行程规划」。"
+        "若只是咨询建议、穿衣搭配、景点介绍等，则正常对话回答。"
+    )
+
+    if trip_context:
+        parts.append(f"\n---\n用户当前关联的行程信息：\n{trip_context}\n---")
+
+    if mode == WebSearchMode.ZHIPU_NATIVE:
+        parts.append(
+            "\n你已开启智谱联网搜索，可以查询实时天气、开放信息、票价等。"
+            "若用户问你是否联网，请如实说明：你可以通过联网搜索获取最新信息。"
+            "涉及时效性问题时，请优先使用联网结果，不要声称自己是离线模型。"
+        )
+    elif mode == WebSearchMode.BING:
+        parts.append(
+            "\n你已开启网页搜索（服务端 Bing），可参考下方搜索结果回答。"
+            "若用户问你是否联网，请如实说明：你可以参考公开网页搜索到的信息。"
+            "若搜索结果不足以回答，请说明并给出一般性建议。"
+        )
+        if bing_context:
+            parts.append(f"\n---\n与用户问题相关的网页搜索结果：\n{bing_context}\n---")
+    else:
+        parts.append(
+            "\n当前未开启联网搜索。请基于已有知识回答；"
+            "涉及实时天气、票价、政策等问题时，请说明信息可能不是最新的。"
+        )
+
+    return "".join(parts)
+
+
+def load_trip_context(trip_id: str | None, db: Any, user_id: str | None) -> str:
+    """加载行程摘要供聊天引用。"""
+    if not trip_id or not trip_id.strip():
+        return ""
+    from app.models import Trip
+
+    trip = db.get(Trip, trip_id.strip())
+    if trip is None:
+        return ""
+    if user_id and trip.user_id != user_id:
+        guest_id = "00000000-0000-0000-0000-000000000000"
+        if trip.user_id != guest_id:
+            return ""
+    elif user_id is None:
+        guest_id = "00000000-0000-0000-0000-000000000000"
+        if trip.user_id != guest_id:
+            return ""
+
+    lines = [
+        f"标题：{trip.title}",
+        f"目的地：{trip.destination}",
+        f"日期：{trip.start_date} → {trip.end_date}",
+        f"人数：{trip.travelers}",
+        f"状态：{trip.status}",
+    ]
+    if trip.budget_total is not None:
+        lines.append(f"预算约：¥{int(trip.budget_total)}")
+    prefs = trip.preferences or {}
+    hint = prefs.get("chat_hint")
+    if hint:
+        lines.append(f"用户额外需求：{hint}")
+    route_opts = prefs.get("route_options") or []
+    if route_opts:
+        lines.append("可选路线：" + "、".join(str(r.get("title") or r.get("id")) for r in route_opts[:3]))
+    for day in (trip.days or [])[:4]:
+        items = day.items or []
+        names = [it.name for it in items[:4] if it.name]
+        if names:
+            lines.append(f"Day{day.day_index}：{' → '.join(names)}")
+    return "\n".join(lines)
 
 
 def resolve_llm_config(
@@ -85,20 +212,77 @@ def resolve_llm_config(
     return {"provider": provider, "api_key": api_key, "model": model, "base_url": base_url}
 
 
+def resolve_server_llm_config(
+    llm_override: dict | None = None,
+) -> dict[str, str]:
+    """智能规划扩写等轻量任务：始终用服务器 Key，仅采纳 provider/model 偏好。"""
+    config = resolve_llm_config(None, None)
+    if llm_override:
+        provider = (llm_override.get("provider") or "").strip()
+        model = (llm_override.get("model") or "").strip()
+        if provider:
+            config["provider"] = provider
+            preset = PROVIDER_PRESETS.get(provider, {})
+            if model:
+                config["model"] = model
+            elif preset.get("model"):
+                config["model"] = preset["model"]
+            if preset.get("base_url"):
+                config["base_url"] = preset["base_url"]
+        elif model:
+            config["model"] = model
+    return config
+
+
 def chat_stream(
     messages: list[dict[str, str]],
     provider: str,
     api_key: str,
     model: str,
     base_url: str,
+    llm_override: dict | None = None,
+    trip_context: str = "",
 ) -> Generator[dict[str, str], None, None]:
-    """流式聊天，逐块 yield {"type": "reasoning"|"content"|"error", "content": "..."}。"""
+    """流式聊天，逐块 yield {"type": "reasoning"|"content"|"error"|"action", ...}。"""
     if not api_key:
         yield {"type": "error", "content": "⚠️ 未配置 API Key，请在「设置」中填写。"}
         return
 
-    # 构造系统提示（告知模型自己的身份和型号）
-    sys_content = SYSTEM_PROMPT + f"\n\n你当前使用的模型是 {model}（由 {provider} 提供）。如果用户问你正在和什么模型对话，请如实告知模型名称和供应商。"
+    user_text = _last_user_message(messages)
+    plan_action = detect_plan_intent(user_text)
+    if plan_action:
+        yield {"type": "action", "payload": plan_action}
+        dest = plan_action.get("destination", "")
+        yield {
+            "type": "content",
+            "content": f"好的，我来帮你规划 **{dest}** 的行程，正在打开专属定制页面…\n\n"
+            f"（日期：{plan_action.get('start_date')} → {plan_action.get('end_date')}）",
+        }
+        return
+
+    mode = resolve_web_search_mode(provider, llm_override)
+    bing_context = ""
+    if mode == WebSearchMode.BING:
+        query = _last_user_message(messages)
+        if query:
+            try:
+                snippets = search_web_snippets(query, max_results=4)
+                bing_context = format_web_snippets(snippets)
+                logger.info(
+                    "Chat bing search query=%r hits=%d",
+                    query[:80],
+                    len(snippets),
+                )
+            except Exception:
+                logger.exception("Chat bing search failed")
+
+    sys_content = build_system_prompt(
+        provider=provider,
+        model=model,
+        mode=mode,
+        bing_context=bing_context,
+        trip_context=trip_context,
+    )
     system_msg = {"role": "system", "content": sys_content}
     recent = messages[-MAX_CONTEXT_MESSAGES:]
     payload_messages = [system_msg] + recent
@@ -116,14 +300,19 @@ def chat_stream(
         "stream": True,
     }
 
-    # 智谱 GLM-4 联网搜索
-    if provider == "zhipu":
+    if mode == WebSearchMode.ZHIPU_NATIVE:
         body["tools"] = [{
             "type": "web_search",
             "web_search": {"enable": True, "search_result": False},
         }]
 
-    logger.info("Chat stream provider=%s model=%s base=%s", provider, model, base_url)
+    logger.info(
+        "Chat stream provider=%s model=%s web_search=%s base=%s",
+        provider,
+        model,
+        mode.value,
+        base_url,
+    )
 
     try:
         with httpx.Client(timeout=90.0) as client:
@@ -142,11 +331,9 @@ def chat_stream(
                     try:
                         chunk = json.loads(data)
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        # 思考过程（DeepSeek-R1 / 智谱 GLM-4.5+ 等模型支持）
                         reasoning = delta.get("reasoning_content", "")
                         if reasoning:
                             yield {"type": "reasoning", "content": reasoning}
-                        # 正式回答
                         content = delta.get("content", "")
                         if content:
                             yield {"type": "content", "content": content}

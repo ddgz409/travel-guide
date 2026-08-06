@@ -33,6 +33,8 @@ class GeoResult:
     lat: float
     city: str | None = None
     adcode: str | None = None  # 区域编码，可用于天气查询
+    formatted: str | None = None
+    level: str | None = None
 
 
 @dataclass
@@ -46,6 +48,7 @@ class Poi:
     lat: float
     address: str
     tel: str = ""
+    opentime: str = ""
     rating: float | None = None  # 评分（如有）
     note: str = ""  # 额外标注（如携程酒店标签）
 
@@ -96,6 +99,23 @@ def _collect_step_polylines(steps: list | None) -> list[list[float]]:
     return pts
 
 
+def _parse_biz_ext(biz_ext: object) -> tuple[float | None, str]:
+    rating = None
+    opentime = ""
+    if isinstance(biz_ext, dict):
+        if biz_ext.get("rating"):
+            try:
+                rating = float(biz_ext["rating"])
+            except (ValueError, TypeError):
+                rating = None
+        for key in ("open_time", "opentime", "open_time2", "opentime2"):
+            raw = biz_ext.get(key)
+            if raw and str(raw).strip() not in ("", "[]"):
+                opentime = str(raw).strip()
+                break
+    return rating, opentime
+
+
 class AmapError(Exception):
     """高德 API 调用异常。"""
 
@@ -134,6 +154,8 @@ class AmapClient:
             lat=float(lat),
             city=g.get("city") or None,
             adcode=g.get("adcode") or None,
+            formatted=g.get("formatted") or None,
+            level=g.get("level") or None,
         )
 
     def search_poi_around(
@@ -171,13 +193,7 @@ class AmapClient:
                 continue
             try:
                 lng, lat = loc.split(",")
-                rating = None
-                biz_ext = p.get("biz_ext") or {}
-                if isinstance(biz_ext, dict) and biz_ext.get("rating"):
-                    try:
-                        rating = float(biz_ext["rating"])
-                    except (ValueError, TypeError):
-                        rating = None
+                rating, opentime = _parse_biz_ext(p.get("biz_ext") or {})
                 pois.append(
                     Poi(
                         id=p.get("id", ""),
@@ -187,6 +203,7 @@ class AmapClient:
                         lat=float(lat),
                         address=p.get("address") or "",
                         tel=p.get("tel") or "",
+                        opentime=opentime,
                         rating=rating,
                     )
                 )
@@ -200,6 +217,7 @@ class AmapClient:
         city: str | None = None,
         limit: int = 10,
         *,
+        page: int = 1,
         city_limit: bool = False,
         poi_type: str | None = None,
     ) -> list[Poi]:
@@ -210,8 +228,8 @@ class AmapClient:
         params: dict = {
             "key": self.api_key,
             "keywords": keyword,
-            "offset": limit,
-            "page": 1,
+            "offset": min(limit, 25),
+            "page": max(1, page),
             "extensions": "all",
         }
         if city:
@@ -246,13 +264,7 @@ class AmapClient:
                         continue
             try:
                 lng, lat = loc.split(",")
-                rating = None
-                biz_ext = p.get("biz_ext") or {}
-                if isinstance(biz_ext, dict) and biz_ext.get("rating"):
-                    try:
-                        rating = float(biz_ext["rating"])
-                    except (ValueError, TypeError):
-                        rating = None
+                rating, opentime = _parse_biz_ext(p.get("biz_ext") or {})
                 pois.append(
                     Poi(
                         id=p.get("id", ""),
@@ -262,6 +274,7 @@ class AmapClient:
                         lat=float(lat),
                         address=p.get("address") or "",
                         tel=p.get("tel") or "",
+                        opentime=opentime,
                         rating=rating,
                     )
                 )

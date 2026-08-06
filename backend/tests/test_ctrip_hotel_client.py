@@ -28,7 +28,7 @@ def test_parse_list_html_hotel_name_id():
     hotels = _parse_list_html(html, max_results=6)
     assert len(hotels) == 2
     assert hotels[0].name.startswith("全季")
-    assert hotels[0].url.endswith("/hotel/1234567.html")
+    assert hotels[0].url.startswith("ctrip://")
     assert hotels[0].is_huazhu
 
 

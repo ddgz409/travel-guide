@@ -32,6 +32,7 @@ from app.services.destination_landmarks import (
 )
 from app.services.xiaohongshu_client import search_xiaohongshu
 from app.services.llm_client import LLMClient, LLMError, get_llm_client
+from app.services.generation_progress import append_preview, clear_progress, update_progress
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
 3. 评分仅作参考；地标性与知名度权重大于评分
 4. 如果用户指定了"必去景点"，每条路线都应尽量包含（至少经典路线必须全部包含）
 5. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
-6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
+6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目；**每天至少 1 顿午餐（afternoon, type=meal）+ 1 顿晚餐（evening, type=meal）**，必须来自可选餐饮列表
 7. 同一区域的景点安排在同一天，路线合理不绕路
 8. 为每个条目提供简短描述和实用贴士，合理估算 cost（元）
 9. 住宿：三条路线尽量共用同一家靠前酒店；全程同一家
@@ -69,6 +70,14 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
               "duration_min": 120,
               "description": "简短描述与贴士",
               "cost": 0
+            },
+            {
+              "time_slot": "afternoon",
+              "type": "meal",
+              "name": "餐厅名（须来自候选列表）",
+              "duration_min": 90,
+              "description": "午餐推荐",
+              "cost": 80
             }
           ]
         }
@@ -125,14 +134,33 @@ class GuideGenerator:
         在后台任务中调用。llm 为用户自定义客户端时优先使用。
         """
         active_llm = llm or self.llm
+        trip_id = str(trip.id)
         try:
             days_count = (trip.end_date - trip.start_date).days + 1
             if days_count < 1:
                 raise GeneratorError("行程天数无效")
 
+            update_progress(
+                trip_id,
+                phase="geocode",
+                message=f"正在定位 **{trip.destination}**…",
+            )
             # 1. 地理编码
-            geo = self.amap.geocode(trip.destination)
+            try:
+                geo = self.amap.geocode(trip.destination)
+            except AmapError as e:
+                from app.services.destination_validator import _friendly_amap_message
+
+                raise GeneratorError(
+                    _friendly_amap_message(trip.destination, e)
+                ) from e
             logger.info("地理编码 %s -> %s", trip.destination, geo.location)
+
+            update_progress(
+                trip_id,
+                phase="poi",
+                message=f"检索 {trip.destination} 景点、美食与住宿…",
+            )
 
             # 2. POI 检索（候选池）—— 扩大半径 + 按评分排序
             must_include = (trip.preferences or {}).get("must_include") or []
@@ -157,6 +185,11 @@ class GuideGenerator:
             # 2.5 网页搜索已关闭（Bing 常验证码且拖慢 5–15s）；小红书/携程改为即时链接
             web_results: list[dict[str, Any]] = []
 
+            update_progress(
+                trip_id,
+                phase="refs",
+                message="整理小红书、携程参考链接…",
+            )
             external_refs = self._fetch_external_refs(trip.destination)
             trip.external_refs = external_refs
             db.commit()
@@ -167,19 +200,38 @@ class GuideGenerator:
                 len(external_refs.get("ctrip") or []),
             )
 
+            update_progress(
+                trip_id,
+                phase="llm",
+                message=f"AI 正在规划 {days_count} 日行程（经典 / 人文 / 美食三条路线）…",
+                preview="",
+            )
             # 3 & 4. LLM 一次生成多条路线 + 解析校验
             try:
                 routes = self._generate_routes_via_llm(
-                    pool, trip, days_count, web_results, external_refs, llm=active_llm
+                    pool, trip, days_count, web_results, external_refs, llm=active_llm,
+                    on_chunk=lambda _piece, acc: append_preview(trip_id, _piece),
                 )
             except LLMError as e:
                 logger.warning("LLM 生成失败，降级处理: %s", e)
                 routes = self._fallback_routes(pool, trip, days_count)
 
+            update_progress(
+                trip_id,
+                phase="save",
+                message="整理路线方案、预算与地图…",
+            )
             for route in routes:
+                self._ensure_meals_per_day(route.get("days") or [], pool)
                 self._assign_nearest_hotel(route.get("days") or [], pool)
 
+            interests = (trip.preferences or {}).get("interests") or []
+            prefer_food = any("美食" in str(i) for i in interests)
             selected = routes[0]
+            if prefer_food:
+                food_route = next((r for r in routes if r.get("id") == "food"), None)
+                if food_route:
+                    selected = food_route
             prefs = dict(trip.preferences or {})
             prefs["route_options"] = [
                 {
@@ -217,12 +269,25 @@ class GuideGenerator:
                 len(routes),
                 selected.get("id"),
             )
+            clear_progress(trip_id)
 
-        except Exception as e:
-            logger.exception("攻略生成失败 trip=%s", trip.id)
+        except GeneratorError as e:
+            logger.warning("攻略生成失败 trip=%s: %s", trip.id, e)
             trip.status = "failed"
             trip.error_msg = str(e)[:500]
             db.commit()
+            clear_progress(trip_id)
+        except Exception as e:
+            logger.exception("攻略生成失败 trip=%s", trip.id)
+            trip.status = "failed"
+            if isinstance(e, AmapError):
+                from app.services.destination_validator import _friendly_amap_message
+
+                trip.error_msg = _friendly_amap_message(trip.destination, e)[:500]
+            else:
+                trip.error_msg = str(e)[:500]
+            db.commit()
+            clear_progress(trip_id)
 
     def regenerate_day(
         self,
@@ -364,9 +429,36 @@ class GuideGenerator:
             [p.name for p in pool["attraction"][:5]],
         )
 
+        meal_hits: list[Poi] = []
+        for kw in (
+            f"{destination}美食",
+            f"{destination}餐厅",
+            f"{destination}特色菜",
+        ):
+            try:
+                meal_hits.extend(
+                    self.amap.search_poi_by_keyword(
+                        kw, city=geo.city or destination, limit=10
+                    )
+                )
+            except AmapError:
+                pass
+
         # 餐饮/酒店仍按评分，去掉明显附属名
         for kind in ("meal", "hotel"):
-            cleaned = [p for p in pool.get(kind, []) if not is_micro_poi(p.name)]
+            merged = list(pool.get(kind, []) or [])
+            if kind == "meal":
+                merged = meal_hits + merged
+            cleaned: list[Poi] = []
+            seen_meal: set[str] = set()
+            for p in merged:
+                if is_micro_poi(p.name):
+                    continue
+                key = p.id or p.name
+                if key in seen_meal:
+                    continue
+                seen_meal.add(key)
+                cleaned.append(p)
             cleaned.sort(key=lambda p: p.rating or 0, reverse=True)
             pool[kind] = cleaned[:POI_LIMIT]
 
@@ -697,13 +789,23 @@ class GuideGenerator:
         web_results: list[dict[str, Any]] | None = None,
         external_refs: dict | None = None,
         llm: LLMClient | None = None,
+        on_chunk: Any | None = None,
     ) -> list[dict[str, Any]]:
         """一次 LLM 调用生成多条路线。"""
         user_prompt = self._build_user_prompt(
             pool, trip, days_count, web_results, external_refs
         )
         client = llm or self.llm
-        result = client.chat_json(SYSTEM_PROMPT, user_prompt)
+
+        def _on_chunk(piece: str, _acc: str) -> None:
+            if on_chunk:
+                on_chunk(piece, _acc)
+
+        result = client.chat_json(
+            SYSTEM_PROMPT,
+            user_prompt,
+            on_chunk=_on_chunk if on_chunk else None,
+        )
         routes = self._parse_routes_payload(result, pool, trip)
         if len(routes) < 1:
             raise LLMError("LLM 未返回有效路线")
@@ -739,6 +841,7 @@ class GuideGenerator:
                 for d in days:
                     for item in d.get("items") or []:
                         self._validate_and_enrich(item, pool, trip.destination)
+                self._ensure_meals_per_day(days, pool)
                 routes.append(
                     {
                         "id": r.get("id") or meta_id,
@@ -756,6 +859,7 @@ class GuideGenerator:
             for d in days:
                 for item in d.get("items") or []:
                     self._validate_and_enrich(item, pool, trip.destination)
+            self._ensure_meals_per_day(days, pool)
             routes.append(
                 {
                     "id": "classic",
@@ -776,6 +880,56 @@ class GuideGenerator:
                     continue
                 routes.append(fb)
         return routes
+
+    @staticmethod
+    def _meal_item(p: Poi, slot: str, description: str, cost: int = 80) -> dict[str, Any]:
+        return {
+            "time_slot": slot,
+            "type": "meal",
+            "name": p.name,
+            "duration_min": 90,
+            "description": description,
+            "cost": cost,
+            "poi_id": p.id,
+            "location": {
+                "lng": p.lng,
+                "lat": p.lat,
+                "address": p.address,
+            },
+            "rating": p.rating,
+            "alternatives": [],
+        }
+
+    def _ensure_meals_per_day(
+        self, days: list[dict[str, Any]], pool: dict[str, list[Poi]]
+    ) -> None:
+        """补全缺失的午餐/晚餐，避免某天无餐饮或只有一顿。"""
+        meals = list(pool.get("meal") or [])
+        if not meals:
+            return
+        mi = 0
+        for day in days:
+            items = list(day.get("items") or [])
+            meal_items = [it for it in items if it.get("type") == "meal"]
+            has_lunch = any(
+                it.get("type") == "meal" and it.get("time_slot") == "afternoon"
+                for it in items
+            )
+            has_dinner = any(
+                it.get("type") == "meal" and it.get("time_slot") == "evening"
+                for it in items
+            )
+            if len(meal_items) >= 2 and has_lunch and has_dinner:
+                continue
+            if not has_lunch:
+                p = meals[mi % len(meals)]
+                mi += 1
+                items.append(self._meal_item(p, "afternoon", "午餐推荐"))
+            if not has_dinner:
+                p = meals[mi % len(meals)]
+                mi += 1
+                items.append(self._meal_item(p, "evening", "晚餐推荐"))
+            day["items"] = items
 
     def _route_highlights(self, days: list[dict[str, Any]], limit: int = 4) -> list[str]:
         names: list[str] = []
@@ -852,27 +1006,11 @@ class GuideGenerator:
                             "alternatives": [],
                         }
                     )
-            if mi < len(meals):
-                p = meals[mi]
-                mi += 1
-                items.append(
-                    {
-                        "time_slot": "evening",
-                        "type": "meal",
-                        "name": p.name,
-                        "duration_min": 90,
-                        "description": "当地餐饮",
-                        "cost": 80,
-                        "poi_id": p.id,
-                        "location": {
-                            "lng": p.lng,
-                            "lat": p.lat,
-                            "address": p.address,
-                        },
-                        "rating": p.rating,
-                        "alternatives": [],
-                    }
-                )
+            for slot, desc in (("afternoon", "午餐推荐"), ("evening", "晚餐推荐")):
+                if mi < len(meals):
+                    p = meals[mi]
+                    mi += 1
+                    items.append(self._meal_item(p, slot, desc))
             if hotel:
                 items.append(
                     {
@@ -1002,6 +1140,7 @@ class GuideGenerator:
 
 请严格使用以上候选地点，一次生成恰好 3 条风格不同的 {days_count} 日路线（routes），id 分别为 classic / culture / food。
 硬性要求：三条路线的景点组合要有明显差异；以热门地标为主，不要打卡点子点；
+**每条路线每一天都必须包含午餐+晚餐（type=meal）**；food 路线应安排更多餐饮；
 住宿选列表靠前酒店且三条尽量同一家。{closing_hints}"""
 
     def _validate_and_enrich(
@@ -1136,25 +1275,10 @@ class GuideGenerator:
                     }
                 )
             if meals:
-                m = meals[(d - 1) % len(meals)]
-                items.append(
-                    {
-                        "time_slot": "evening",
-                        "type": "meal",
-                        "name": m.name,
-                        "duration_min": 90,
-                        "description": "",
-                        "cost": 100,
-                        "poi_id": m.id,
-                        "location": {
-                            "lng": m.lng,
-                            "lat": m.lat,
-                            "address": m.address,
-                        },
-                        "rating": m.rating,
-                        "alternatives": [],
-                    }
-                )
+                lunch = meals[(d - 1) % len(meals)]
+                items.append(self._meal_item(lunch, "afternoon", "午餐推荐"))
+                dinner = meals[d % len(meals)]
+                items.append(self._meal_item(dinner, "evening", "晚餐推荐"))
             days.append({"day_index": d, "summary": "（降级生成）", "items": items})
         return days
 

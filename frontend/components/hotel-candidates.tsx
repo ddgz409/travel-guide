@@ -13,7 +13,7 @@ export function HotelCandidatesPanel({
   const stale = status === "amap_only";
 
   return (
-    <section className="border border-gray-200 rounded-lg p-4 bg-white mb-6">
+    <section className="border border-gray-200 rounded-xl p-4 bg-white mb-6">
       <h3 className="font-semibold text-sm mb-2">酒店优选（靠近景点 · 交通最短）</h3>
       <p className="text-xs text-gray-500 mb-2">
         已按到主要景点的距离排序，列表越靠前越好；行程会优先选用最近的一家。

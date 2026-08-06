@@ -1,122 +1,237 @@
-"""城市探索服务：用 LLM 联网搜索 + JSON 结构化输出。
+"""城市探索服务：本地精选 + 高德轻量 POI，极速返回。
 
-首次将 Zhipu web_search（联网）与 response_format: json_object（结构化）结合，
-返回城市真实美食和景点信息。
+图片由客户端 /place-images 懒加载；不做 LLM 与阻塞式坐标补全。
 """
 from __future__ import annotations
 
-import json
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
-from app.services.chat_service import resolve_llm_config
+from app.services.amap_client import AmapError, POI_TYPES, Poi, get_amap_client
+from app.services.destination_landmarks import is_micro_poi, landmarks_for
 
 if TYPE_CHECKING:
     from app.models import User
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是一个旅游信息助手。用户会给你一个城市名，你需要通过联网搜索获取该城市的真实信息。
+_CITY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CACHE_TTL_S = 3600
 
-请返回严格的 JSON 对象，格式如下：
-{
-  "foods": [
-    {"name": "美食名称", "desc": "一句话描述特色"},
-    ...3到4个当地特色美食
-  ],
-  "spots": [
-    {"name": "景点名称", "desc": "一句话描述特色"},
-    ...3到4个热门景点
-  ]
+FOOD_HINTS: dict[str, list[str]] = {
+    "北京": ["北京烤鸭", "炸酱面", "涮羊肉"],
+    "上海": ["小笼包", "生煎", "本帮菜"],
+    "成都": ["火锅", "龙抄手", "担担面"],
+    "杭州": ["西湖醋鱼", "东坡肉", "片儿川"],
+    "西安": ["肉夹馍", "羊肉泡馍", "凉皮"],
+    "广州": ["早茶", "肠粉", "煲仔饭"],
+    "厦门": ["沙茶面", "土笋冻", "海蛎煎"],
+    "三亚": ["海鲜", "清补凉", "椰子鸡"],
+    "大理": ["乳扇", "饵丝", "酸辣鱼"],
 }
 
-要求：
-- 必须基于联网搜索的真实信息，不要编造
-- 如果搜索不到有效信息，对应数组返回空 []
-- 每项 desc 不超过 50 字
-- 只返回 JSON，不要任何其他文字"""
+
+def _cache_get(city: str) -> dict[str, Any] | None:
+    entry = _CITY_CACHE.get(city)
+    if not entry:
+        return None
+    ts, data = entry
+    if time.time() - ts > _CACHE_TTL_S:
+        _CITY_CACHE.pop(city, None)
+        return None
+    return data
 
 
-def _parse_json_content(content: str) -> dict[str, Any]:
-    """解析 LLM 输出为 JSON，兼容 markdown 代码块包裹。"""
-    text = content.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-    result = json.loads(text)
-    if not isinstance(result, dict):
-        raise ValueError(f"LLM 输出非 JSON 对象: {type(result)}")
-    return result
+def _cache_set(city: str, data: dict[str, Any]) -> None:
+    _CITY_CACHE[city] = (time.time(), data)
+
+
+def _poi_desc(poi: Poi, fallback: str) -> str:
+    parts: list[str] = []
+    if poi.address:
+        parts.append(poi.address[:36])
+    if poi.rating:
+        parts.append(f"评分 {poi.rating}")
+    text = " · ".join(parts)
+    return text[:50] if text else fallback
+
+
+def _poi_to_item(poi: Poi, desc: str) -> dict[str, Any]:
+    item: dict[str, Any] = {"name": poi.name, "desc": desc[:50]}
+    item["lng"] = poi.lng
+    item["lat"] = poi.lat
+    if poi.address:
+        item["address"] = poi.address
+    return item
+
+
+def _local_foods(city: str) -> list[dict[str, Any]]:
+    for key, names in FOOD_HINTS.items():
+        if key in city or city in key:
+            return [
+                {"name": n, "desc": "本地特色美食"}
+                for n in names[:3]
+            ]
+    return [
+        {"name": "当地特色菜", "desc": "本地特色美食"},
+        {"name": "网红小吃", "desc": "本地人推荐"},
+        {"name": "老字号", "desc": "值得尝试"},
+    ]
+
+
+def _fallback_from_amap(city: str) -> dict[str, Any]:
+    """本地精选景点 + 高德餐饮 POI（并行），毫秒~秒级返回。"""
+    city = (city or "").strip()
+    spot_names = landmarks_for(city)[:4]
+    spots: list[dict[str, Any]] = [
+        {"name": n, "desc": f"{city}热门必去"} for n in spot_names
+    ]
+
+    amap = get_amap_client()
+    if not (amap.api_key or "").strip():
+        return {"city": city, "foods": _local_foods(city), "spots": spots}
+
+    try:
+        geo = amap.geocode(city)
+        city_name = geo.city or city
+    except AmapError as e:
+        logger.warning("get_city_info geocode failed city=%s: %s", city, e)
+        return {"city": city, "foods": _local_foods(city), "spots": spots}
+
+    def load_foods() -> list[dict[str, Any]]:
+        try:
+            pois = amap.search_poi_around(
+                geo.location,
+                POI_TYPES["meal"],
+                radius=15000,
+                limit=4,
+                city=city_name,
+            )
+            return [
+                _poi_to_item(p, _poi_desc(p, "本地特色美食"))
+                for p in pois
+                if p.name
+            ][:4]
+        except Exception:
+            logger.exception("meal poi search failed city=%s", city)
+            return []
+
+    def load_extra_spots() -> list[dict[str, Any]]:
+        if len(spots) >= 4:
+            return []
+        try:
+            around = amap.search_poi_around(
+                geo.location,
+                POI_TYPES["attraction"],
+                radius=20000,
+                limit=8,
+                city=city_name,
+            )
+            extra: list[dict[str, Any]] = []
+            seen = {s["name"] for s in spots}
+            for poi in around:
+                if poi.name in seen or is_micro_poi(poi.name):
+                    continue
+                seen.add(poi.name)
+                extra.append(
+                    _poi_to_item(poi, _poi_desc(poi, f"{city_name}人气景点")),
+                )
+                if len(spots) + len(extra) >= 4:
+                    break
+            return extra
+        except Exception:
+            logger.exception("spot poi search failed city=%s", city)
+            return []
+
+    foods: list[dict[str, Any]] = []
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_foods = pool.submit(load_foods)
+            f_spots = pool.submit(load_extra_spots) if len(spots) < 4 else None
+            foods = f_foods.result(timeout=5)
+            if f_spots:
+                spots.extend(f_spots.result(timeout=5))
+    except FuturesTimeoutError:
+        logger.warning("city info amap parallel timeout city=%s", city)
+
+    if not foods:
+        foods = _local_foods(city_name)
+
+    logger.info(
+        "City info fast city=%s foods=%d spots=%d",
+        city,
+        len(foods),
+        len(spots),
+    )
+    return {"city": city, "foods": foods, "spots": spots}
+
+
+def city_info_stream(
+    city: str,
+    user: "User | None" = None,
+) -> Generator[dict[str, Any], None, None]:
+    """SSE：缓存或高德轻量结果，一次返回。"""
+    del user  # 保留签名兼容
+    city = (city or "").strip()
+    if not city:
+        yield {"type": "result", "data": {"city": city, "foods": [], "spots": []}}
+        return
+
+    cached = _cache_get(city)
+    if cached:
+        yield {
+            "type": "status",
+            "phase": "cache",
+            "message": f"正在打开 {city}…",
+        }
+        yield {"type": "result", "data": cached}
+        return
+
+    yield {
+        "type": "status",
+        "phase": "load",
+        "message": f"正在加载 {city} 热门推荐…",
+    }
+    result = _fallback_from_amap(city)
+    _cache_set(city, result)
+    yield {"type": "result", "data": result}
 
 
 def get_city_info(city: str, user: "User | None" = None) -> dict[str, Any]:
-    """联网搜索城市信息，返回 {city, foods, spots}。
+    """极速返回城市美食 + 景点概览。"""
+    del user
+    city = (city or "").strip()
+    if not city:
+        return {"city": city, "foods": [], "spots": []}
 
-    无有效数据时 foods/spots 为空数组，不报错。
-    """
-    config = resolve_llm_config(user=user)
-    provider = config["provider"]
-    api_key = config["api_key"]
-    model = config["model"]
-    base_url = config["base_url"]
+    cached = _cache_get(city)
+    if cached:
+        return cached
 
-    empty: dict[str, Any] = {"city": city, "foods": [], "spots": []}
+    result = _fallback_from_amap(city)
+    _cache_set(city, result)
+    return result
 
-    if not api_key:
-        logger.warning("get_city_info: 未配置 API Key")
-        return empty
 
-    url = f"{base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+def get_place_images(
+    city: str,
+    name: str,
+    kind: str = "",
+    limit: int = 3,
+) -> dict[str, Any]:
+    """单地点小红书图片（列表/详情懒加载）。"""
+    from app.services.xhs_image_client import fetch_xhs_images
+
+    city = (city or "").strip()
+    name = (name or "").strip()
+    imgs = fetch_xhs_images(city, name, kind, limit=max(1, min(limit, 6)))
+    return {
+        "city": city,
+        "name": name,
+        "kind": kind,
+        "image": imgs[0] if imgs else None,
+        "images": imgs,
     }
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"城市：{city}\n\n请联网搜索这个城市的特色美食和热门景点。"},
-        ],
-        "temperature": 0.6,
-        "max_tokens": 1024,
-        "response_format": {"type": "json_object"},
-    }
-
-    # 智谱 GLM 联网搜索
-    if provider == "zhipu":
-        body["tools"] = [{
-            "type": "web_search",
-            "web_search": {"enable": True, "search_result": False},
-        }]
-
-    logger.info("City info search city=%s provider=%s model=%s", city, provider, model)
-
-    try:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, headers=headers, json=body)
-            if resp.status_code >= 400:
-                logger.warning("City info HTTP %s: %s", resp.status_code, resp.text[:300])
-                return empty
-            data = resp.json()
-        content = data["choices"][0]["message"]["content"] or ""
-        result = _parse_json_content(content)
-        foods = result.get("foods", [])
-        spots = result.get("spots", [])
-        # 校验格式
-        foods = [
-            {"name": str(f.get("name", "")), "desc": str(f.get("desc", ""))}
-            for f in foods
-            if isinstance(f, dict) and f.get("name")
-        ][:4]
-        spots = [
-            {"name": str(s.get("name", "")), "desc": str(s.get("desc", ""))}
-            for s in spots
-            if isinstance(s, dict) and s.get("name")
-        ][:4]
-        return {"city": city, "foods": foods, "spots": spots}
-    except Exception:
-        logger.exception("get_city_info failed for city=%s", city)
-        return empty

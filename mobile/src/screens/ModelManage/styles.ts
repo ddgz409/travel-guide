@@ -42,7 +42,7 @@ export const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.card,
-    borderRadius: 14,
+    borderRadius: 24, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
     padding: 14,
@@ -59,7 +59,7 @@ export const styles = StyleSheet.create({
   cardDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: 14, borderCurve: "continuous",
     marginRight: 10,
   },
   cardDotOn: {
@@ -84,7 +84,7 @@ export const styles = StyleSheet.create({
     color: colors.brand,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 18, borderCurve: "continuous",
     backgroundColor: colors.brandSoft,
   },
   activeLabel: {
@@ -108,7 +108,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
@@ -122,7 +122,7 @@ export const styles = StyleSheet.create({
   eyeBtn: {
     width: 46,
     height: 46,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
@@ -134,7 +134,7 @@ export const styles = StyleSheet.create({
   },
   btn: {
     backgroundColor: colors.brand,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 24,

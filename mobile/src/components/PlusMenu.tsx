@@ -35,8 +35,8 @@ export function PlusMenu({ visible, onClose }: Props) {
         <View
           style={{
             backgroundColor: "#fff",
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
+            borderTopLeftRadius: 34, borderCurve: "continuous",
+            borderTopRightRadius: 34, borderCurve: "continuous",
             paddingHorizontal: 20,
             paddingTop: 20,
             paddingBottom: 36,
@@ -46,7 +46,7 @@ export function PlusMenu({ visible, onClose }: Props) {
             style={{
               width: 36,
               height: 4,
-              borderRadius: 2,
+              borderRadius: 12, borderCurve: "continuous",
               backgroundColor: colors.line,
               alignSelf: "center",
               marginBottom: 18,
@@ -99,7 +99,7 @@ export function PlusMenu({ visible, onClose }: Props) {
               marginTop: 8,
               paddingVertical: 14,
               alignItems: "center",
-              borderRadius: 14,
+              borderRadius: 24, borderCurve: "continuous",
               backgroundColor: colors.bg,
             }}
             onPress={onClose}

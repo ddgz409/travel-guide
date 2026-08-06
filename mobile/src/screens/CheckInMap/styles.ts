@@ -1,0 +1,55 @@
+import { StyleSheet } from "react-native";
+import { colors } from "../../theme";
+
+export const styles = StyleSheet.create({
+  fullRoot: { flex: 1, backgroundColor: colors.bg },
+  fullHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
+  },
+  fullBack: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fullBackText: { fontSize: 28, color: colors.ink, lineHeight: 32 },
+  fullTitleWrap: { flex: 1 },
+  fullTitle: { fontSize: 18, fontWeight: "800", color: colors.ink },
+  fullSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  fullBody: { flex: 1, backgroundColor: "#FAFAFA" },
+  fullWeb: { flex: 1, backgroundColor: "transparent" },
+  fullLoading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  fullLegend: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    backgroundColor: colors.card,
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 14, borderCurve: "continuous",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#B8B8B8",
+  },
+  legendWhite: { backgroundColor: "#FFFFFF" },
+  legendChecked: { backgroundColor: "#D7EAF8" },
+  legendText: { fontSize: 12, color: colors.muted },
+  fullCount: {
+    marginLeft: "auto",
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.muted,
+  },
+});

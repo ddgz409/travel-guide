@@ -13,6 +13,21 @@ import { api, setStoredToken } from "../api/client";
 const GUEST_KEY = "travel_guide_guest";
 const GUEST_TRIPS_KEY = "travel_guide_guest_trips";
 
+/** 游客本地最多保留的出行记录条数 */
+export const GUEST_TRIP_LIMIT = 3;
+
+export function trimGuestTripIds(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const id of ids) {
+    const t = id.trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    ordered.push(t);
+  }
+  return ordered.slice(0, GUEST_TRIP_LIMIT);
+}
+
 type AuthState = {
   user: User | null;
   isGuest: boolean;
@@ -41,10 +56,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const guestFlag = await AsyncStorage.getItem(GUEST_KEY);
         if (guestFlag === "1") {
           const raw = await AsyncStorage.getItem(GUEST_TRIPS_KEY);
-          const ids: string[] = raw ? JSON.parse(raw) : [];
+          let parsed: string[] = [];
+          try {
+            parsed = raw ? JSON.parse(raw) : [];
+          } catch {
+            parsed = [];
+          }
+          const ids = trimGuestTripIds(Array.isArray(parsed) ? parsed : []);
+          if (
+            !Array.isArray(parsed) ||
+            ids.length !== parsed.length ||
+            ids.some((id, i) => id !== parsed[i])
+          ) {
+            await AsyncStorage.setItem(GUEST_TRIPS_KEY, JSON.stringify(ids));
+          }
           if (!cancelled) {
             setIsGuest(true);
-            setGuestTripIds(Array.isArray(ids) ? ids : []);
+            setGuestTripIds(ids);
             setUser(null);
           }
           return;
@@ -72,15 +100,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setStoredToken(null);
     await AsyncStorage.setItem(GUEST_KEY, "1");
     const raw = await AsyncStorage.getItem(GUEST_TRIPS_KEY);
-    const ids: string[] = raw ? JSON.parse(raw) : [];
-    setGuestTripIds(Array.isArray(ids) ? ids : []);
+    let parsed: string[] = [];
+    try {
+      parsed = raw ? JSON.parse(raw) : [];
+    } catch {
+      parsed = [];
+    }
+    setGuestTripIds(trimGuestTripIds(Array.isArray(parsed) ? parsed : []));
     setUser(null);
     setIsGuest(true);
   }, []);
 
   const rememberGuestTrip = useCallback(async (tripId: string) => {
     setGuestTripIds((prev) => {
-      const next = [tripId, ...prev.filter((id) => id !== tripId)];
+      const next = trimGuestTripIds([
+        tripId,
+        ...prev.filter((id) => id !== tripId),
+      ]);
       void AsyncStorage.setItem(GUEST_TRIPS_KEY, JSON.stringify(next));
       return next;
     });

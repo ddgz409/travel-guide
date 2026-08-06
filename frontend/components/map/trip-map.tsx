@@ -226,7 +226,7 @@ export function TripMap({ items, tripId, dayId, height = "400px" }: TripMapProps
   if (!key) {
     return (
       <div
-        className="rounded-xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 text-sm"
+        className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400 text-sm"
         style={{ height }}
       >
         <div className="text-center px-4">
@@ -277,7 +277,7 @@ export function TripMap({ items, tripId, dayId, height = "400px" }: TripMapProps
         </div>
       )}
       {mapError && (
-        <div className="absolute inset-x-3 bottom-3 z-[5] rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
+        <div className="absolute inset-x-3 bottom-3 z-[5] rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
           {mapError}
         </div>
       )}

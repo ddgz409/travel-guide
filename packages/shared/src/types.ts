@@ -223,6 +223,8 @@ export interface PoiSearchResult {
   rating: number | null;
   type: string;
   address: string;
+  tel?: string;
+  opentime?: string;
 }
 
 export interface GenerateRequest {
@@ -251,6 +253,13 @@ export interface QuickRecommendCard {
 export interface QuickRecommendResponse {
   destination: string;
   cards: QuickRecommendCard[];
+}
+
+export interface ValidateDestinationResult {
+  valid: boolean;
+  message: string;
+  resolved_name?: string | null;
+  suggestions: string[];
 }
 
 export interface DayRouteSegment {
@@ -290,11 +299,36 @@ export type ChatLlmOverride = {
   model?: string;
   api_key?: string;
   base_url?: string;
+  web_search?: boolean | "auto" | "on" | "off";
 };
 
 export type ChatRequest = {
   messages: ChatMessage[];
+  trip_id?: string | null;
   llm?: ChatLlmOverride | null;
+};
+
+export type OptimizePlanQueryRequest = {
+  keywords: string;
+  destination: string;
+  days: number;
+  start_date: string;
+  end_date: string;
+  llm?: ChatLlmOverride | null;
+};
+
+export type OptimizePlanQueryResponse = {
+  query: string;
+};
+
+export type GenerateProgressEvent = {
+  status?: string;
+  phase?: string;
+  message?: string;
+  preview?: string;
+  readable?: string;
+  done?: boolean;
+  error_msg?: string | null;
 };
 
 // ---- 城市探索 ----
@@ -302,11 +336,31 @@ export type ChatRequest = {
 export interface CityFood {
   name: string;
   desc: string;
+  /** 小红书笔记封面（列表缩略图） */
+  image?: string;
+  /** 详情页图集，最多 3 张 */
+  images?: string[];
+  lng?: number;
+  lat?: number;
+  address?: string;
 }
 
 export interface CitySpot {
   name: string;
   desc: string;
+  image?: string;
+  images?: string[];
+  lng?: number;
+  lat?: number;
+  address?: string;
+}
+
+export interface PlaceImagesResult {
+  city: string;
+  name: string;
+  kind: string;
+  image?: string | null;
+  images: string[];
 }
 
 export interface CityInfo {
@@ -314,6 +368,14 @@ export interface CityInfo {
   foods: CityFood[];
   spots: CitySpot[];
 }
+
+/** 城市真实信息 SSE 流事件 */
+export type CityInfoStreamEvent =
+  | { type: "status"; phase: string; message: string }
+  | { type: "preview"; content: string }
+  | { type: "reasoning"; content: string }
+  | { type: "result"; data: CityInfo }
+  | { type: "error"; message: string };
 
 export interface RegeoResult {
   city: string;

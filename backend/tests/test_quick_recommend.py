@@ -14,4 +14,4 @@ def test_quick_recommend_two_cards():
         for tip in refs["xiaohongshu"]:
             assert "xiaohongshu.com" in tip["url"]
         for tip in refs["ctrip"]:
-            assert "ctrip.com" in tip["url"]
+            assert tip["url"].startswith("ctrip://")

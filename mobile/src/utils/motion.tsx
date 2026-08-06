@@ -161,7 +161,7 @@ export function AnimatedDot({ active }: { active: boolean }) {
       style={[
         {
           height: 6,
-          borderRadius: 3,
+          borderRadius: 14, borderCurve: "continuous",
           backgroundColor: "#ff6d00",
           marginRight: 6,
         },

@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   box: {
     backgroundColor: colors.card,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
   },

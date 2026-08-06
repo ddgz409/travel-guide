@@ -14,13 +14,19 @@ import type { TripListItem } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import Animated from "react-native-reanimated";
 import { api, apiBase } from "../../api/client";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth, GUEST_TRIP_LIMIT } from "../../auth/AuthContext";
 import { enterUp } from "../../utils/motion";
 import { colors } from "../../theme";
 import { parseDate } from "../../utils/date";
 import { tripToListItem } from "./helpers";
 import { TripCard } from "./TripCard";
+import { CheckInMapCard } from "./CheckInMapCard";
 import { styles } from "./styles";
+import {
+  getCheckedPrefectureIds,
+  listCheckIns,
+  type CheckInRecord,
+} from "../../utils/checkInStore";
 
 export function TripsScreen() {
   const insets = useSafeAreaInsets();
@@ -30,6 +36,23 @@ export function TripsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
+  const [checkedPrefectures, setCheckedPrefectures] = useState<string[]>([]);
+  const [checkInsLoading, setCheckInsLoading] = useState(true);
+
+  const loadCheckIns = useCallback(async () => {
+    setCheckInsLoading(true);
+    try {
+      const [items, prefectures] = await Promise.all([
+        listCheckIns(),
+        getCheckedPrefectureIds(),
+      ]);
+      setCheckIns(items);
+      setCheckedPrefectures(prefectures);
+    } finally {
+      setCheckInsLoading(false);
+    }
+  }, []);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -68,7 +91,8 @@ export function TripsScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      void loadCheckIns();
+    }, [load, loadCheckIns]),
   );
 
   const sorted = useMemo(() => {
@@ -95,7 +119,8 @@ export function TripsScreen() {
       {isGuest ? (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>
-            游客可生成并查看攻略；登录后可云端保存
+            游客最多保留 {GUEST_TRIP_LIMIT} 条行程（{guestTripIds.length}/
+            {GUEST_TRIP_LIMIT}），超出将自动替换最早的一条；登录后可云端保存
           </Text>
           <Pressable onPress={() => (navigation as any).navigate("Login")}>
             <Text style={styles.bannerLink}>去登录</Text>
@@ -131,6 +156,16 @@ export function TripsScreen() {
             sorted.length === 0 ? styles.emptyWrap : styles.list
           }
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            user || isGuest ? (
+              <CheckInMapCard
+                checkedPrefectureIds={checkedPrefectures}
+                checkInCount={checkIns.length}
+                loading={checkInsLoading}
+                onPress={() => (navigation as any).navigate("CheckInMapFull")}
+              />
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

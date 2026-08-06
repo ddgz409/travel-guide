@@ -45,7 +45,7 @@ export function Navbar() {
               <Link
                 key={l.href}
                 href={l.href}
-                className={`px-3.5 py-2 rounded-md transition-colors ${
+                className={`px-3.5 py-2 rounded-xl transition-colors ${
                   active
                     ? "text-[var(--brand)] font-semibold"
                     : "text-[var(--ink)]/80 hover:text-[var(--brand)]"

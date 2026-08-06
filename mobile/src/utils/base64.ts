@@ -1,12 +1,7 @@
 /** ArrayBuffer -> base64，兼容 RN（无 btoa 时走手写实现） */
 
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  // btoa available on web; RN has global base64 via Buffer sometimes - use chunked
+function encodeBinaryToBase64(binary: string): string {
   if (typeof btoa === "function") return btoa(binary);
-  // fallback
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
   let output = "";
@@ -22,4 +17,22 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
       (i + 2 < binary.length ? chars.charAt(bitmap & 63) : "=");
   }
   return output;
+}
+
+/** UTF-8 字符串 -> base64 */
+export function stringToBase64(text: string): string {
+  if (typeof TextEncoder !== "undefined") {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return encodeBinaryToBase64(binary);
+  }
+  return encodeBinaryToBase64(unescape(encodeURIComponent(text)));
+}
+
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return encodeBinaryToBase64(binary);
 }
