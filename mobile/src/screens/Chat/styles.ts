@@ -1,4 +1,4 @@
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
 export const styles = StyleSheet.create({
@@ -103,26 +103,30 @@ export const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.line,
     backgroundColor: colors.card,
     gap: 8,
   },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
   input: {
     flex: 1,
     backgroundColor: colors.bg,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.line,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingTop: Platform.OS === "ios" ? 12 : 10,
+    paddingBottom: Platform.OS === "ios" ? 12 : 10,
+    fontSize: 16,
+    lineHeight: 22,
     color: colors.ink,
-    maxHeight: 100,
   },
   sendBtn: {
     width: 42,
@@ -145,13 +149,13 @@ export const styles = StyleSheet.create({
   stopText: { color: "#fff", fontWeight: "800", fontSize: 12 },
   // 模型按钮（弹窗样式已抽到 components/ModelPicker）
   modelBtn: {
+    alignSelf: "flex-start",
     height: 32,
     paddingHorizontal: 10,
     borderRadius: 10,
     backgroundColor: colors.brandSoft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 6,
     borderWidth: 1,
     borderColor: colors.brand,
   },

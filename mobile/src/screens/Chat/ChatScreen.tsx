@@ -7,6 +7,7 @@ import {
   Pressable,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -52,13 +53,23 @@ const QUICK = [
   { label: "🌸 日本樱花", text: "明年春天想去日本看樱花，什么时候去最好？" },
 ];
 
+const INPUT_MIN_H = 48;
+const INPUT_MAX_H_RATIO = 0.32;
+const INPUT_MAX_H_CAP = 220;
+
 export function ChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  const { height: windowH } = useWindowDimensions();
+  const maxInputH = Math.min(
+    INPUT_MAX_H_CAP,
+    Math.round(windowH * INPUT_MAX_H_RATIO),
+  );
   const tripId = route.params?.tripId;
   const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
   const { curModel, openModelPopup, modelModal } = useModelPicker();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [inputHeight, setInputHeight] = useState(INPUT_MIN_H);
   const [loading, setLoading] = useState(false);
   const [smartPlanMode, setSmartPlanMode] = useState(false);
   const smartPlanBackRef = useRef<(() => boolean) | null>(null);
@@ -138,6 +149,7 @@ export function ChatScreen({ navigation, route }: Props) {
     if (!content || loading) return;
 
     setInput("");
+    setInputHeight(INPUT_MIN_H);
     const userMsg: Msg = { role: "user", content };
     const updated = [...msgs, userMsg];
     setMsgs(updated);
@@ -394,35 +406,54 @@ export function ChatScreen({ navigation, route }: Props) {
       )}
 
       {!smartPlanMode ? (
-      <View style={styles.inputBar}>
+      <View
+        style={[
+          styles.inputBar,
+          { paddingBottom: Math.max(insets.bottom, 10) },
+        ]}
+      >
         <Pressable style={styles.modelBtn} onPress={openModelPopup}>
           <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
         </Pressable>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder="输入旅行问题…"
-          placeholderTextColor={colors.muted}
-          multiline
-          editable={!loading}
-          returnKeyType="send"
-          blurOnSubmit
-          onSubmitEditing={() => send()}
-        />
-        {loading ? (
-          <Pressable style={styles.stopBtn} onPress={stop}>
-            <Text style={styles.stopText}>停</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            style={[styles.sendBtn, !input.trim() && styles.sendDisabled]}
-            onPress={() => send()}
-            disabled={!input.trim()}
-          >
-            <Text style={styles.sendText}>发</Text>
-          </Pressable>
-        )}
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                height: Math.max(
+                  INPUT_MIN_H,
+                  Math.min(maxInputH, inputHeight),
+                ),
+              },
+            ]}
+            value={input}
+            onChangeText={setInput}
+            placeholder="输入旅行问题…"
+            placeholderTextColor={colors.muted}
+            multiline
+            editable={!loading}
+            returnKeyType="default"
+            blurOnSubmit={false}
+            textAlignVertical="top"
+            scrollEnabled={inputHeight >= maxInputH}
+            onContentSizeChange={(e) => {
+              setInputHeight(e.nativeEvent.contentSize.height);
+            }}
+          />
+          {loading ? (
+            <Pressable style={styles.stopBtn} onPress={stop}>
+              <Text style={styles.stopText}>停</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.sendBtn, !input.trim() && styles.sendDisabled]}
+              onPress={() => send()}
+              disabled={!input.trim()}
+            >
+              <Text style={styles.sendText}>发</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
       ) : null}
 
