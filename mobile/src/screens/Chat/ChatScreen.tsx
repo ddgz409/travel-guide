@@ -12,14 +12,16 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { colors } from "../../theme";
 import { useModelPicker } from "../../components/ModelPicker";
 import { getChatSearchSubtitle } from "../../utils/chatSearch";
 import {
   detectPlanIntent,
-  planActionToGenerateParams,
   type PlanNavigateAction,
 } from "../../utils/chatIntent";
+import { submitTripGenerate } from "../../utils/submitTripGenerate";
+import { ApiError } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
 import { styles } from "./styles";
@@ -53,6 +55,7 @@ const QUICK = [
 export function ChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const tripId = route.params?.tripId;
+  const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
   const { curModel, openModelPopup, modelModal } = useModelPicker();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -67,11 +70,51 @@ export function ChatScreen({ navigation, route }: Props) {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
   }
 
-  const goGenerateFromAction = useCallback(
-    (action: PlanAction) => {
-      navigation.navigate("Generate", planActionToGenerateParams(action));
+  const startPlanFromAction = useCallback(
+    async (action: PlanAction) => {
+      try {
+        const llm: {
+          provider: string;
+          model: string;
+          api_key?: string;
+          base_url?: string;
+        } = {
+          provider: curModel.provider,
+          model: curModel.model,
+        };
+        if (curModel.apiKey?.trim()) llm.api_key = curModel.apiKey.trim();
+        if (curModel.baseUrl?.trim()) llm.base_url = curModel.baseUrl.trim();
+
+        const { tripId: newTripId } = await submitTripGenerate(
+          api,
+          { user, isGuest, enterGuest, rememberGuestTrip },
+          {
+            destination: action.destination,
+            startDate: action.start_date,
+            endDate: action.end_date,
+            interests: action.interests,
+            chatHint: action.chat_hint,
+            llm,
+          },
+        );
+        navigation.replace("TripDetail", { tripId: newTripId });
+      } catch (e) {
+        const msg =
+          e instanceof ApiError ? e.message : "规划失败，请重试";
+        setMsgs((prev) => [
+          ...prev,
+          { role: "assistant", content: `❌ ${msg}` },
+        ]);
+      }
     },
-    [navigation],
+    [
+      curModel,
+      enterGuest,
+      isGuest,
+      navigation,
+      rememberGuestTrip,
+      user,
+    ],
   );
 
   function handlePlanIntent(content: string, updated: Msg[]): boolean {
@@ -82,11 +125,11 @@ export function ChatScreen({ navigation, route }: Props) {
       ...updated,
       {
         role: "assistant",
-        content: `好的，我来帮你规划 **${action.destination}** 的行程，正在打开专属定制…\n\n（${action.start_date} → ${action.end_date}）`,
+        content: `好的，我来帮你规划 **${action.destination}** 的行程，正在生成中…\n\n（${action.start_date} → ${action.end_date}）`,
       },
     ]);
     setLoading(false);
-    setTimeout(() => goGenerateFromAction(action), 400);
+    void startPlanFromAction(action);
     return true;
   }
 
@@ -154,7 +197,7 @@ export function ChatScreen({ navigation, route }: Props) {
             if (parsed.type === "action" && parsed.payload?.action === "navigate_generate") {
               if (tripId) break;
               setLoading(false);
-              goGenerateFromAction(parsed.payload as PlanAction);
+              void startPlanFromAction(parsed.payload as PlanAction);
               return;
             } else if (parsed.type === "reasoning") {
               aiReasoning += parsed.content;

@@ -11,14 +11,16 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { useModelPicker } from "../../components/ModelPicker";
 import {
   detectPlanIntent,
   parseSmartPlanKeywords,
-  planActionToGenerateParams,
   searchPlanSuggestions,
+  type PlanNavigateAction,
   type SmartPlanDraft,
 } from "../../utils/chatIntent";
+import { submitTripGenerate } from "../../utils/submitTripGenerate";
 import type { AppStackParamList } from "../../navigation/types";
 import { colors } from "../../theme";
 import { styles } from "./smartPlanStyles";
@@ -58,12 +60,15 @@ export function SmartPlanPanel({
   onStepChange,
   backHandlerRef,
 }: Props) {
+  const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
   const { curModel, openModelPopup, modelModal } = useModelPicker();
   const [keywords, setKeywords] = useState("");
   const [draft, setDraft] = useState<SmartPlanDraft | null>(null);
   const [editableQuery, setEditableQuery] = useState("");
   const [optimizing, setOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const optimizeSeqRef = useRef(0);
 
   const suggestions = useMemo(
@@ -156,30 +161,51 @@ export function SmartPlanPanel({
     setOptimizeError(null);
   }
 
+  async function startPlan(action: PlanNavigateAction) {
+    if (submitting || optimizing) return;
+    Keyboard.dismiss();
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const { tripId } = await submitTripGenerate(
+        api,
+        { user, isGuest, enterGuest, rememberGuestTrip },
+        {
+          destination: action.destination,
+          startDate: action.start_date,
+          endDate: action.end_date,
+          interests: action.interests,
+          chatHint: action.chat_hint,
+          llm: optimizeLlmPayload(curModel),
+        },
+      );
+      navigation.replace("TripDetail", { tripId });
+    } catch (e) {
+      setSubmitError(
+        e instanceof ApiError ? e.message : "规划失败，请重试",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function confirmPlan() {
-    if (!draft || optimizing) return;
+    if (!draft || optimizing || submitting) return;
     const query = (editableQuery.trim() || draft.expandedQuery || draft.keywords).trim();
     if (!query) return;
     const reparsed = detectPlanIntent(query);
     const base = parseSmartPlanKeywords(draft.keywords) ?? draft;
-    const action = reparsed ?? {
+    const action: PlanNavigateAction = reparsed ?? {
       ...base.action,
       chat_hint: query,
     };
-    navigation.navigate("Generate", {
-      ...planActionToGenerateParams({ ...action, chat_hint: query }),
-      fromSmartPlan: true,
-    });
+    void startPlan({ ...action, chat_hint: query });
   }
 
   function selectCity(city: string) {
-    Keyboard.dismiss();
     const next = parseSmartPlanKeywords(city);
     if (!next) return;
-    navigation.navigate("Generate", {
-      ...planActionToGenerateParams(next.action),
-      fromSmartPlan: true,
-    });
+    void startPlan(next.action);
   }
 
   if (draft) {
@@ -226,17 +252,33 @@ export function SmartPlanPanel({
           {optimizeError ? (
             <Text style={styles.optimizeError}>{optimizeError}</Text>
           ) : null}
+          {submitError ? (
+            <Text style={styles.optimizeError}>{submitError}</Text>
+          ) : null}
           <Text style={styles.confirmMeta}>
             {draft.start_date} → {draft.end_date} · {draft.days} 天
           </Text>
           <Pressable
-            style={[styles.confirmBtn, (!planQuery || optimizing) && styles.confirmBtnDisabled]}
+            style={[
+              styles.confirmBtn,
+              (!planQuery || optimizing || submitting) && styles.confirmBtnDisabled,
+            ]}
             onPress={confirmPlan}
-            disabled={!planQuery || optimizing}
+            disabled={!planQuery || optimizing || submitting}
           >
-            <Text style={styles.confirmBtnText}>开始智能规划 →</Text>
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.confirmBtnText}>开始智能规划 →</Text>
+            )}
           </Pressable>
         </View>
+        {submitting ? (
+          <View style={styles.submitOverlay}>
+            <ActivityIndicator size="large" color={colors.brand} />
+            <Text style={styles.submitOverlayText}>正在为你规划行程…</Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -315,7 +357,16 @@ export function SmartPlanPanel({
           {!suggestions.smartPlan && suggestions.cities.length === 0 ? (
             <Text style={styles.emptyHint}>未找到匹配结果，请换个关键词</Text>
           ) : null}
+          {submitError ? (
+            <Text style={styles.optimizeError}>{submitError}</Text>
+          ) : null}
         </ScrollView>
+      ) : null}
+      {submitting ? (
+        <View style={styles.submitOverlay}>
+          <ActivityIndicator size="large" color={colors.brand} />
+          <Text style={styles.submitOverlayText}>正在为你规划行程…</Text>
+        </View>
       ) : null}
     </View>
   );
