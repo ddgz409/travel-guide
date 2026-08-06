@@ -1,5 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -7,15 +9,26 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { PoiSearchResult } from "@travel-guide/shared";
+import { api } from "../../api/client";
 import { PlaceGallery } from "../../components/PlaceImage";
-import { openXiaohongshu } from "../../utils/openExternal";
+import { PoiPortalLinks } from "../../components/PoiPortalLinks";
+import type { AppStackParamList } from "../../navigation/types";
+import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
 import { distanceLabel, type LatLng } from "../../utils/geo";
+import {
+  openAmapPoiLookup,
+  openMapNavigation,
+} from "../../utils/openMapNavigation";
+import { firstDialablePhone, telDialUri } from "../../utils/phone";
+import { openCtripPoi } from "../../utils/poiPortals";
 import {
   formatPoiAddress,
   fakePopularity,
   splitReviewPoints,
-  xhsItemKeyword,
   type ExploreCategory,
 } from "./helpers";
 import { styles } from "./styles";
@@ -46,6 +59,17 @@ const CAT_LABEL: Record<ExploreCategory, string> = {
   foods: "美食",
 };
 
+function pickPoiMatch(list: PoiSearchResult[], name: string): PoiSearchResult | null {
+  if (!list.length) return null;
+  const target = name.trim();
+  const exact = list.find((p) => p.name.trim() === target);
+  if (exact) return exact;
+  const fuzzy = list.find(
+    (p) => p.name.includes(target) || target.includes(p.name),
+  );
+  return fuzzy || list[0];
+}
+
 function ReviewPointRow({ label, text }: { label: string; text: string }) {
   return (
     <Text style={styles.reviewPoint}>
@@ -61,32 +85,174 @@ export function PoiDetailSheet({
   category,
   city,
   userLocation,
-  checked = false,
+  checked: checkedProp,
   onCheckIn,
   onClose,
 }: Props) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
+  const [checkedLocal, setCheckedLocal] = useState(false);
+  const [checkInBusy, setCheckInBusy] = useState(false);
+  const [poiExtra, setPoiExtra] = useState<PoiSearchResult | null>(null);
+
+  const checked = checkedProp ?? checkedLocal;
+
+  useEffect(() => {
+    if (!visible || !item) return;
+    if (checkedProp == null) {
+      let cancelled = false;
+      void isCheckedIn(city, item.name).then((ok) => {
+        if (!cancelled) setCheckedLocal(ok);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    return undefined;
+  }, [visible, item, city, checkedProp]);
+
+  useEffect(() => {
+    if (!visible || !item) {
+      setPoiExtra(null);
+      return;
+    }
+    let cancelled = false;
+    void api.trips
+      .searchPois(item.name, city, 5)
+      .then((list) => {
+        if (cancelled) return;
+        setPoiExtra(pickPoiMatch(list, item.name));
+      })
+      .catch(() => {
+        if (!cancelled) setPoiExtra(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, item, city]);
+
+  const mergedItem = useMemo((): Item | null => {
+    if (!item) return null;
+    return {
+      ...item,
+      lng: item.lng ?? poiExtra?.location?.lng ?? undefined,
+      lat: item.lat ?? poiExtra?.location?.lat ?? undefined,
+      address: item.address || poiExtra?.address || undefined,
+    };
+  }, [item, poiExtra]);
 
   const distance = useMemo(
-    () => (item ? distanceLabel(userLocation, item) : null),
-    [item, userLocation],
+    () => (mergedItem ? distanceLabel(userLocation, mergedItem) : null),
+    [mergedItem, userLocation],
   );
-  const address = item
-    ? formatPoiAddress(city, item.name, item.address)
+
+  const address = mergedItem
+    ? formatPoiAddress(city, mergedItem.name, mergedItem.address)
     : "";
 
-  if (!item) return null;
+  const phone = useMemo(
+    () => firstDialablePhone(poiExtra?.tel),
+    [poiExtra?.tel],
+  );
 
-  const { positive, neutral } = splitReviewPoints(item.desc, category);
+  const opentime = (poiExtra?.opentime || "").trim();
+
+  const navTarget = useMemo(
+    () =>
+      mergedItem
+        ? {
+            name: mergedItem.name,
+            lng: mergedItem.lng,
+            lat: mergedItem.lat,
+            address: mergedItem.address || address,
+            city,
+          }
+        : null,
+    [mergedItem, address, city],
+  );
+
+  const handleCheckIn = useCallback(async () => {
+    if (!mergedItem || checkInBusy) return;
+    setCheckInBusy(true);
+    try {
+      await addCheckIn({
+        city,
+        name: mergedItem.name,
+        category,
+        lng: mergedItem.lng,
+        lat: mergedItem.lat,
+        address: mergedItem.address,
+      });
+      setCheckedLocal(true);
+      onCheckIn?.(mergedItem);
+      Alert.alert(
+        "打卡成功",
+        `「${mergedItem.name}」已记录，可在「我的行程」顶部查看打卡地图。`,
+      );
+    } catch (e) {
+      Alert.alert("打卡失败", e instanceof Error ? e.message : "请稍后重试");
+    } finally {
+      setCheckInBusy(false);
+    }
+  }, [mergedItem, checkInBusy, city, category, onCheckIn]);
+
+  const handleAdd = useCallback(() => {
+    if (!mergedItem) return;
+    onClose();
+    navigation.navigate("Generate", {
+      destination: city,
+      mode: "custom",
+      interests: [mergedItem.name],
+      chatHint: `请把「${mergedItem.name}」加入${city}的行程规划`,
+    });
+  }, [mergedItem, city, navigation, onClose]);
+
+  const handleNavigate = useCallback(() => {
+    if (!navTarget) return;
+    void openMapNavigation(navTarget);
+  }, [navTarget]);
+
+  const handleHours = useCallback(() => {
+    if (navTarget) {
+      void openAmapPoiLookup(navTarget);
+      return;
+    }
+    void openCtripPoi({
+      city,
+      name: mergedItem?.name || "",
+      kind: category === "foods" ? "meal" : "attraction",
+    });
+  }, [navTarget, city, mergedItem?.name, category]);
+
+  const handlePhone = useCallback(() => {
+    if (phone) {
+      void Linking.openURL(telDialUri(phone)).catch(() => {
+        Alert.alert("无法拨号", phone);
+      });
+      return;
+    }
+    if (navTarget) {
+      void openAmapPoiLookup(navTarget);
+      return;
+    }
+    Alert.alert("暂无电话", "未查到联系电话，可在高德地图中查看");
+  }, [phone, navTarget]);
+
+  const handleFeedback = useCallback(() => {
+    if (!mergedItem) return;
+    onClose();
+    navigation.navigate("Chat", {
+      prefillMessage: `关于「${city} · ${mergedItem.name}」的反馈：`,
+    });
+  }, [mergedItem, city, navigation, onClose]);
+
+  if (!mergedItem) return null;
+
+  const { positive, neutral } = splitReviewPoints(mergedItem.desc, category);
   const catLabel = CAT_LABEL[category];
-  const xhsKeyword = xhsItemKeyword(city, item.name, category);
-
-  const poiName = item.name;
-
-  function openXhs() {
-    void openXiaohongshu({ keyword: xhsKeyword, title: poiName });
-  }
+  const portalKind = category === "foods" ? "meal" : "attraction";
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -96,10 +262,12 @@ export function PoiDetailSheet({
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
             <View style={styles.detailHead}>
               <View style={styles.detailHeadMain}>
-                <Text style={styles.detailTitle}>{item.name}</Text>
+                <Text style={styles.detailTitle}>{mergedItem.name}</Text>
                 <View style={styles.detailTags}>
                   <View style={styles.detailTag}>
-                    <Text style={styles.detailTagText}>{fakePopularity(item.name)}</Text>
+                    <Text style={styles.detailTagText}>
+                      {fakePopularity(mergedItem.name)}
+                    </Text>
                   </View>
                   <View style={[styles.detailTag, styles.detailTagBlue]}>
                     <Text style={styles.detailTagBlueText}>{catLabel}</Text>
@@ -125,10 +293,10 @@ export function PoiDetailSheet({
             >
               <PlaceGallery
                 city={city}
-                name={item.name}
+                name={mergedItem.name}
                 category={category}
-                image={item.image}
-                images={item.images}
+                image={mergedItem.image}
+                images={mergedItem.images}
                 itemWidth={screenW * 0.72}
                 itemStyle={styles.detailGalleryImg}
                 count={3}
@@ -142,84 +310,96 @@ export function PoiDetailSheet({
                   <Text style={styles.aiBadgeText}>AI生成</Text>
                 </View>
               </View>
-              <Text style={styles.detailDesc}>{item.desc}</Text>
+              <Text style={styles.detailDesc}>
+                {mergedItem.desc ||
+                  `${city} · ${mergedItem.name}，可在下方查看攻略或发起导航。`}
+              </Text>
             </View>
 
             <View style={styles.detailSection}>
               <Text style={styles.detailSectionTitle}>真实评价</Text>
-
-              <View style={styles.reviewCardGreen}>
-                <Text style={styles.reviewStickerGreen}>Wow</Text>
-                {positive.map((p, i) => (
-                  <ReviewPointRow key={`p-${i}`} label={p.label} text={p.text} />
-                ))}
-              </View>
-
-              <View style={styles.reviewCardPink}>
-                <Text style={styles.reviewStickerPink}>oh no</Text>
-                {neutral.map((p, i) => (
-                  <ReviewPointRow key={`n-${i}`} label={p.label} text={p.text} />
-                ))}
-              </View>
-
-              <Pressable style={styles.sourceRow} onPress={openXhs}>
-                <Text style={styles.sourceLabel}>内容来源</Text>
-                <View style={styles.sourcePill}>
-                  <View style={styles.xhsLogo}>
-                    <Text style={styles.xhsLogoText}>红</Text>
+              {positive.length || neutral.length ? (
+                <>
+                  <View style={styles.reviewCardGreen}>
+                    <Text style={styles.reviewStickerGreen}>Wow</Text>
+                    {positive.map((p, i) => (
+                      <ReviewPointRow key={`p-${i}`} label={p.label} text={p.text} />
+                    ))}
                   </View>
-                  <Text style={styles.sourcePillText}>小红书</Text>
-                  <Text style={styles.sourceDropdown}>▾</Text>
-                </View>
-              </Pressable>
+                  <View style={styles.reviewCardPink}>
+                    <Text style={styles.reviewStickerPink}>oh no</Text>
+                    {neutral.map((p, i) => (
+                      <ReviewPointRow key={`n-${i}`} label={p.label} text={p.text} />
+                    ))}
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.detailDesc}>
+                  暂无评价，可点击下方平台查看真实攻略。
+                </Text>
+              )}
+              <PoiPortalLinks city={city} name={mergedItem.name} kind={portalKind} />
             </View>
 
             <View style={styles.infoList}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoIcon}>🕐</Text>
-                <View style={styles.infoBody}>
-                  <Text style={styles.infoTitle}>营业时间</Text>
-                  <Text style={styles.infoSub}>建议提前查询最新时间</Text>
-                </View>
-                <Text style={styles.infoChevron}>›</Text>
-              </View>
-              <View style={styles.infoRow}>
+              <Pressable style={styles.infoRow} onPress={handleNavigate}>
                 <Text style={styles.infoIcon}>📍</Text>
                 <View style={styles.infoBody}>
                   <Text style={styles.infoTitle} numberOfLines={1}>
                     {address}
                   </Text>
                   <Text style={styles.infoSub}>
-                    {distance ?? (userLocation ? "暂无坐标" : "开启定位后可显示距离")}
+                    {distance ??
+                      (userLocation ? "点击导航" : "开启定位后可显示距离")}
                   </Text>
                 </View>
                 <Text style={styles.infoChevron}>›</Text>
-              </View>
-              <View style={styles.infoRow}>
+              </Pressable>
+
+              <Pressable style={styles.infoRow} onPress={handleHours}>
+                <Text style={styles.infoIcon}>🕐</Text>
+                <View style={styles.infoBody}>
+                  <Text style={styles.infoTitle}>营业时间</Text>
+                  <Text style={styles.infoSub} numberOfLines={2}>
+                    {opentime || "点击查看高德/携程最新营业时间"}
+                  </Text>
+                </View>
+                <Text style={styles.infoChevron}>›</Text>
+              </Pressable>
+
+              <Pressable style={styles.infoRow} onPress={handlePhone}>
                 <Text style={styles.infoIcon}>📞</Text>
                 <View style={styles.infoBody}>
                   <Text style={styles.infoTitle}>电话咨询</Text>
-                  <Text style={styles.infoSub}>可在地图 App 中查看</Text>
+                  <Text style={styles.infoSub}>
+                    {phone || "点击拨打或在高德地图查看"}
+                  </Text>
                 </View>
                 <Text style={styles.infoChevron}>›</Text>
-              </View>
-              <View style={[styles.infoRow, styles.infoRowLast]}>
+              </Pressable>
+
+              <Pressable
+                style={[styles.infoRow, styles.infoRowLast]}
+                onPress={handleFeedback}
+              >
                 <Text style={styles.infoIcon}>❓</Text>
                 <View style={styles.infoBody}>
                   <Text style={styles.infoTitle}>反馈问题</Text>
+                  <Text style={styles.infoSub}>向 AI 助手反馈地点信息</Text>
                 </View>
                 <Text style={styles.infoChevron}>›</Text>
-              </View>
+              </Pressable>
             </View>
           </ScrollView>
 
           <View style={styles.detailActions}>
-            <Pressable style={styles.detailActionBtn}>
+            <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
               <Text style={styles.detailActionText}>+ 添加至</Text>
             </Pressable>
             <Pressable
               style={[styles.detailActionBtn, checked && styles.detailActionChecked]}
-              onPress={() => onCheckIn?.(item)}
+              onPress={() => void handleCheckIn()}
+              disabled={checkInBusy}
             >
               <Text
                 style={[
@@ -230,7 +410,10 @@ export function PoiDetailSheet({
                 {checked ? "✓ 已打卡" : "◎ 打卡"}
               </Text>
             </Pressable>
-            <Pressable style={[styles.detailActionBtn, styles.detailActionPrimary]}>
+            <Pressable
+              style={[styles.detailActionBtn, styles.detailActionPrimary]}
+              onPress={handleNavigate}
+            >
               <Text style={[styles.detailActionText, styles.detailActionTextPrimary]}>
                 ➤ 导航
               </Text>

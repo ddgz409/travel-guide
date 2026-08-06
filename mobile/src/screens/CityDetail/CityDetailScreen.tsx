@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -22,7 +21,7 @@ import { getCachedCityInfo, setCachedCityInfo } from "../../utils/cityInfoCache"
 import { getDeviceLocation } from "../../utils/location";
 import { loadLocationConsent, saveLocationConsent } from "../../utils/locationPrefs";
 import { hasCoords, type LatLng } from "../../utils/geo";
-import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
+import { isCheckedIn } from "../../utils/checkInStore";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { openXiaohongshu } from "../../utils/openExternal";
@@ -161,28 +160,9 @@ export function CityDetailScreen({ navigation, route }: Props) {
     void refreshCheckedState([...foods, ...spots]);
   }, [foods, spots, refreshCheckedState]);
 
-  const handleCheckIn = useCallback(
-    async (item: PoiItem) => {
-      try {
-        await addCheckIn({
-          city,
-          name: item.name,
-          category,
-          lng: item.lng,
-          lat: item.lat,
-          address: item.address,
-        });
-        setCheckedKeys((prev) => new Set(prev).add(`${city}::${item.name}`));
-        Alert.alert(
-          "打卡成功",
-          `「${item.name}」已记录，可在「我的行程」顶部查看打卡地图。`,
-        );
-      } catch (e) {
-        Alert.alert("打卡失败", e instanceof Error ? e.message : "请稍后重试");
-      }
-    },
-    [city, category],
-  );
+  const handleCheckIn = useCallback((item: PoiItem) => {
+    setCheckedKeys((prev) => new Set(prev).add(`${city}::${item.name}`));
+  }, [city]);
 
   const activeItems: PoiItem[] = category === "foods" ? foods : spots;
   const activeCat = CATEGORIES.find((c) => c.key === category)!;

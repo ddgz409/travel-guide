@@ -90,6 +90,7 @@ export function TripItemDetailScreen({ route }: Props) {
       <ItemBlock
         item={found.item}
         tripId={tripId}
+        destination={trip.destination}
         canEdit={canEdit}
         onChanged={setTrip}
         hasNextRoute={hasNextRoute}

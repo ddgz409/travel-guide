@@ -11,29 +11,35 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { NativeViewGestureHandler } from "react-native-gesture-handler";
 import { WebView } from "react-native-webview";
-import type { Item, ItemType } from "@travel-guide/shared";
+import type { Item } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { cityCenterFor } from "../../data/cityCenters";
 import { landmarksFor } from "../../data/landmarks";
 import type { AppStackParamList } from "../../navigation/types";
+import { PoiDetailSheet } from "../../screens/CityDetail/PoiDetailSheet";
+import type { ExploreCategory } from "../../screens/CityDetail/helpers";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { colors } from "../../theme";
+import {
+  fetchCategoryMarkers,
+  MAX_CATEGORY_MARKERS,
+  resolveTripItemId,
+  tripCategoryMarkers,
+  TRIP_MAP_CATEGORIES,
+  VIEWPORT_MARKER_LIMIT,
+  type MapCategoryFilter,
+  type TripMapCategory,
+} from "./mapCategories";
 import { styles } from "./styles";
-
-type MapCategory = "all" | ItemType;
-
-const CATEGORIES: { id: MapCategory; label: string; icon: string }[] = [
-  { id: "all", label: "??", icon: "??" },
-  { id: "attraction", label: "??", icon: "??" },
-  { id: "meal", label: "??", icon: "??" },
-  { id: "hotel", label: "??", icon: "??" },
-];
 
 type Props = {
   tripId?: string;
   dayId?: string;
+  /** ???????? selected ????????? */
   items?: Item[];
+  /** ??????????????? items????????? */
+  categoryItems?: Item[];
   destination?: string;
   title?: string;
   height?: number;
@@ -41,6 +47,7 @@ type Props = {
   statusTitle?: string;
   statusSubtitle?: string;
   showCategoryChips?: boolean;
+  categoryBarTop?: number;
   onMapGestureChange?: (active: boolean) => void;
 };
 
@@ -50,10 +57,12 @@ function itemMarkers(items: Item[]): MapMarker[] {
       (it) =>
         it.selected && it.location?.lng != null && it.location?.lat != null,
     )
-    .map((m) => ({
+    .map((m, i) => ({
       lng: m.location!.lng,
       lat: m.location!.lat,
       name: m.name,
+      itemId: m.id,
+      icon: String(i + 1),
     }));
 }
 
@@ -62,6 +71,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     tripId,
     dayId,
     items = [],
+    categoryItems,
     destination = "",
     title,
     height = 280,
@@ -69,6 +79,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     statusTitle,
     statusSubtitle,
     showCategoryChips = false,
+    categoryBarTop,
     onMapGestureChange,
   },
   ref,
@@ -80,8 +91,17 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   useImperativeHandle(ref, () => mapGestureRef.current as NativeViewGestureHandler);
   const [mapReady, setMapReady] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [categoryLoading, setCategoryLoading] = useState(false);
   const [polyline, setPolyline] = useState<number[][]>([]);
-  const [category, setCategory] = useState<MapCategory>("all");
+  const [category, setCategory] = useState<MapCategoryFilter>("all");
+  const [categoryMarkers, setCategoryMarkers] = useState<MapMarker[]>([]);
+  const lastCategoryMarkersRef = useRef<MapMarker[]>([]);
+  const [viewportStats, setViewportStats] = useState({ visible: 0, total: 0 });
+  const [poiSheet, setPoiSheet] = useState<{
+    name: string;
+    lng: number;
+    lat: number;
+  } | null>(null);
   const [fallbackMarkers, setFallbackMarkers] = useState<MapMarker[]>(() => {
     const center = cityCenterFor(destination);
     if (center) {
@@ -90,22 +110,82 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     return [];
   });
   const amapKey = getAmapJsKey();
+  const poiSourceItems = categoryItems ?? items;
 
-  const filteredItems = useMemo(() => {
-    if (category === "all") return items;
-    return items.filter((it) => it.type === category);
-  }, [items, category]);
+  const categoryActive = category !== "all";
+  const activeCategoryMeta = categoryActive
+    ? TRIP_MAP_CATEGORIES.find((c) => c.id === category)
+    : null;
 
-  const routeMarkers = useMemo(() => itemMarkers(filteredItems), [filteredItems]);
+  const routeItems = useMemo(
+    () => (categoryActive ? [] : items),
+    [items, categoryActive],
+  );
+
+  const routeMarkers = useMemo(() => itemMarkers(routeItems), [routeItems]);
 
   const mapMarkers = useMemo<MapMarker[]>(() => {
+    if (categoryActive) {
+      const cat = category as TripMapCategory;
+      if (categoryMarkers.length) return categoryMarkers;
+      const tripOnly = tripCategoryMarkers(poiSourceItems, cat);
+      if (tripOnly.length) return tripOnly;
+      if (categoryLoading && lastCategoryMarkersRef.current.length) {
+        return lastCategoryMarkersRef.current;
+      }
+      return fallbackMarkers;
+    }
     if (routeMarkers.length) return routeMarkers;
     return fallbackMarkers;
-  }, [routeMarkers, fallbackMarkers]);
+  }, [
+    categoryActive,
+    category,
+    categoryMarkers,
+    categoryLoading,
+    routeMarkers,
+    fallbackMarkers,
+    poiSourceItems,
+  ]);
 
   const markerKey = useMemo(
-    () => mapMarkers.map((m) => `${m.lng},${m.lat}`).join("|"),
+    () => mapMarkers.map((m) => `${m.lng},${m.lat},${m.name}`).join("|"),
     [mapMarkers],
+  );
+
+  useEffect(() => {
+    if (!categoryActive) setViewportStats({ visible: 0, total: 0 });
+  }, [categoryActive]);
+
+  const onCategoryPress = useCallback((id: TripMapCategory) => {
+    setCategory((prev) => (prev === id ? "all" : id));
+  }, []);
+
+  const sheetCategory = useMemo((): ExploreCategory => {
+    if (category === "food" || category === "drink") return "foods";
+    return "spots";
+  }, [category]);
+
+  const handleMarkerTap = useCallback(
+    (payload: {
+      name: string;
+      lng: number;
+      lat: number;
+      itemId?: string | null;
+    }) => {
+      if (tripId) {
+        const itemId = resolveTripItemId(poiSourceItems, payload);
+        if (itemId) {
+          navigation.navigate("TripItemDetail", { tripId, itemId });
+          return;
+        }
+      }
+      setPoiSheet({
+        name: payload.name,
+        lng: payload.lng,
+        lat: payload.lat,
+      });
+    },
+    [tripId, poiSourceItems, navigation],
   );
 
   useEffect(() => {
@@ -118,7 +198,41 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   }, [destination]);
 
   useEffect(() => {
+    if (category === "all") {
+      setCategoryMarkers([]);
+      return;
+    }
+    const cat = category as TripMapCategory;
+    let cancelled = false;
+    setCategoryLoading(true);
+    void fetchCategoryMarkers(cat, destination, poiSourceItems)
+      .then((markers) => {
+        if (cancelled) return;
+        const next =
+          markers.length > 0
+            ? markers
+            : tripCategoryMarkers(poiSourceItems, cat);
+        setCategoryMarkers(next);
+        if (next.length) lastCategoryMarkersRef.current = next;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const tripOnly = tripCategoryMarkers(poiSourceItems, cat);
+        setCategoryMarkers(tripOnly);
+        if (tripOnly.length) lastCategoryMarkersRef.current = tripOnly;
+      })
+      .finally(() => {
+        if (!cancelled) setCategoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [category, destination, poiSourceItems]);
+
+  useEffect(() => {
     if (routeMarkers.length) return;
+    if (categoryActive) return;
     const dest = destination.trim();
     if (!dest) return;
     let cancelled = false;
@@ -144,10 +258,15 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     return () => {
       cancelled = true;
     };
-  }, [destination, routeMarkers.length]);
+  }, [destination, routeMarkers.length, categoryActive]);
 
   useEffect(() => {
-    const sourceItems = filteredItems.filter(
+    if (categoryActive) {
+      setPolyline([]);
+      return;
+    }
+
+    const sourceItems = routeItems.filter(
       (it) =>
         it.selected && it.location?.lng != null && it.location?.lat != null,
     );
@@ -203,13 +322,13 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     return () => {
       cancelled = true;
     };
-  }, [tripId, dayId, markerKey, filteredItems]);
+  }, [tripId, dayId, markerKey, routeItems, categoryActive]);
 
   const bootHtml = useMemo(() => {
     if (!amapKey) return "";
     const seed = fallbackMarkers.length
       ? fallbackMarkers
-      : [{ lng: 116.4074, lat: 39.9042, name: "地图" }];
+      : [{ lng: 116.4074, lat: 39.9042, name: "??" }];
     return buildAmapHtml({
       key: amapKey,
       markers: seed,
@@ -224,49 +343,73 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   useEffect(() => {
     if (!mapReady || !amapKey) return;
-    const payload = JSON.stringify(mapMarkers);
+    if (categoryActive && categoryLoading && categoryMarkers.length === 0) {
+      return;
+    }
+    const payload = JSON.stringify(mapMarkers.slice(0, MAX_CATEGORY_MARKERS));
     const line = JSON.stringify(polyline);
+    const linkMarkers = !categoryActive;
+    const focusCenter = categoryActive;
+    const viewportLimit = categoryActive ? VIEWPORT_MARKER_LIMIT : 0;
     inject(
-      `window.updateMapData && window.updateMapData(${payload}, ${line}, true)`,
+      `window.updateMapData && window.updateMapData(${payload}, ${line}, ${linkMarkers}, ${focusCenter}, ${viewportLimit})`,
     );
-  }, [mapReady, amapKey, mapMarkers, polyline, markerKey, inject]);
+  }, [
+    mapReady,
+    amapKey,
+    mapMarkers,
+    polyline,
+    markerKey,
+    categoryActive,
+    categoryLoading,
+    categoryMarkers.length,
+    inject,
+  ]);
 
   function openFullMap() {
     if (!mapMarkers.length) return;
     navigation.navigate("MapFull", {
-      title: title || statusTitle || destination || "路线地图",
+      title: title || statusTitle || destination || "????",
       markers: mapMarkers,
-      polyline,
+      polyline: categoryActive ? [] : polyline,
     });
   }
 
   const rootStyle = [styles.root, fill ? styles.rootFill : { height }];
+  const categoryBarStyle = [
+    styles.categoryBar,
+    categoryBarTop != null ? { top: categoryBarTop } : null,
+  ];
 
   if (!amapKey) {
     return (
       <View style={[rootStyle, styles.mapLoading]}>
-        <Text style={styles.mapHint}>地图未配置</Text>
+        <Text style={styles.mapHint}>?????</Text>
       </View>
     );
   }
 
   return (
-    <View style={rootStyle}>
-      <View style={styles.mapBox}>
+    <View style={rootStyle} collapsable={false}>
+      <View style={[styles.mapBox, fill && styles.mapBoxFill]}>
         {showCategoryChips ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={styles.categoryBar}
+            style={categoryBarStyle}
             contentContainerStyle={styles.categoryBarInner}
           >
-            {CATEGORIES.map((c) => {
+            {TRIP_MAP_CATEGORIES.map((c) => {
               const on = category === c.id;
               return (
                 <Pressable
                   key={c.id}
-                  style={[styles.categoryChip, on && styles.categoryChipOn]}
-                  onPress={() => setCategory(c.id)}
+                  style={[
+                    styles.categoryChip,
+                    on && styles.categoryChipOn,
+                    on && { backgroundColor: c.color, borderColor: c.color },
+                  ]}
+                  onPress={() => onCategoryPress(c.id)}
                 >
                   <Text style={styles.categoryIcon}>{c.icon}</Text>
                   <Text
@@ -312,6 +455,15 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
                       if (msg?.type === "mapGesture") {
                         onMapGestureChange?.(!!msg.payload?.active);
                       }
+                      if (msg?.type === "viewportStats" && msg.payload) {
+                        setViewportStats({
+                          visible: msg.payload.visible ?? 0,
+                          total: msg.payload.total ?? 0,
+                        });
+                      }
+                      if (msg?.type === "markerTap" && msg.payload) {
+                        handleMarkerTap(msg.payload);
+                      }
                     } catch {
                       /* ignore */
                     }
@@ -325,21 +477,28 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
                 style={styles.mapCtrlBtn}
                 onPress={() => inject("window.zoomIn && window.zoomIn()")}
               >
-                <Text style={styles.mapCtrlText}>＋</Text>
+                <Text style={styles.mapCtrlText}>{"?"}</Text>
               </Pressable>
               <Pressable
                 style={styles.mapCtrlBtn}
                 onPress={() => inject("window.zoomOut && window.zoomOut()")}
               >
-                <Text style={styles.mapCtrlText}>－</Text>
+                <Text style={styles.mapCtrlText}>{"?"}</Text>
               </Pressable>
             </View>
             <Pressable style={styles.mapExpand} onPress={openFullMap}>
-              <Text style={styles.mapTapText}>全屏</Text>
+              <Text style={styles.mapTapText}>??</Text>
             </Pressable>
-            {routeLoading ? (
+            {routeLoading || categoryLoading ? (
               <View style={styles.routeLoading}>
                 <ActivityIndicator size="small" color={colors.brand} />
+              </View>
+            ) : null}
+            {categoryActive && activeCategoryMeta ? (
+              <View style={styles.categoryHint} pointerEvents="none">
+                <Text style={styles.categoryHintText}>
+                  {`${activeCategoryMeta.icon} ${activeCategoryMeta.label} ? ? ${viewportStats.total || categoryMarkers.length} ? ? ??? ${viewportStats.visible || Math.min(VIEWPORT_MARKER_LIMIT, categoryMarkers.length)} ?${(viewportStats.total || categoryMarkers.length) > VIEWPORT_MARKER_LIMIT ? " ? ??/??????" : ""}`}
+                </Text>
               </View>
             ) : null}
           </>
@@ -348,7 +507,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
         {statusTitle ? (
           <View style={styles.statusBar} pointerEvents="none">
             <View style={styles.statusChip}>
-              <Text style={styles.statusIcon}>✦</Text>
+              <Text style={styles.statusIcon}>?</Text>
               <View style={styles.statusTextWrap}>
                 <Text style={styles.statusTitle} numberOfLines={1}>
                   {statusTitle}
@@ -363,6 +522,23 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
           </View>
         ) : null}
       </View>
+      <PoiDetailSheet
+        visible={poiSheet != null}
+        item={
+          poiSheet
+            ? {
+                name: poiSheet.name,
+                desc: "",
+                lng: poiSheet.lng,
+                lat: poiSheet.lat,
+              }
+            : null
+        }
+        category={sheetCategory}
+        city={destination}
+        userLocation={null}
+        onClose={() => setPoiSheet(null)}
+      />
     </View>
   );
 });

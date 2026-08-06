@@ -265,7 +265,7 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
   },
   submitOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.88)",
     alignItems: "center",
     justifyContent: "center",

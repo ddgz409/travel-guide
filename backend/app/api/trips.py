@@ -290,6 +290,7 @@ def search_pois(
     q: str,
     city: str = "",
     limit: int = 10,
+    broad: bool = False,
     db: Session = Depends(get_db),
 ):
     """搜索景点（供前端搜索框使用）。强制按城市限定，避免串到故宫/长城。"""
@@ -299,54 +300,84 @@ def search_pois(
     city_s = city.strip()
     keyword = q.strip()
     try:
-        # 多取一些再按名称相关度重排：高德常把热门公园（天坛等）排在「故宫」前面
-        fetch_n = min(max(limit * 3, 15), 25)
-        results = amap.search_poi_by_keyword(
-            keyword=keyword,
-            city=city_s or None,
-            limit=fetch_n,
-            city_limit=bool(city_s),
-            poi_type=POI_TYPES["attraction"],
-        )
-        # 无结果时放宽类型再搜一次（仍限城市）
-        if not results and city_s:
+        cap = min(max(limit, 1), 100 if broad else 20)
+
+        if broad:
+            merged: list = []
+            seen_ids: set[str] = set()
+            per_page = 25
+            max_pages = min(4, max(1, (cap + per_page - 1) // per_page))
+            for page in range(1, max_pages + 1):
+                batch = amap.search_poi_by_keyword(
+                    keyword=keyword,
+                    city=city_s or None,
+                    limit=per_page,
+                    page=page,
+                    city_limit=bool(city_s),
+                )
+                if not batch and page == 1 and city_s:
+                    batch = amap.search_poi_by_keyword(
+                        keyword=keyword,
+                        city=city_s,
+                        limit=per_page,
+                        page=page,
+                        city_limit=True,
+                    )
+                for p in batch:
+                    if p.id in seen_ids:
+                        continue
+                    seen_ids.add(p.id)
+                    merged.append(p)
+                    if len(merged) >= cap:
+                        break
+                if len(merged) >= cap or len(batch) < per_page:
+                    break
+            final = merged[:cap]
+        else:
+            fetch_n = min(max(limit * 3, 15), 25)
             results = amap.search_poi_by_keyword(
                 keyword=keyword,
-                city=city_s,
+                city=city_s or None,
                 limit=fetch_n,
-                city_limit=True,
+                city_limit=bool(city_s),
+                poi_type=POI_TYPES["attraction"],
             )
+            if not results and city_s:
+                results = amap.search_poi_by_keyword(
+                    keyword=keyword,
+                    city=city_s,
+                    limit=fetch_n,
+                    city_limit=True,
+                )
 
-        def _name_score(name: str) -> int:
-            n = (name or "").strip()
-            if not n:
-                return -1
-            if n == keyword:
-                return 1000
-            if n.startswith(keyword) or keyword.startswith(n):
-                return 900
-            if keyword in n:
-                return 800
-            if n in keyword:
-                return 700
-            # 核心词（去常见后缀）命中
-            core = (
-                keyword.replace("博物院", "")
-                .replace("博物馆", "")
-                .replace("风景名胜区", "")
-                .replace("风景区", "")
-                .replace("公园", "")
-                .replace("广场", "")
-                .strip()
-            )
-            if core and len(core) >= 2 and core in n:
-                return 650
-            return 0
+            def _name_score(name: str) -> int:
+                n = (name or "").strip()
+                if not n:
+                    return -1
+                if n == keyword:
+                    return 1000
+                if n.startswith(keyword) or keyword.startswith(n):
+                    return 900
+                if keyword in n:
+                    return 800
+                if n in keyword:
+                    return 700
+                core = (
+                    keyword.replace("博物院", "")
+                    .replace("博物馆", "")
+                    .replace("风景名胜区", "")
+                    .replace("风景区", "")
+                    .replace("公园", "")
+                    .replace("广场", "")
+                    .strip()
+                )
+                if core and len(core) >= 2 and core in n:
+                    return 650
+                return 0
 
-        ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
-        # 有名称命中时丢掉完全不相关的热门串项
-        relevant = [p for p in ranked if _name_score(p.name) > 0]
-        final = (relevant or ranked)[: min(limit, 20)]
+            ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
+            relevant = [p for p in ranked if _name_score(p.name) > 0]
+            final = (relevant or ranked)[: min(limit, 20)]
 
         return [
             {
@@ -360,6 +391,8 @@ def search_pois(
                 "rating": p.rating,
                 "type": p.type,
                 "address": p.address,
+                "tel": p.tel or "",
+                "opentime": p.opentime or "",
             }
             for p in final
         ]

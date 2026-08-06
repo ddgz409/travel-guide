@@ -212,6 +212,8 @@ export interface PoiSearchResult {
   rating: number | null;
   type: string;
   address: string;
+  tel?: string;
+  opentime?: string;
 }
 
 export interface GenerateRequest {

@@ -1,35 +1,69 @@
 import { StyleSheet } from "react-native";
-import { colors } from "../../theme";
+import { colors, cardShadow } from "../../theme";
 import { GRID_GAP } from "./constants";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  scrollBody: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingBottom: 48 },
-  topBar: {
+  root: { flex: 1, backgroundColor: "#eef2f7" },
+  mapLayer: { ...StyleSheet.absoluteFill, zIndex: 0 },
+  topOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    zIndex: 10,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    ...cardShadow,
+  },
+  backText: { fontSize: 22, color: colors.ink, fontWeight: "300", marginTop: -2 },
+  topCityBlock: { flex: 1, paddingTop: 4 },
+  topCityName: { fontSize: 20, fontWeight: "800", color: colors.ink },
+  topCitySub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  filterBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  filterScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+    flexDirection: "row",
+  },
+  filterChip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 10,
+    ...cardShadow,
   },
-  topBackBtn: { minWidth: 56 },
-  topBackText: { fontSize: 15, fontWeight: "700", color: colors.brand },
-  topTitle: {
+  filterChipOn: {
+    backgroundColor: colors.ink,
+  },
+  filterLabel: { fontSize: 14, fontWeight: "700", color: colors.ink },
+  filterLabelOn: { color: "#fff" },
+  sheetScroll: {
     flex: 1,
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "800",
-    color: colors.ink,
+    minHeight: 0,
   },
-  hero: {
-    height: 280,
-    backgroundColor: "#eef2f7",
-    overflow: "hidden",
+  sheetList: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
+  content: { paddingHorizontal: 16, paddingBottom: 48 },
   title: { fontSize: 24, fontWeight: "800", color: colors.ink, marginTop: 16 },
   center: {
     flex: 1,
@@ -39,7 +73,14 @@ export const styles = StyleSheet.create({
     padding: 24,
   },
   meta: { marginTop: 8, fontSize: 14, color: colors.muted, lineHeight: 20 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
   actionBtn: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -54,8 +95,14 @@ export const styles = StyleSheet.create({
   },
   actionText: { fontSize: 13, fontWeight: "600", color: colors.ink },
   actionPrimaryText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  shareMsg: { marginTop: 8, fontSize: 12, color: colors.ready },
-  section: { marginTop: 22 },
+  shareMsg: {
+    marginTop: 0,
+    marginBottom: 4,
+    paddingHorizontal: 20,
+    fontSize: 12,
+    color: colors.ready,
+  },
+  section: { marginTop: 16 },
   mapPlaceholder: {
     height: 220,
     borderRadius: 12,
@@ -315,7 +362,7 @@ export const styles = StyleSheet.create({
   generating: { marginTop: 16, fontSize: 16, fontWeight: "600", color: colors.ink },
   genRoot: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: "#eef2f7",
   },
   genMapWrap: {
     height: 280,
@@ -329,15 +376,18 @@ export const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   genHero: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
     color: colors.ink,
-    marginBottom: 16,
+    marginBottom: 12,
+    paddingHorizontal: 20,
+    marginTop: 4,
   },
   genPhaseRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 12,
+    paddingHorizontal: 20,
   },
   genPhaseItem: { flex: 1, alignItems: "center" },
   genPhaseDot: {

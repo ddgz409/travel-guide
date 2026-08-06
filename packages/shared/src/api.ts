@@ -127,9 +127,9 @@ export function createApiClient(opts: CreateApiClientOptions) {
         }),
     },
     trips: {
-      searchPois: (q: string, city = "", limit = 8) =>
+      searchPois: (q: string, city = "", limit = 8, broad = false) =>
         request<PoiSearchResult[]>(
-          `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}`,
+          `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}${broad ? "&broad=1" : ""}`,
         ),
       suggestLandmarks: (city: string) =>
         request<{ city: string; landmarks: string[] }>(

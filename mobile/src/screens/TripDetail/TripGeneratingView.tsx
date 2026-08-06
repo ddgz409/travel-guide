@@ -1,16 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   Text,
   View,
 } from "react-native";
-import { NativeViewGestureHandler, ScrollView } from "react-native-gesture-handler";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Trip } from "@travel-guide/shared";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
 import { colors } from "../../theme";
+import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { styles } from "./styles";
 
 const PHASES = [
@@ -39,8 +40,6 @@ export function TripGeneratingView({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
-  const heroMapRef = useRef<NativeViewGestureHandler>(null);
-  const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
   const firstDay = trip.days?.[0];
   const dayItems = useMemo(
     () => firstDay?.items?.filter((it) => it.selected) || [],
@@ -52,74 +51,72 @@ export function TripGeneratingView({
   }, [readable, message]);
 
   const phaseIdx = PHASES.findIndex((p) => p.id === phase);
+  const topPad = Math.max(insets.top, 8);
 
   return (
     <View style={styles.genRoot}>
-      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={8}
-          style={styles.topBackBtn}
-        >
-          <Text style={styles.topBackText}>‹ 返回</Text>
-        </Pressable>
-        <Text style={styles.topTitle} numberOfLines={1}>
-          规划行程
-        </Text>
-        <View style={styles.topBackBtn} />
+      <View style={styles.mapLayer}>
+        <HeroRouteMap
+          fill
+          tripId={trip.id}
+          dayId={firstDay?.id}
+          items={firstDay?.items || []}
+          destination={trip.destination}
+          title={`${trip.destination} 路线规划`}
+          showCategoryChips
+          categoryBarTop={topPad + 56}
+        />
       </View>
 
-      <ScrollView
-        style={styles.genBodyScroll}
-        contentContainerStyle={styles.genBody}
-        nestedScrollEnabled
-        scrollEnabled={pageScrollEnabled}
-        waitFor={heroMapRef}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.hero}>
-          <HeroRouteMap
-            ref={heroMapRef}
-            height={280}
-            tripId={trip.id}
-            dayId={firstDay?.id}
-            items={dayItems}
-            destination={trip.destination}
-            title={`${trip.destination} 路线规划`}
-            showCategoryChips
-            onMapGestureChange={(active) => setPageScrollEnabled(!active)}
-          />
+      <View style={[styles.topOverlay, { paddingTop: topPad }]}>
+        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>‹</Text>
+        </Pressable>
+        <View style={styles.topCityBlock}>
+          <Text style={styles.topCityName} numberOfLines={1}>
+            规划行程
+          </Text>
+          <Text style={styles.topCitySub} numberOfLines={1}>
+            {trip.destination} · AI 正在为你规划
+          </Text>
+        </View>
+      </View>
+
+      <DraggableBottomSheet bottomInset={Math.max(insets.bottom, 8)}>
+        <Text style={styles.genHero}>AI 正在为你规划行程</Text>
+        <View style={styles.genPhaseRow}>
+          {PHASES.map((p, i) => {
+            const done = phaseIdx > i;
+            const active = phaseIdx === i || (phaseIdx < 0 && i === 0);
+            return (
+              <View key={p.id} style={styles.genPhaseItem}>
+                <View
+                  style={[
+                    styles.genPhaseDot,
+                    done && styles.genPhaseDotDone,
+                    active && styles.genPhaseDotActive,
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.genPhaseLabel,
+                    (done || active) && styles.genPhaseLabelOn,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {p.label}
+                </Text>
+              </View>
+            );
+          })}
         </View>
 
-        <Text style={styles.genHero}>AI 正在为你规划行程</Text>
-          <View style={styles.genPhaseRow}>
-            {PHASES.map((p, i) => {
-              const done = phaseIdx > i;
-              const active = phaseIdx === i || (phaseIdx < 0 && i === 0);
-              return (
-                <View key={p.id} style={styles.genPhaseItem}>
-                  <View
-                    style={[
-                      styles.genPhaseDot,
-                      done && styles.genPhaseDotDone,
-                      active && styles.genPhaseDotActive,
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.genPhaseLabel,
-                      (done || active) && styles.genPhaseLabelOn,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {p.label}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-
+        <ScrollView
+          style={styles.sheetScroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.sheetList}
+          nestedScrollEnabled
+        >
           <View style={styles.genStreamBubble}>
             <Text style={styles.genStreamRole}>旅迹 AI</Text>
             <Text style={styles.genStreamStatus}>{message || "准备中…"}</Text>
@@ -142,7 +139,8 @@ export function TripGeneratingView({
               <Text style={styles.genStreamCursor}>▍</Text>
             ) : null}
           </View>
-      </ScrollView>
+        </ScrollView>
+      </DraggableBottomSheet>
     </View>
   );
 }
