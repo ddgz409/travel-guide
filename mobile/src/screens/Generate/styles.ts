@@ -235,6 +235,38 @@ export const styles = StyleSheet.create({
   poiName: { fontSize: 14, fontWeight: "600", color: colors.ink },
   poiAddr: { fontSize: 12, color: colors.muted, marginTop: 2 },
   error: { marginTop: 14, color: colors.danger, fontSize: 14 },
+  destHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: colors.muted,
+  },
+  destWarnBox: { marginTop: 8 },
+  destWarn: {
+    fontSize: 13,
+    color: colors.danger,
+    lineHeight: 19,
+  },
+  destOk: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#2e7d32",
+    lineHeight: 19,
+  },
+  suggestRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  suggestChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  suggestChipText: { fontSize: 13, color: colors.ink, fontWeight: "600" },
   primaryBtn: {
     marginTop: 28,
     backgroundColor: colors.brand,

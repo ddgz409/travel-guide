@@ -57,8 +57,12 @@ export function GenerateScreen({ navigation, route }: Props) {
   const [destination, setDestination] = useState(
     route.params?.destination || "",
   );
-  const [startDate, setStartDate] = useState(todayISO());
-  const [endDate, setEndDate] = useState(plusDaysISO(2));
+  const [startDate, setStartDate] = useState(
+    route.params?.startDate || todayISO(),
+  );
+  const [endDate, setEndDate] = useState(
+    route.params?.endDate || plusDaysISO(2),
+  );
   const [datePicker, setDatePicker] = useState<DateField | null>(null);
   const [travelers, setTravelers] = useState("2");
   const [selected, setSelected] = useState<string[]>(
@@ -74,10 +78,20 @@ export function GenerateScreen({ navigation, route }: Props) {
   const [poiSearching, setPoiSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [destCheck, setDestCheck] = useState<{
+    valid: boolean;
+    message: string;
+    resolved_name?: string | null;
+    suggestions: string[];
+  } | null>(null);
+  const [destChecking, setDestChecking] = useState(false);
   const [quickCards, setQuickCards] = useState<QuickRecommendCard[]>([]);
   const [keyboardPad, setKeyboardPad] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destValidateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const autoSubmittedRef = useRef(false);
+  const chatHintRef = useRef(route.params?.chatHint || "");
 
   const daysCount = useMemo(() => {
     if (!startDate || !endDate || endDate < startDate) return 0;
@@ -112,6 +126,118 @@ export function GenerateScreen({ navigation, route }: Props) {
       cancelled = true;
     };
   }, [destination]);
+
+  useEffect(() => {
+    const trimmed = destination.trim();
+    if (trimmed.length < 2) {
+      setDestCheck(null);
+      setDestChecking(false);
+      return;
+    }
+    if (destValidateRef.current) clearTimeout(destValidateRef.current);
+    setDestChecking(true);
+    destValidateRef.current = setTimeout(() => {
+      void api.trips
+        .validateDestination(trimmed)
+        .then((res) => {
+          setDestCheck(res);
+          if (!res.valid) setError(null);
+        })
+        .catch(() => setDestCheck(null))
+        .finally(() => setDestChecking(false));
+    }, 450);
+    return () => {
+      if (destValidateRef.current) clearTimeout(destValidateRef.current);
+    };
+  }, [destination]);
+
+  async function ensureDestinationValid(raw: string): Promise<boolean> {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setError("请输入目的地");
+      return false;
+    }
+    try {
+      const check = await api.trips.validateDestination(trimmed);
+      setDestCheck(check);
+      if (!check.valid) {
+        setError(check.message || `未找到「${trimmed}」，请检查地名或从下方选择`);
+        return false;
+      }
+      if (check.resolved_name && check.resolved_name !== trimmed) {
+        setDestination(check.resolved_name);
+      }
+      setError(null);
+      return true;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "地名校验失败，请稍后重试");
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    const p = route.params;
+    if (!p) return;
+    if (p.mode) setGenMode(p.mode);
+    if (p.destination) setDestination(p.destination);
+    if (p.interests?.length) setSelected(p.interests);
+    if (p.startDate) setStartDate(p.startDate);
+    if (p.endDate) setEndDate(p.endDate);
+    if (p.chatHint) chatHintRef.current = p.chatHint;
+
+    if (!p.autoSubmit || autoSubmittedRef.current) return;
+    const dest = p.destination?.trim();
+    if (!dest || !p.startDate || !p.endDate) return;
+    autoSubmittedRef.current = true;
+    setGenMode("custom");
+
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (!(await ensureDestinationValid(dest))) return;
+        let guest = isGuest;
+        if (!user && !guest) {
+          await enterGuest();
+          guest = true;
+        }
+        const llm: {
+          provider: string;
+          model: string;
+          api_key?: string;
+          base_url?: string;
+        } = {
+          provider: curModel.provider,
+          model: curModel.model,
+        };
+        if (curModel.apiKey) llm.api_key = curModel.apiKey;
+        if (curModel.baseUrl) llm.base_url = curModel.baseUrl;
+        const payload = {
+          destination: dest,
+          start_date: p.startDate!,
+          end_date: p.endDate!,
+          travelers: Math.max(1, parseInt(travelers, 10) || 1),
+          preferences: {
+            interests: p.interests?.length ? p.interests : selected,
+            budget_level: budgetLevel,
+            transport,
+            ...(chatHintRef.current ? { chat_hint: chatHintRef.current } : {}),
+          },
+          must_include: mustInclude.length ? mustInclude : undefined,
+          llm,
+        };
+        const trip = guest
+          ? await api.trips.guestGenerate(payload)
+          : await api.trips.generate(payload);
+        if (guest) await rememberGuestTrip(trip.id);
+        navigation.replace("TripDetail", { tripId: trip.id });
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "提交失败");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [route.params]);
 
   function scrollPoiIntoView() {
     // 只轻微滚动，避免把搜索框顶出可视区
@@ -257,6 +383,7 @@ export function GenerateScreen({ navigation, route }: Props) {
     setBusy(true);
     setError(null);
     try {
+      if (!(await ensureDestinationValid(destination))) return;
       let guest = isGuest;
       if (!user && !guest) {
         await enterGuest();
@@ -283,6 +410,9 @@ export function GenerateScreen({ navigation, route }: Props) {
           interests: selected,
           budget_level: budgetLevel,
           transport,
+          ...(chatHintRef.current
+            ? { chat_hint: chatHintRef.current }
+            : {}),
         },
         must_include: mustInclude.length ? mustInclude : undefined,
         llm,
@@ -396,10 +526,41 @@ export function GenerateScreen({ navigation, route }: Props) {
           onChangeText={(t) => {
             setDestination(t);
             setQuickCards([]);
+            setError(null);
           }}
           placeholder="例如：杭州"
           placeholderTextColor={colors.muted}
         />
+        {destChecking ? (
+          <Text style={styles.destHint}>正在校验地名…</Text>
+        ) : destCheck && !destCheck.valid ? (
+          <View style={styles.destWarnBox}>
+            <Text style={styles.destWarn}>{destCheck.message}</Text>
+            {destCheck.suggestions.length > 0 ? (
+              <View style={styles.suggestRow}>
+                {destCheck.suggestions.map((c) => (
+                  <PressScale
+                    key={c}
+                    scaleTo={0.96}
+                    style={styles.suggestChip}
+                    onPress={() => {
+                      setDestination(c);
+                      setError(null);
+                    }}
+                  >
+                    <Text style={styles.suggestChipText}>{c}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : destCheck?.valid &&
+          destCheck.resolved_name &&
+          destCheck.resolved_name !== destination.trim() ? (
+          <Text style={styles.destOk}>
+            将按「{destCheck.resolved_name}」生成攻略
+          </Text>
+        ) : null}
         <View style={styles.chips}>
           {QUICK_CITIES.map((c) => (
             <PressScale

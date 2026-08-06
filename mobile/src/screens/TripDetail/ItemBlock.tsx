@@ -30,22 +30,24 @@ export const ItemBlock = memo(function ItemBlock({
   canEdit,
   onChanged,
   hasNextRoute,
+  showRoute = true,
 }: {
   item: Item;
   tripId: string;
   canEdit: boolean;
   onChanged: (trip: Trip) => void;
   hasNextRoute: boolean;
+  showRoute?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [localTransport, setLocalTransport] = useState<TransportToNext | null>(
     item.transport_to_next,
   );
   const alts = item.alternatives || [];
-  const showRoute =
-    item.selected && hasNextRoute && hasCoords(item.location);
+  const showRouteBtn =
+    showRoute && item.selected && hasNextRoute && hasCoords(item.location);
   const transportForSheet =
-    localTransport || item.transport_to_next || (showRoute ? ROUTE_STUB : null);
+    localTransport || item.transport_to_next || (showRouteBtn ? ROUTE_STUB : null);
 
   useEffect(() => {
     setLocalTransport(item.transport_to_next);
@@ -107,7 +109,7 @@ export const ItemBlock = memo(function ItemBlock({
           <Text style={styles.itemMeta}>评分 {item.rating}</Text>
         ) : null}
       </View>
-      {showRoute && transportForSheet ? (
+      {showRouteBtn && transportForSheet ? (
         <TransportRouteSheet
           tripId={tripId}
           itemId={item.id}

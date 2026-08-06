@@ -3,23 +3,24 @@ import {
   ActivityIndicator,
   Image,
   Keyboard,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
+import {
+  NativeViewGestureHandler,
+  ScrollView,
+} from "react-native-gesture-handler";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { citiesGrouped } from "../../data/cities";
-import { FadeSlideIn, PressScale, enterFade, AnimatedDot } from "../../utils/motion";
+import { FadeSlideIn, PressScale, enterFade } from "../../utils/motion";
 import { colors, pastels } from "../../theme";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
@@ -29,7 +30,7 @@ import {
   loadLocationConsent,
   saveLocationConsent,
 } from "../../utils/locationPrefs";
-import { SLIDES, DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
+import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
 
 const CARD_COLORS_ARR = pastels;
@@ -38,11 +39,8 @@ export function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const navigation = useNavigation();
-  const [slide, setSlide] = useState(0);
   const [q, setQ] = useState("");
   const [searchFocus, setSearchFocus] = useState(false);
-  const heroRef = useRef<ScrollView>(null);
-  const pauseAutoUntil = useRef(0);
   /** 防止 onBlur 的 180ms 定时器堆积：每次新失焦清除旧定时器 */
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 防止快速双击 city chip 触发两次 navigate */
@@ -51,8 +49,10 @@ export function ExploreScreen() {
   // 地图相关
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
+  const mapGestureRef = useRef<NativeViewGestureHandler>(null);
   const mapReadyRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
 
   // 定位城市状态
   const [locCity, setLocCity] = useState<string | null>(null);
@@ -63,18 +63,6 @@ export function ExploreScreen() {
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (Date.now() < pauseAutoUntil.current) return;
-      setSlide((s) => {
-        const next = (s + 1) % SLIDES.length;
-        heroRef.current?.scrollTo({ x: next * screenW, animated: true });
-        return next;
-      });
-    }, 5000);
-    return () => clearInterval(t);
-  }, [screenW]);
 
   // 组件卸载时清除 onBlur 残留定时器
   useEffect(() => {
@@ -138,19 +126,6 @@ export function ExploreScreen() {
   useEffect(() => {
     fetchLocation(true);
   }, [fetchLocation]);
-
-  function onHeroScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const x = e.nativeEvent.contentOffset.x;
-    const i = Math.max(
-      0,
-      Math.min(SLIDES.length - 1, Math.round(x / screenW)),
-    );
-    setSlide(i);
-  }
-
-  function onHeroDragBegin() {
-    pauseAutoUntil.current = Date.now() + 10000;
-  }
 
   function goGenerate(dest?: string, interests?: string[]) {
     if (navigatingRef.current) return;
@@ -238,43 +213,128 @@ export function ExploreScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        scrollEnabled={pageScrollEnabled}
+        waitFor={mapGestureRef}
         contentContainerStyle={{ paddingBottom: 80 }}
       >
         <View style={styles.hero}>
-          <ScrollView
-            ref={heroRef}
-            horizontal
-            pagingEnabled
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            onScrollBeginDrag={onHeroDragBegin}
-            onMomentumScrollEnd={onHeroScrollEnd}
-          >
-            {SLIDES.map((s) => (
-              <Pressable
-                key={s.dest}
-                style={[styles.heroPage, { width: screenW }]}
-                onPress={() => goGenerate(s.dest)}
-              >
-                <Image
-                  source={s.img}
-                  style={[styles.heroImg, { width: screenW }]}
-                  resizeMode="cover"
-                />
-                <View style={styles.heroMask} />
-                <View style={styles.heroText}>
-                  <Text style={styles.heroEyebrow}>今日灵感</Text>
-                  <Text style={styles.heroTitle}>{s.title}</Text>
-                  <Text style={styles.heroSub}>{s.sub}</Text>
+          <View style={styles.heroMapBox}>
+            {amapKey && mapHtml ? (
+              <>
+                {!mapLoaded ? (
+                  <View style={styles.mapLoading}>
+                    <ActivityIndicator color={colors.brand} />
+                  </View>
+                ) : null}
+                <NativeViewGestureHandler
+                  ref={mapGestureRef}
+                  disallowInterruption
+                >
+                  <View style={StyleSheet.absoluteFill} collapsable={false}>
+                    <WebView
+                      ref={webRef}
+                      originWhitelist={["*"]}
+                      source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
+                      style={StyleSheet.absoluteFill}
+                      javaScriptEnabled
+                      domStorageEnabled
+                      scrollEnabled={false}
+                      setSupportMultipleWindows={false}
+                      androidLayerType="hardware"
+                      onMessage={(e) => {
+                        try {
+                          const msg = JSON.parse(e.nativeEvent.data);
+                          if (msg?.type === "ready") mapReadyRef.current = true;
+                          if (msg?.type === "mapGesture") {
+                            setPageScrollEnabled(!msg.payload?.active);
+                          }
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      onLoadEnd={() => {
+                        setMapLoaded(true);
+                        setTimeout(() => {
+                          mapReadyRef.current = true;
+                        }, 800);
+                      }}
+                    />
+                  </View>
+                </NativeViewGestureHandler>
+                <View style={styles.heroLocBar} pointerEvents="box-none">
+                  {locCity ? (
+                    <PressScale
+                      style={styles.heroLocChip}
+                      scaleTo={0.98}
+                      onPress={() => goCityDetail(locCity)}
+                    >
+                      <Text style={styles.heroLocIcon}>📍</Text>
+                      <View style={styles.heroLocTextWrap}>
+                        <Text style={styles.heroLocTitle}>你在 {locCity}</Text>
+                        <Text style={styles.heroLocMeta} numberOfLines={1}>
+                          {locDesc}
+                        </Text>
+                      </View>
+                      <Text style={styles.heroLocArrow}>›</Text>
+                    </PressScale>
+                  ) : locLoading ? (
+                    <View style={styles.heroLocChip}>
+                      <ActivityIndicator color={colors.brand} size="small" />
+                      <Text style={styles.heroLocHint}>正在获取你的位置…</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.heroLocChip}
+                      onPress={() => void fetchLocation(false)}
+                    >
+                      <Text style={styles.heroLocIcon}>📍</Text>
+                      <Text style={styles.heroLocHint}>
+                        {locError || "点击开启定位，查看所在城市"}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <View style={styles.dots} pointerEvents="none">
-            {SLIDES.map((_, i) => (
-              <AnimatedDot key={i} active={i === slide} />
-            ))}
+                <View style={styles.heroMapControls} pointerEvents="box-none">
+                  <Pressable
+                    style={styles.mapCtrlBtn}
+                    onPress={() => inject("window.zoomIn && window.zoomIn()")}
+                  >
+                    <Text style={styles.mapCtrlText}>＋</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.mapCtrlBtn}
+                    onPress={() => inject("window.zoomOut && window.zoomOut()")}
+                  >
+                    <Text style={styles.mapCtrlText}>－</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
+                    onPress={() => void fetchLocation(false)}
+                    disabled={locBtnLoading}
+                  >
+                    {locBtnLoading ? (
+                      <ActivityIndicator color="#1a66ff" size="small" />
+                    ) : (
+                      <Text style={styles.mapLocateText}>定位</Text>
+                    )}
+                  </Pressable>
+                </View>
+                <Pressable style={styles.heroMapExpand} onPress={openFullMap}>
+                  <Text style={styles.mapTapText}>全屏</Text>
+                </Pressable>
+              </>
+            ) : (
+              <View style={styles.mapLoading}>
+                <Text style={{ fontSize: 15, color: colors.muted }}>
+                  {locLoading
+                    ? "正在获取位置…"
+                    : locError
+                      ? locError
+                      : "地图未配置，请检查高德 Key"}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -449,128 +509,6 @@ export function ExploreScreen() {
               </PressScale>
             ))}
           </View>
-        </FadeSlideIn>
-
-        {/* 地图模块：用户当前所在城市 */}
-        <FadeSlideIn delay={320} style={styles.mapSection}>
-          <Text style={styles.sectionTitle}>
-            {locCity ? `${locCity} · 我的位置` : "我的位置"}
-          </Text>
-          <View style={styles.mapWrapper}>
-            <View style={styles.mapBox}>
-              {amapKey && mapHtml ? (
-                <>
-                  {!mapLoaded ? (
-                    <View style={styles.mapLoading}>
-                      <ActivityIndicator color={colors.brand} />
-                    </View>
-                  ) : null}
-                  {/* ↓↓↓ 和 DayMap 完全一样的结构 ↓↓↓ */}
-                  <WebView
-                    ref={webRef}
-                    originWhitelist={["*"]}
-                    source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
-                    style={StyleSheet.absoluteFill}
-                    javaScriptEnabled
-                    domStorageEnabled
-                    scrollEnabled={false}
-                    pointerEvents="none"
-                    setSupportMultipleWindows={false}
-                    androidLayerType="hardware"
-                    onMessage={(e) => {
-                      try {
-                        const msg = JSON.parse(e.nativeEvent.data);
-                        if (msg?.type === "ready") mapReadyRef.current = true;
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                    onLoadEnd={() => {
-                      setMapLoaded(true);
-                      setTimeout(() => {
-                        mapReadyRef.current = true;
-                      }, 800);
-                    }}
-                  />
-                  <Pressable style={StyleSheet.absoluteFill} onPress={openFullMap}>
-                    <View style={styles.mapTapHint}>
-                      <Text style={styles.mapTapText}>点击放大地图</Text>
-                    </View>
-                  </Pressable>
-                </>
-              ) : (
-                <View style={styles.mapLoading}>
-                  <Text style={{ fontSize: 15, color: colors.muted }}>
-                    {locLoading
-                      ? "正在获取位置…"
-                      : locError
-                        ? locError
-                        : "地图未配置，请检查高德 Key"}
-                  </Text>
-                </View>
-              )}
-            </View>
-            {/* 控件浮在 mapBox 右下角，不干扰 Pressable */}
-            <View style={styles.mapControls} pointerEvents="box-none">
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomIn && window.zoomIn()")}
-              >
-                <Text style={styles.mapCtrlText}>＋</Text>
-              </Pressable>
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomOut && window.zoomOut()")}
-              >
-                <Text style={styles.mapCtrlText}>－</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
-                onPress={() => void fetchLocation(false)}
-                disabled={locBtnLoading}
-              >
-                {locBtnLoading ? (
-                  <ActivityIndicator color="#1a66ff" size="small" />
-                ) : (
-                  <Text style={styles.mapLocateText}>定位</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </FadeSlideIn>
-
-        {/* 定位城市卡片 */}
-        <FadeSlideIn delay={380}>
-          {locCity ? (
-            <PressScale
-              style={styles.locCard}
-              scaleTo={0.98}
-              onPress={() => goCityDetail(locCity)}
-            >
-              <View style={styles.locBody}>
-                <Text style={styles.locIcon}>📍</Text>
-                <View style={styles.locInfo}>
-                  <Text style={styles.locTitle}>你在 {locCity}</Text>
-                  <Text style={styles.locMeta}>{locDesc}</Text>
-                </View>
-                <Text style={styles.locArrow}>›</Text>
-              </View>
-            </PressScale>
-          ) : locLoading ? (
-            <View style={styles.locHintCard}>
-              <ActivityIndicator color={colors.brand} size="small" />
-              <Text style={[styles.locHintText, { marginLeft: 12 }]}>
-                正在获取你的位置…
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.locHintCard}>
-              <Text style={styles.locIcon}>📍</Text>
-              <Text style={styles.locHintText}>
-                {locError || "开启定位可查看你所在城市的信息"}
-              </Text>
-            </View>
-          )}
         </FadeSlideIn>
       </ScrollView>
     </View>

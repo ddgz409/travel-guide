@@ -1,6 +1,8 @@
 """攻略路由：生成 / 列表 / 详情 / 编辑 / 重新生成 / 分享 / 导出。"""
 import io
+import json
 import secrets
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
@@ -22,11 +24,15 @@ from app.schemas import (
     TripListItem,
     TripOut,
     TripUpdate,
+    ValidateDestinationRequest,
+    ValidateDestinationResponse,
 )
 from app.services.generator import GeneratorError, get_generator
 from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
 from app.services.quick_recommend import build_quick_recommend
+from app.services.destination_validator import check_destination
+from app.services.generation_progress import get_progress
 from app.services.trip_cache import (
     build_cache_key,
     save_trip_to_cache,
@@ -34,6 +40,13 @@ from app.services.trip_cache import (
 )
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
+
+
+def _require_valid_destination(destination: str) -> None:
+    """无效地名直接 400，避免创建 generating 行程后再失败。"""
+    result = check_destination(destination)
+    if not result.valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
 
 
 def _trip_or_404(trip_id: str, db: Session, user_id: str | None = None) -> Trip:
@@ -57,6 +70,8 @@ def generate(
     """
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
+
+    _require_valid_destination(payload.destination)
 
     title = f"{payload.destination}之旅"
     if payload.start_date != payload.end_date:
@@ -192,6 +207,8 @@ def guest_generate(
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
 
+    _require_valid_destination(payload.destination)
+
     guest = _ensure_guest_user(db)
 
     title = f"{payload.destination}之旅"
@@ -254,6 +271,12 @@ def guest_generate(
 def quick_recommend(payload: QuickRecommendRequest):
     """快速参考：不调模型、不建行程，返回两套小红书/携程入口卡片。"""
     return build_quick_recommend(payload.destination)
+
+
+@router.post("/validate-destination", response_model=ValidateDestinationResponse)
+def validate_destination(payload: ValidateDestinationRequest):
+    """校验目的地是否真实存在（高德地理编码）。"""
+    return check_destination(payload.destination).to_dict()
 
 
 @router.get("/pois/search")
@@ -359,6 +382,66 @@ def list_trips(current: User = Depends(get_current_user), db: Session = Depends(
         .order_by(Trip.created_at.desc())
     )
     return list(db.scalars(stmt))
+
+
+@router.get("/{trip_id}/generate-stream")
+def trip_generate_stream(
+    trip_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """SSE 推送行程生成进度与 LLM 流式预览。"""
+    _trip_or_404(trip_id, db, current.id if current else None)
+
+    def event_stream():
+        last_sig = ""
+        while True:
+            trip = db.get(Trip, trip_id)
+            if trip is None:
+                yield f"data: {json.dumps({'status': 'failed', 'message': '攻略不存在'}, ensure_ascii=False)}\n\n"
+                break
+            prog = get_progress(trip_id)
+            payload = {
+                "status": trip.status,
+                "phase": prog.get("phase", ""),
+                "message": prog.get("message", ""),
+                "preview": prog.get("preview", ""),
+                "readable": prog.get("readable", ""),
+            }
+            sig = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+            if sig != last_sig:
+                yield f"data: {sig}\n\n"
+                last_sig = sig
+            if trip.status in ("ready", "failed"):
+                yield f"data: {json.dumps({'status': trip.status, 'done': True, 'error_msg': trip.error_msg, 'readable': prog.get('readable', '')}, ensure_ascii=False)}\n\n"
+                break
+            time.sleep(0.2)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{trip_id}/progress")
+def trip_generate_progress(
+    trip_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """轮询行程生成进度（React Native SSE 降级用）。"""
+    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    prog = get_progress(trip_id)
+    return {
+        "status": trip.status,
+        "phase": prog.get("phase", ""),
+        "message": prog.get("message", ""),
+        "preview": prog.get("preview", ""),
+        "readable": prog.get("readable", ""),
+        "done": trip.status in ("ready", "failed"),
+        "error_msg": trip.error_msg,
+    }
 
 
 @router.get("/{trip_id}", response_model=TripOut)

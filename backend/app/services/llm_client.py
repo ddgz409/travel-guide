@@ -205,8 +205,9 @@ class LLMClient:
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        on_chunk: Any | None = None,
     ) -> dict[str, Any]:
-        """调用 LLM 并解析为 JSON 对象。"""
+        """调用 LLM 并解析为 JSON 对象。on_chunk 可选，流式回调已累积文本。"""
         if not self.available:
             raise LLMError(
                 f"未配置 {self.label} API key。"
@@ -218,13 +219,61 @@ class LLMClient:
             {"role": "user", "content": user_prompt},
         ]
         try:
-            content = self._call_http(messages, temperature, max_tokens)
+            if on_chunk is not None:
+                content = self._call_http_stream(messages, temperature, max_tokens, on_chunk)
+            else:
+                content = self._call_http(messages, temperature, max_tokens)
         except LLMError:
             raise
         except Exception as e:
             raise LLMError(f"{self.label} 调用失败: {e}") from e
 
         return self._parse_json(content)
+
+    def _call_http_stream(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        on_chunk: Any,
+    ) -> str:
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "response_format": {"type": "json_object"},
+        }
+        logger.info("LLM 流式请求 provider=%s model=%s", self.provider, self.model)
+        acc = ""
+        with httpx.Client(timeout=120.0) as client:
+            with client.stream("POST", url, headers=headers, json=body) as resp:
+                if resp.status_code >= 400:
+                    raise LLMError(
+                        f"{self.label} HTTP {resp.status_code}: {resp.text[:400]}"
+                    )
+                for raw_line in resp.iter_lines():
+                    line = raw_line.strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        piece = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if piece:
+                            acc += piece
+                            on_chunk(piece, acc)
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        pass
+        return acc
 
     def _call_http(
         self, messages: list[dict], temperature: float, max_tokens: int

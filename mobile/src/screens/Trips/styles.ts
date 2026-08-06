@@ -186,4 +186,71 @@ export const styles = StyleSheet.create({
     borderRadius: 10,
   },
   retryText: { color: colors.brandHot, fontWeight: "700" },
+  checkInMapCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    overflow: "hidden",
+    ...cardShadow,
+  },
+  checkInMapHead: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  checkInMapTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: colors.ink,
+  },
+  checkInMapSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+  },
+  checkInMapTap: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brandHot,
+  },
+  checkInMapBody: {
+    height: 220,
+    backgroundColor: "#FAFAFA",
+  },
+  checkInMapWeb: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  checkInMapLoading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkInMapLegend: {
+    flexDirection: "row",
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderStyle: "dashed",
+  },
+  legendText: {
+    fontSize: 12,
+    color: colors.muted,
+  },
 });

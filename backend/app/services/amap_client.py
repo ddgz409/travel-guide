@@ -33,6 +33,8 @@ class GeoResult:
     lat: float
     city: str | None = None
     adcode: str | None = None  # 区域编码，可用于天气查询
+    formatted: str | None = None
+    level: str | None = None
 
 
 @dataclass
@@ -134,6 +136,8 @@ class AmapClient:
             lat=float(lat),
             city=g.get("city") or None,
             adcode=g.get("adcode") or None,
+            formatted=g.get("formatted") or None,
+            level=g.get("level") or None,
         )
 
     def search_poi_around(

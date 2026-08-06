@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.deps import get_optional_user
 from app.models import User
 from app.services.amap_client import AmapError, get_amap_client
-from app.services.destination_service import get_city_info
+from app.services.destination_service import get_city_info, get_place_images
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,17 @@ def city_info(
     """
     result = get_city_info(city.strip(), user)
     return result
+
+
+@router.get("/place-images")
+def place_images(
+    city: str = Query(..., min_length=1, max_length=128),
+    name: str = Query(..., min_length=1, max_length=128),
+    kind: str = Query("", pattern="^(|foods|spots)$"),
+    limit: int = Query(3, ge=1, le=6),
+):
+    """从小红书笔记抓取地点真实封面图。"""
+    return get_place_images(city.strip(), name.strip(), kind, limit)
 
 
 @router.get("/regeo")

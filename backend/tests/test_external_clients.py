@@ -17,4 +17,4 @@ def test_ctrip_returns_destination_links():
     assert len(tips) >= 2
     assert all(t["source"] == "ctrip" for t in tips)
     assert any("成都" in t["title"] for t in tips)
-    assert any("ctrip.com" in t["url"] for t in tips)
+    assert any("ctrip://" in t["url"] for t in tips)

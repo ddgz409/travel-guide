@@ -1,6 +1,14 @@
 /** 生成高德 JS API 地图 HTML（日行程 / 全屏 / 单段路线共用） */
 
-export type MapMarker = { lng: number; lat: number; name: string };
+export type MapMarker = {
+  lng: number;
+  lat: number;
+  name: string;
+  /** 自定义 pin 背景色 */
+  color?: string;
+  /** pin 内显示的 emoji 或单字符 */
+  icon?: string;
+};
 
 export function buildAmapHtml(opts: {
   key: string;
@@ -10,6 +18,8 @@ export function buildAmapHtml(opts: {
   interactive?: boolean;
   /** 用户定位点 */
   userLocation?: { lng: number; lat: number } | null;
+  /** 多 marker 时是否用虚线串联，默认 true（行程地图）；探索页可关 */
+  linkMarkers?: boolean;
 }): string {
   const {
     key,
@@ -17,12 +27,14 @@ export function buildAmapHtml(opts: {
     polyline = [],
     interactive = true,
     userLocation = null,
+    linkMarkers = true,
   } = opts;
   const payload = JSON.stringify({
     markers,
     polyline,
     interactive: !!interactive,
     userLocation,
+    linkMarkers: !!linkMarkers,
   });
   return `<!DOCTYPE html>
 <html>
@@ -32,13 +44,15 @@ export function buildAmapHtml(opts: {
   <style>
     html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#f3f4f6;overflow:hidden}
     .pin{
-      width:28px;height:28px;border-radius:50%;
+      width:32px;height:32px;border-radius:50%;
       background:#ff6d00;color:#fff;
-      font:700 13px/28px -apple-system,BlinkMacSystemFont,sans-serif;
+      font:700 13px/32px -apple-system,BlinkMacSystemFont,sans-serif;
       text-align:center;
       border:2.5px solid #fff;
       box-shadow:0 2px 8px rgba(0,0,0,.28);
+      display:flex;align-items:center;justify-content:center;
     }
+    .pin-emoji{font-size:15px;line-height:1}
     .user-dot{
       width:16px;height:16px;border-radius:50%;
       background:#1a66ff;border:3px solid #fff;
@@ -83,39 +97,75 @@ export function buildAmapHtml(opts: {
         });
         window.__map = map;
         var points = [];
-        markers.forEach(function (m, i) {
-          var pos = [m.lng, m.lat];
-          points.push(pos);
-          new AMap.Marker({
-            map: map,
-            position: pos,
-            title: m.name,
-            offset: new AMap.Pixel(-14, -14),
-            content: '<div class="pin">' + String(i + 1) + '</div>'
+        window.__overlays = window.__overlays || [];
+
+        function clearOverlays() {
+          (window.__overlays || []).forEach(function (o) {
+            try { o.setMap(null); } catch (e) {}
           });
-        });
-        if (polyline.length > 1) {
-          new AMap.Polyline({
-            map: map,
-            path: polyline.map(function (p) { return [p[0], p[1]]; }),
-            strokeColor: '#1a66ff',
-            strokeWeight: 5,
-            strokeOpacity: 0.9
-          });
-        } else if (points.length > 1) {
-          new AMap.Polyline({
-            map: map,
-            path: points,
-            strokeColor: '#1a66ff',
-            strokeWeight: 4,
-            strokeOpacity: 0.75,
-            strokeStyle: 'dashed'
-          });
+          window.__overlays = [];
         }
+
+        function drawMarkersAndRoute() {
+          clearOverlays();
+          points = [];
+          markers.forEach(function (m, i) {
+            var pos = [m.lng, m.lat];
+            points.push(pos);
+            var bg = m.color || '#ff6d00';
+            var inner = m.icon
+              ? '<span class="pin-emoji">' + m.icon + '</span>'
+              : String(i + 1);
+            var mk = new AMap.Marker({
+              map: map,
+              position: pos,
+              title: m.name,
+              offset: new AMap.Pixel(-16, -16),
+              content: '<div class="pin" style="background:' + bg + '">' + inner + '</div>'
+            });
+            window.__overlays.push(mk);
+          });
+          if (polyline.length > 1) {
+            var pl = new AMap.Polyline({
+              map: map,
+              path: polyline.map(function (p) { return [p[0], p[1]]; }),
+              strokeColor: '#1a66ff',
+              strokeWeight: 5,
+              strokeOpacity: 0.9
+            });
+            window.__overlays.push(pl);
+          } else if (points.length > 1 && data.linkMarkers) {
+            var dl = new AMap.Polyline({
+              map: map,
+              path: points,
+              strokeColor: '#1a66ff',
+              strokeWeight: 4,
+              strokeOpacity: 0.75,
+              strokeStyle: 'dashed'
+            });
+            window.__overlays.push(dl);
+          }
+          if (points.length) map.setFitView(null, false, [48, 48, 48, 48]);
+        }
+
+        drawMarkersAndRoute();
+        window.__redraw = drawMarkersAndRoute;
         if (data.userLocation && data.userLocation.lng != null) {
           window.setUserLocation(data.userLocation.lng, data.userLocation.lat, false);
         }
-        if (points.length) map.setFitView(null, false, [40, 40, 40, 40]);
+        if (interactive) {
+          var mapTouching = false;
+          function setMapTouching(active) {
+            if (mapTouching === active) return;
+            mapTouching = active;
+            post('mapGesture', { active: active });
+          }
+          map.on('touchstart', function () { setMapTouching(true); });
+          map.on('touchend', function () { setMapTouching(false); });
+          map.on('touchcancel', function () { setMapTouching(false); });
+          map.on('dragstart', function () { setMapTouching(true); });
+          map.on('dragend', function () { setMapTouching(false); });
+        }
         post('ready');
       }
 
@@ -140,6 +190,14 @@ export function buildAmapHtml(opts: {
           });
         }
         if (center) window.__map.setZoomAndCenter(15, pos);
+      };
+
+      window.updateMapData = function (nextMarkers, nextPolyline, linkMarkers) {
+        if (!window.__map || !window.AMap || !window.__redraw) return;
+        markers = nextMarkers || [];
+        polyline = nextPolyline || [];
+        data.linkMarkers = linkMarkers !== false;
+        window.__redraw();
       };
 
       if (window.AMap) boot();

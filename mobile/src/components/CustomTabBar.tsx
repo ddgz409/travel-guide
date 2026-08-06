@@ -1,4 +1,4 @@
-/** 自定义底部导航栏：行程 / + / 探索 */
+/** 自定义底部导航栏：探索 / + / 行程 */
 
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -20,16 +20,16 @@ export function CustomTabBar({ activeTab, onTabChange }: Props) {
   return (
     <>
       <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {/* 左：行程 */}
+        {/* 左：探索 */}
         <Pressable
           style={styles.tabItem}
-          onPress={() => onTabChange("Trips")}
+          onPress={() => onTabChange("Explore")}
         >
-          <Text style={[styles.tabIcon, activeTab === "Trips" && styles.tabIconActive]}>
-            📋
+          <Text style={[styles.tabIcon, activeTab === "Explore" && styles.tabIconActive]}>
+            🗺️
           </Text>
-          <Text style={[styles.tabLabel, activeTab === "Trips" && styles.tabLabelActive]}>
-            行程
+          <Text style={[styles.tabLabel, activeTab === "Explore" && styles.tabLabelActive]}>
+            探索
           </Text>
         </Pressable>
 
@@ -43,16 +43,16 @@ export function CustomTabBar({ activeTab, onTabChange }: Props) {
           </View>
         </Pressable>
 
-        {/* 右：探索 */}
+        {/* 右：行程 */}
         <Pressable
           style={styles.tabItem}
-          onPress={() => onTabChange("Explore")}
+          onPress={() => onTabChange("Trips")}
         >
-          <Text style={[styles.tabIcon, activeTab === "Explore" && styles.tabIconActive]}>
-            🗺️
+          <Text style={[styles.tabIcon, activeTab === "Trips" && styles.tabIconActive]}>
+            📋
           </Text>
-          <Text style={[styles.tabLabel, activeTab === "Explore" && styles.tabLabelActive]}>
-            探索
+          <Text style={[styles.tabLabel, activeTab === "Trips" && styles.tabLabelActive]}>
+            行程
           </Text>
         </Pressable>
       </View>

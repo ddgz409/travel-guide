@@ -2,15 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  InteractionManager,
   Linking,
   Platform,
-  ScrollView,
+  Pressable,
   Share as RnShare,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { NativeViewGestureHandler, ScrollView } from "react-native-gesture-handler";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { GenerateProgressEvent } from "@travel-guide/shared";
 import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
 import type {
@@ -18,16 +21,19 @@ import type {
   Trip,
 } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../../api/client";
+import { api, apiBase, getStoredToken } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-import { DayMap } from "../../components/DayMap/DayMap";
+import { HeroRouteMap } from "../../components/HeroRouteMap";
+import { TripDetailSheet } from "../../components/TripDetailSheet";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { arrayBufferToBase64 } from "../../utils/base64";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
-import { ItemBlock } from "./ItemBlock";
+import { ItemListRow } from "./ItemListRow";
 import { HotelNotesRow } from "./HotelNotesRow";
+import { readGenerateSSE } from "../../utils/sseClient";
+import { TripGeneratingView } from "./TripGeneratingView";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "TripDetail">;
@@ -36,8 +42,18 @@ function hasCoords(loc: { lng?: number | null; lat?: number | null } | null | un
   return loc != null && loc.lng != null && loc.lat != null;
 }
 
+function buildTripChatPrompt(trip: Trip): string {
+  const hint = (trip.preferences as Record<string, unknown> | undefined)?.chat_hint;
+  const extra =
+    typeof hint === "string" && hint.trim()
+      ? `另外请回答：${hint.trim()}`
+      : "请帮我看看有没有可以优化的地方。";
+  return `关于这次${trip.destination}旅行（${trip.start_date} 至 ${trip.end_date}，${trip.travelers} 人），${extra}`;
+}
+
 export function TripDetailScreen({ route, navigation }: Props) {
   const { tripId } = route.params;
+  const insets = useSafeAreaInsets();
   const { user, isGuest } = useAuth();
   const canEdit = Boolean(user) || isGuest;
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -45,22 +61,29 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [activeDay, setActiveDay] = useState(0);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
+  const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
+  const heroMapRef = useRef<NativeViewGestureHandler>(null);
+  const [genMessage, setGenMessage] = useState("正在启动生成…");
+  const [genReadable, setGenReadable] = useState("");
+  const [genPhase, setGenPhase] = useState("");
+  const [genStreaming, setGenStreaming] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await api.trips.get(tripId);
       setTrip((prev) => {
         if (
-          prev &&
-          prev.status === data.status &&
-          prev.updated_at === data.updated_at &&
-          prev.status === "generating"
+          data.status === "generating" ||
+          !prev ||
+          prev.status !== data.status ||
+          prev.updated_at !== data.updated_at
         ) {
-          return prev;
+          return data;
         }
-        return data;
+        return prev;
       });
       setError(null);
       return data;
@@ -70,26 +93,86 @@ export function TripDetailScreen({ route, navigation }: Props) {
     }
   }, [tripId]);
 
+  const applyProgress = useCallback((evt: GenerateProgressEvent) => {
+    if (evt.phase) setGenPhase(evt.phase);
+    if (evt.message) setGenMessage(evt.message.replace(/\*\*/g, ""));
+    if (evt.readable) {
+      setGenReadable(evt.readable);
+      setGenStreaming(true);
+    }
+    if (evt.done || evt.status === "ready" || evt.status === "failed") {
+      setGenStreaming(false);
+    }
+  }, []);
+
+  const subscribeGenerateStream = useCallback(async () => {
+    streamAbortRef.current?.abort();
+    if (progressPollRef.current) {
+      clearInterval(progressPollRef.current);
+      progressPollRef.current = null;
+    }
+
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
+    setGenStreaming(true);
+
+    const token = await getStoredToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const url = `${apiBase}/trips/${tripId}/generate-stream`;
+    const sseOk = await readGenerateSSE(
+      url,
+      headers,
+      (evt) => {
+        applyProgress(evt);
+        if (evt.done || evt.status === "ready" || evt.status === "failed") {
+          void load();
+        }
+      },
+      ctrl.signal,
+    );
+
+    if (!sseOk && !ctrl.signal.aborted) {
+      progressPollRef.current = setInterval(async () => {
+        try {
+          const evt = await api.trips.generateProgress(tripId);
+          applyProgress(evt);
+          if (evt.done) {
+            if (progressPollRef.current) clearInterval(progressPollRef.current);
+            progressPollRef.current = null;
+            await load();
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 450);
+    }
+  }, [applyProgress, load, tripId]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const data = await load();
       if (cancelled || !data) return;
       if (data.status === "generating") {
+        void subscribeGenerateStream();
         pollRef.current = setInterval(async () => {
           const next = await load();
           if (next && next.status !== "generating" && pollRef.current) {
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
-        }, 4000);
+        }, 5000);
       }
     })();
     return () => {
       cancelled = true;
+      streamAbortRef.current?.abort();
       if (pollRef.current) clearInterval(pollRef.current);
+      if (progressPollRef.current) clearInterval(progressPollRef.current);
     };
-  }, [load]);
+  }, [load, tripId, subscribeGenerateStream]);
 
   const days = trip?.days || [];
   const currentDay = days[activeDay] || days[0];
@@ -100,19 +183,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
   );
 
   useEffect(() => {
-    setMapReady(false);
-    let cleared = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const handle = InteractionManager.runAfterInteractions(() => {
-      timeoutId = setTimeout(() => {
-        if (!cleared) setMapReady(true);
-      }, 280);
-    });
-    return () => {
-      cleared = true;
-      handle.cancel?.();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
+    setPageScrollEnabled(true);
   }, [currentDay?.id]);
 
   const budgetByType = useMemo(() => {
@@ -240,11 +311,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
   if (trip.status === "generating") {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.brand} size="large" />
-        <Text style={styles.generating}>正在生成攻略…</Text>
-        <Text style={styles.hint}>通常需要一两分钟</Text>
-      </View>
+      <TripGeneratingView
+        trip={trip}
+        message={genMessage}
+        readable={genReadable}
+        phase={genPhase}
+        streaming={genStreaming}
+      />
     );
   }
 
@@ -252,14 +325,51 @@ export function TripDetailScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>生成失败</Text>
-        <Text style={styles.hint}>{trip.error_msg || "请返回重试"}</Text>
+        <Text style={styles.hint}>
+          {trip.error_msg ||
+            "目的地可能不存在或暂无法生成，请返回修改后重试"}
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>{trip.title}</Text>
+    <View style={styles.root}>
+      <View style={StyleSheet.absoluteFill}>
+        <Pressable
+          style={[styles.mapBackBtn, { top: Math.max(insets.top, 8) + 4 }]}
+          onPress={() => navigation.goBack()}
+          hitSlop={8}
+        >
+          <Text style={styles.mapBackText}>‹ 返回</Text>
+        </Pressable>
+        <FadeSwitch
+          switchKey={`${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+        >
+          <HeroRouteMap
+            ref={heroMapRef}
+            fill
+            tripId={trip.id}
+            dayId={currentDay?.id}
+            items={selectedItems}
+            destination={trip.destination}
+            title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
+            showCategoryChips
+            onMapGestureChange={(active) => setPageScrollEnabled(!active)}
+          />
+        </FadeSwitch>
+      </View>
+
+      <TripDetailSheet>
+        <ScrollView
+          style={styles.scrollBody}
+          contentContainerStyle={styles.content}
+          nestedScrollEnabled
+          scrollEnabled={pageScrollEnabled}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        <Text style={styles.title}>{trip.title}</Text>
       <Text style={styles.meta}>
         {trip.destination} · {trip.start_date} → {trip.end_date} ·{" "}
         {trip.travelers} 人
@@ -269,6 +379,20 @@ export function TripDetailScreen({ route, navigation }: Props) {
       </Text>
 
       <View style={styles.actions}>
+        <PressScale
+          style={[styles.actionBtn, styles.actionAi]}
+          onPress={() =>
+            navigation.push("Chat", {
+              tripId: trip.id,
+              prefillMessage: buildTripChatPrompt(trip),
+              chatSessionId: String(Date.now()),
+            })
+          }
+        >
+          <Text style={[styles.actionText, { color: colors.brandHot }]}>
+            问 AI 助手
+          </Text>
+        </PressScale>
         <PressScale
           style={[styles.actionBtn, styles.actionPrimary]}
           onPress={onShare}
@@ -327,7 +451,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
       ) : null}
 
       <FadeSwitch
-        switchKey={`${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+        switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
       >
         <ScrollView
           horizontal
@@ -382,33 +506,15 @@ export function TripDetailScreen({ route, navigation }: Props) {
             .some((n) => n.selected && hasCoords(n.location));
           return (
             <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
-              <ItemBlock
+              <ItemListRow
                 item={item}
                 tripId={trip.id}
-                canEdit={canEdit}
-                onChanged={setTrip}
+                destination={trip.destination}
                 hasNextRoute={hasNextRoute}
               />
             </FadeSlideIn>
           );
         })}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>当日路线地图</Text>
-          {mapReady ? (
-            <DayMap
-              tripId={trip.id}
-              dayId={currentDay?.id}
-              items={selectedItems}
-              title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
-            />
-          ) : (
-            <View style={styles.mapPlaceholder}>
-              <ActivityIndicator color={colors.brand} />
-              <Text style={styles.mapPlaceholderText}>地图加载中…</Text>
-            </View>
-          )}
-        </View>
 
         <View style={styles.budget}>
           <Text style={styles.sectionTitle}>预算估算</Text>
@@ -435,6 +541,8 @@ export function TripDetailScreen({ route, navigation }: Props) {
           refs={trip.external_refs}
         />
       </FadeSwitch>
-    </ScrollView>
+        </ScrollView>
+      </TripDetailSheet>
+    </View>
   );
 }

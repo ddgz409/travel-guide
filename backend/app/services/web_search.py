@@ -61,6 +61,34 @@ def _bing_search(query: str, max_results: int = 6) -> list[dict[str, str]]:
         return []
 
 
+def search_web_snippets(query: str, max_results: int = 4) -> list[dict[str, str]]:
+    """通用网页搜索，供聊天等场景注入 LLM 上下文。"""
+    q = (query or "").strip()
+    if not q:
+        return []
+    return _bing_search(q, max_results=max_results)
+
+
+def format_web_snippets(results: list[dict[str, str]]) -> str:
+    """把搜索结果格式化为可注入 system prompt 的文本。"""
+    if not results:
+        return ""
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        title = (r.get("title") or "").strip()
+        snippet = (r.get("snippet") or "").strip()
+        url = (r.get("url") or "").strip()
+        if not title and not snippet:
+            continue
+        block = f"{i}. {title}"
+        if snippet:
+            block += f"\n   摘要：{snippet}"
+        if url:
+            block += f"\n   来源：{url}"
+        lines.append(block)
+    return "\n".join(lines)
+
+
 def _strip_html(html: str) -> str:
     """简易 HTML 正文提取。"""
     html = re.sub(r"<(script|style|nav|footer|header)[^>]*>.*?</\1>", "", html, flags=re.S | re.I)

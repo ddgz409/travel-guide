@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -9,11 +9,22 @@ import {
   TextInput,
   View,
 } from "react-native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../../api/client";
 import { colors } from "../../theme";
 import { useModelPicker } from "../../components/ModelPicker";
+import { getChatSearchSubtitle } from "../../utils/chatSearch";
+import {
+  detectPlanIntent,
+  planActionToGenerateParams,
+  type PlanNavigateAction,
+} from "../../utils/chatIntent";
+import type { AppStackParamList } from "../../navigation/types";
+import { SmartPlanPanel } from "./SmartPlanPanel";
 import { styles } from "./styles";
+
+type Props = NativeStackScreenProps<AppStackParamList, "Chat">;
 
 type Msg = {
   role: "user" | "assistant";
@@ -21,28 +32,62 @@ type Msg = {
   reasoning?: string;
 };
 
+type PlanAction = PlanNavigateAction;
+
 const WELCOME = `你好！我是「旅迹」AI 旅行助手 🌍
 
-我可以帮你推荐目的地、景点美食、规划行程、回答签证天气等旅行问题。直接告诉我想去哪吧！`;
+我可以帮你推荐目的地、景点美食、规划行程、回答签证天气等旅行问题。
+
+需要规划行程？点右上角「智能规划」，输入关键词即可。`;
 
 const QUICK = [
   { label: "🍜 杭州美食", text: "杭州有什么必吃的美食和餐厅？" },
-  { label: "🏔️ 西藏攻略", text: "去西藏玩要准备什么？有没有5天行程推荐？" },
+  {
+    label: "📋 北京行程",
+    text: "帮我规划明天去北京的旅游行程，并建议穿衣搭配",
+  },
   { label: "✈️ 三亚亲子", text: "带3岁孩子去三亚，推荐适合亲子的酒店和景点" },
   { label: "🌸 日本樱花", text: "明年春天想去日本看樱花，什么时候去最好？" },
 ];
 
-export function ChatScreen() {
+export function ChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  const tripId = route.params?.tripId;
   const { curModel, openModelPopup, modelModal } = useModelPicker();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [smartPlanMode, setSmartPlanMode] = useState(false);
+  const smartPlanBackRef = useRef<(() => boolean) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
+  const initialSentRef = useRef(false);
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+  }
+
+  const goGenerateFromAction = useCallback(
+    (action: PlanAction) => {
+      navigation.navigate("Generate", planActionToGenerateParams(action));
+    },
+    [navigation],
+  );
+
+  function handlePlanIntent(content: string, updated: Msg[]): boolean {
+    if (tripId) return false;
+    const action = detectPlanIntent(content);
+    if (!action) return false;
+    setMsgs([
+      ...updated,
+      {
+        role: "assistant",
+        content: `好的，我来帮你规划 **${action.destination}** 的行程，正在打开专属定制…\n\n（${action.start_date} → ${action.end_date}）`,
+      },
+    ]);
+    setLoading(false);
+    setTimeout(() => goGenerateFromAction(action), 400);
+    return true;
   }
 
   async function send(text?: string) {
@@ -56,19 +101,27 @@ export function ChatScreen() {
     setLoading(true);
     scrollToBottom();
 
+    if (handlePlanIntent(content, updated)) return;
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
     try {
-      const llmOverride: { provider: string; model: string; api_key?: string; base_url?: string } = {
+      const llmOverride: {
+        provider: string;
+        model: string;
+        api_key?: string;
+        base_url?: string;
+        web_search?: "auto";
+      } = {
         provider: curModel.provider,
         model: curModel.model,
+        web_search: "auto",
       };
       if (curModel.apiKey) llmOverride.api_key = curModel.apiKey;
       if (curModel.baseUrl) llmOverride.base_url = curModel.baseUrl;
-      const res = await api.chat.stream(updated, llmOverride);
+      const res = await api.chat.stream(updated, llmOverride, tripId);
 
-      // 真流式读取：用 reader 逐块处理，实现逐字显示
       const reader = res.body?.getReader();
       if (!reader) throw new Error("不支持流式读取");
 
@@ -87,7 +140,6 @@ export function ChatScreen() {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        // 保留最后不完整的一行
         buffer = lines.pop() || "";
 
         for (const line of lines) {
@@ -99,14 +151,18 @@ export function ChatScreen() {
           }
           try {
             const parsed = JSON.parse(data);
-            if (parsed.type === "reasoning") {
+            if (parsed.type === "action" && parsed.payload?.action === "navigate_generate") {
+              if (tripId) break;
+              setLoading(false);
+              goGenerateFromAction(parsed.payload as PlanAction);
+              return;
+            } else if (parsed.type === "reasoning") {
               aiReasoning += parsed.content;
             } else if (parsed.type === "content") {
               aiContent += parsed.content;
             } else if (parsed.type === "error") {
               aiContent += parsed.content;
             }
-            // 实时更新
             msgsWithAI[msgsWithAI.length - 1] = {
               role: "assistant",
               content: aiContent,
@@ -127,17 +183,59 @@ export function ChatScreen() {
     }
   }
 
+  useEffect(() => {
+    setMsgs([]);
+    setInput("");
+    setLoading(false);
+    initialSentRef.current = false;
+  }, [route.params?.chatSessionId, route.params?.tripId]);
+
+  useEffect(() => {
+    const prefill = route.params?.prefillMessage?.trim();
+    if (prefill) {
+      setInput(prefill);
+      return;
+    }
+    const initial = route.params?.initialMessage?.trim();
+    if (!initial || initialSentRef.current) return;
+    initialSentRef.current = true;
+    void send(initial);
+  }, [
+    route.params?.prefillMessage,
+    route.params?.initialMessage,
+    route.params?.chatSessionId,
+  ]);
+
   function stop() {
     abortRef.current?.abort();
     setLoading(false);
     abortRef.current = null;
   }
 
+  const handleSmartPlanBack = useCallback(() => {
+    if (smartPlanBackRef.current?.()) return;
+    setSmartPlanMode(false);
+  }, []);
+
+  useEffect(() => {
+    if (!smartPlanMode) return;
+    const unsub = navigation.addListener("beforeRemove", (e) => {
+      if (smartPlanBackRef.current?.()) {
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      setSmartPlanMode(false);
+    });
+    return unsub;
+  }, [navigation, smartPlanMode]);
+
   function clear() {
     setMsgs([]);
   }
 
   const showWelcome = msgs.length === 0;
+  const headerSub = getChatSearchSubtitle(curModel.provider, curModel.label);
 
   return (
     <KeyboardAvoidingView
@@ -145,25 +243,58 @@ export function ChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
-      {/* 顶部 */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>AI 旅行助手</Text>
-          <Text style={styles.headerSub}>智谱 GLM-4 · 联网搜索</Text>
+          {smartPlanMode ? (
+            <Pressable onPress={handleSmartPlanBack} hitSlop={8}>
+              <Text style={styles.backLink}>‹ 返回</Text>
+            </Pressable>
+          ) : null}
+          <Text style={styles.headerTitle}>
+            {smartPlanMode ? "智能规划" : "AI 旅行助手"}
+          </Text>
+          {!smartPlanMode ? (
+            <Text style={styles.headerSub}>
+              {tripId ? `${headerSub} · 已关联行程` : headerSub}
+            </Text>
+          ) : (
+            <Text style={styles.headerSub}>输入关键词，一键生成行程</Text>
+          )}
         </View>
-        {msgs.length > 0 && (
-          <Pressable style={styles.clearBtn} onPress={clear}>
-            <Text style={styles.clearText}>清空</Text>
-          </Pressable>
-        )}
+        <View style={styles.headerActions}>
+          {!smartPlanMode ? (
+            <Pressable
+              style={styles.smartPlanBtn}
+              onPress={() => setSmartPlanMode(true)}
+            >
+              <Text style={styles.smartPlanBtnText}>智能规划</Text>
+            </Pressable>
+          ) : null}
+          {!smartPlanMode && msgs.length > 0 ? (
+            <Pressable style={styles.clearBtn} onPress={clear}>
+              <Text style={styles.clearText}>清空</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
-      {/* 消息区域 */}
-      {showWelcome ? (
+      {smartPlanMode ? (
+        <SmartPlanPanel
+          navigation={navigation}
+          onClose={() => setSmartPlanMode(false)}
+          backHandlerRef={smartPlanBackRef}
+        />
+      ) : showWelcome ? (
         <View style={styles.welcomeWrap}>
           <Text style={styles.welcomeEmoji}>🌍</Text>
           <Text style={styles.welcomeText}>{WELCOME}</Text>
           <View style={styles.quickRow}>
+            <Pressable
+              style={styles.smartPlanEntry}
+              onPress={() => setSmartPlanMode(true)}
+            >
+              <Text style={styles.smartPlanEntryText}>✦ 体验智能规划</Text>
+            </Pressable>
             {QUICK.map((q) => (
               <Pressable
                 key={q.label}
@@ -193,7 +324,6 @@ export function ChatScreen() {
                     isUser ? styles.msgUser : styles.msgAI,
                   ]}
                 >
-                  {/* 思考过程 */}
                   {item.reasoning ? (
                     <View style={styles.reasoningBox}>
                       <Text style={styles.reasoningLabel}>
@@ -204,7 +334,6 @@ export function ChatScreen() {
                       <Text style={styles.reasoningText}>{item.reasoning}</Text>
                     </View>
                   ) : null}
-                  {/* 正文 */}
                   <Text style={isUser ? styles.msgUserText : styles.msgAIText}>
                     {item.content}
                   </Text>
@@ -215,15 +344,14 @@ export function ChatScreen() {
         />
       )}
 
-      {loading && !msgs[msgs.length - 1]?.reasoning && (
+      {!smartPlanMode && loading && !msgs[msgs.length - 1]?.reasoning && (
         <View style={styles.loadingDot}>
           <ActivityIndicator size="small" color={colors.brand} />
         </View>
       )}
 
-      {/* 底部输入区 */}
+      {!smartPlanMode ? (
       <View style={styles.inputBar}>
-        {/* 模型按钮 */}
         <Pressable style={styles.modelBtn} onPress={openModelPopup}>
           <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
         </Pressable>
@@ -253,8 +381,8 @@ export function ChatScreen() {
           </Pressable>
         )}
       </View>
+      ) : null}
 
-      {/* 模型选择弹窗（两级，与专属定制共用） */}
       {modelModal}
     </KeyboardAvoidingView>
   );

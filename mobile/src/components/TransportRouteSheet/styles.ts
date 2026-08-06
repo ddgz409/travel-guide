@@ -31,7 +31,7 @@ export const styles = StyleSheet.create({
   cardSub: { marginTop: 4, fontSize: 11, color: colors.muted },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.45)",
   } as const,
   sheet: {
@@ -108,7 +108,7 @@ export const styles = StyleSheet.create({
   },
   mapFallbackText: { fontSize: 12, color: colors.muted, textAlign: "center" },
   mapLoading: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.45)",

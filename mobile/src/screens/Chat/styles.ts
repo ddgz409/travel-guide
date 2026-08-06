@@ -14,6 +14,15 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.card,
   },
   headerLeft: { flex: 1 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  backLink: { fontSize: 14, color: colors.brand, fontWeight: "600", marginBottom: 4 },
+  smartPlanBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.ink,
+  },
+  smartPlanBtnText: { fontSize: 13, color: "#fff", fontWeight: "700" },
   headerTitle: { fontSize: 18, fontWeight: "800", color: colors.ink },
   headerSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
   clearBtn: {
@@ -35,6 +44,16 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  smartPlanEntry: {
+    width: "100%",
+    backgroundColor: colors.ink,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  smartPlanEntryText: { fontSize: 15, color: "#fff", fontWeight: "700" },
   quickChip: {
     borderWidth: 1,
     borderColor: colors.line,

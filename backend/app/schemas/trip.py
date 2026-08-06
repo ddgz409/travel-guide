@@ -113,6 +113,21 @@ class QuickRecommendResponse(BaseModel):
     cards: list[QuickRecommendCard]
 
 
+class ValidateDestinationRequest(BaseModel):
+    """校验目的地是否有效。"""
+
+    destination: str = Field(min_length=1, max_length=128)
+
+
+class ValidateDestinationResponse(BaseModel):
+    """目的地校验结果。"""
+
+    valid: bool
+    message: str = ""
+    resolved_name: str | None = None
+    suggestions: list[str] = Field(default_factory=list)
+
+
 class TripGenerateRequest(BaseModel):
     """生成攻略请求。"""
 

@@ -153,7 +153,7 @@ export default function ChatPage() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--line)] shrink-0">
         <div>
           <h1 className="text-lg font-bold text-[var(--ink)]">AI 旅行助手</h1>
-          <p className="text-xs text-[var(--muted)]">智谱 GLM-4 · 联网搜索</p>
+          <p className="text-xs text-[var(--muted)]">GLM-4 · 智谱联网搜索（可切换模型）</p>
         </div>
         {messages.length > 0 && (
           <button

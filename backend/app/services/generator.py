@@ -32,6 +32,7 @@ from app.services.destination_landmarks import (
 )
 from app.services.xiaohongshu_client import search_xiaohongshu
 from app.services.llm_client import LLMClient, LLMError, get_llm_client
+from app.services.generation_progress import append_preview, clear_progress, update_progress
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +126,33 @@ class GuideGenerator:
         在后台任务中调用。llm 为用户自定义客户端时优先使用。
         """
         active_llm = llm or self.llm
+        trip_id = str(trip.id)
         try:
             days_count = (trip.end_date - trip.start_date).days + 1
             if days_count < 1:
                 raise GeneratorError("行程天数无效")
 
+            update_progress(
+                trip_id,
+                phase="geocode",
+                message=f"正在定位 **{trip.destination}**…",
+            )
             # 1. 地理编码
-            geo = self.amap.geocode(trip.destination)
+            try:
+                geo = self.amap.geocode(trip.destination)
+            except AmapError as e:
+                from app.services.destination_validator import _friendly_amap_message
+
+                raise GeneratorError(
+                    _friendly_amap_message(trip.destination, e)
+                ) from e
             logger.info("地理编码 %s -> %s", trip.destination, geo.location)
+
+            update_progress(
+                trip_id,
+                phase="poi",
+                message=f"检索 {trip.destination} 景点、美食与住宿…",
+            )
 
             # 2. POI 检索（候选池）—— 扩大半径 + 按评分排序
             must_include = (trip.preferences or {}).get("must_include") or []
@@ -157,6 +177,11 @@ class GuideGenerator:
             # 2.5 网页搜索已关闭（Bing 常验证码且拖慢 5–15s）；小红书/携程改为即时链接
             web_results: list[dict[str, Any]] = []
 
+            update_progress(
+                trip_id,
+                phase="refs",
+                message="整理小红书、携程参考链接…",
+            )
             external_refs = self._fetch_external_refs(trip.destination)
             trip.external_refs = external_refs
             db.commit()
@@ -167,15 +192,27 @@ class GuideGenerator:
                 len(external_refs.get("ctrip") or []),
             )
 
+            update_progress(
+                trip_id,
+                phase="llm",
+                message=f"AI 正在规划 {days_count} 日行程（经典 / 人文 / 美食三条路线）…",
+                preview="",
+            )
             # 3 & 4. LLM 一次生成多条路线 + 解析校验
             try:
                 routes = self._generate_routes_via_llm(
-                    pool, trip, days_count, web_results, external_refs, llm=active_llm
+                    pool, trip, days_count, web_results, external_refs, llm=active_llm,
+                    on_chunk=lambda _piece, acc: append_preview(trip_id, _piece),
                 )
             except LLMError as e:
                 logger.warning("LLM 生成失败，降级处理: %s", e)
                 routes = self._fallback_routes(pool, trip, days_count)
 
+            update_progress(
+                trip_id,
+                phase="save",
+                message="整理路线方案、预算与地图…",
+            )
             for route in routes:
                 self._assign_nearest_hotel(route.get("days") or [], pool)
 
@@ -217,12 +254,25 @@ class GuideGenerator:
                 len(routes),
                 selected.get("id"),
             )
+            clear_progress(trip_id)
 
-        except Exception as e:
-            logger.exception("攻略生成失败 trip=%s", trip.id)
+        except GeneratorError as e:
+            logger.warning("攻略生成失败 trip=%s: %s", trip.id, e)
             trip.status = "failed"
             trip.error_msg = str(e)[:500]
             db.commit()
+            clear_progress(trip_id)
+        except Exception as e:
+            logger.exception("攻略生成失败 trip=%s", trip.id)
+            trip.status = "failed"
+            if isinstance(e, AmapError):
+                from app.services.destination_validator import _friendly_amap_message
+
+                trip.error_msg = _friendly_amap_message(trip.destination, e)[:500]
+            else:
+                trip.error_msg = str(e)[:500]
+            db.commit()
+            clear_progress(trip_id)
 
     def regenerate_day(
         self,
@@ -697,13 +747,23 @@ class GuideGenerator:
         web_results: list[dict[str, Any]] | None = None,
         external_refs: dict | None = None,
         llm: LLMClient | None = None,
+        on_chunk: Any | None = None,
     ) -> list[dict[str, Any]]:
         """一次 LLM 调用生成多条路线。"""
         user_prompt = self._build_user_prompt(
             pool, trip, days_count, web_results, external_refs
         )
         client = llm or self.llm
-        result = client.chat_json(SYSTEM_PROMPT, user_prompt)
+
+        def _on_chunk(piece: str, _acc: str) -> None:
+            if on_chunk:
+                on_chunk(piece, _acc)
+
+        result = client.chat_json(
+            SYSTEM_PROMPT,
+            user_prompt,
+            on_chunk=_on_chunk if on_chunk else None,
+        )
         routes = self._parse_routes_payload(result, pool, trip)
         if len(routes) < 1:
             raise LLMError("LLM 未返回有效路线")

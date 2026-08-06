@@ -1,11 +1,12 @@
 from datetime import date
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from app.services.generator import GuideGenerator
 
 
 def test_build_user_prompt_includes_external_refs():
-    gen = GuideGenerator.__new__(GuideGenerator)
+    gen = GuideGenerator(amap=MagicMock(), llm=MagicMock())
     trip = SimpleNamespace(
         destination="成都",
         start_date=date(2026, 7, 1),
@@ -30,7 +31,8 @@ def test_build_user_prompt_includes_external_refs():
             "meta": None,
         }],
     }
-    prompt = gen._build_user_prompt(pool, trip, 3, web_results=None, external_refs=refs)
+    with patch("app.services.generator.resolve_landmarks", return_value=[]):
+        prompt = gen._build_user_prompt(pool, trip, 3, web_results=None, external_refs=refs)
     assert "小红书" in prompt
     assert "宽窄巷子打卡" in prompt
     assert "携程" in prompt
