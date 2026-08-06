@@ -38,7 +38,7 @@ export const styles = StyleSheet.create({
   legendSwatch: {
     width: 14,
     height: 14,
-    borderRadius: 3,
+    borderRadius: 14, borderCurve: "continuous",
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: "#B8B8B8",

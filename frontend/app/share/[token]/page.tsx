@@ -75,12 +75,12 @@ export default function SharePage() {
 
       <div className="space-y-6">
         {days.map((day: Day) => (
-          <div key={day.id} className="bg-white rounded-2xl border border-gray-200 p-5">
+          <div key={day.id} className="bg-white rounded-3xl border border-gray-200 p-5">
             <h2 className="font-semibold mb-1">
               Day {day.day_index} <span className="text-gray-400 text-sm font-normal">· {day.date.slice(5)}</span>
             </h2>
             {day.summary && (
-              <p className="text-sm text-amber-800 bg-amber-50 rounded-lg p-2 mb-3">
+              <p className="text-sm text-amber-800 bg-amber-50 rounded-xl p-2 mb-3">
                 📝 {day.summary}
               </p>
             )}
@@ -121,7 +121,7 @@ export default function SharePage() {
         ))}
       </div>
 
-      <div className="mt-6 bg-white rounded-2xl border border-gray-200 p-5 text-center">
+      <div className="mt-6 bg-white rounded-3xl border border-gray-200 p-5 text-center">
         <span className="text-gray-600">预估总费用</span>
         <span className="text-2xl font-bold text-orange-600 ml-2">
           ¥{Math.round(trip.budget_total ?? totalCost * trip.travelers).toLocaleString()}

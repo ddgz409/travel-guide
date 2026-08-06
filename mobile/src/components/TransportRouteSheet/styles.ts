@@ -4,7 +4,7 @@ import { colors } from "../../theme";
 export const styles = StyleSheet.create({
   card: {
     marginTop: 10,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: "#d6e4ff",
     backgroundColor: "#f0f7ff",
@@ -15,7 +15,7 @@ export const styles = StyleSheet.create({
   badge: {
     width: 22,
     height: 22,
-    borderRadius: 11,
+    borderRadius: 20, borderCurve: "continuous",
     backgroundColor: "#1a66ff",
     alignItems: "center",
     justifyContent: "center",
@@ -37,8 +37,8 @@ export const styles = StyleSheet.create({
   sheet: {
     maxHeight: "92%",
     backgroundColor: "#fff",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 28, borderCurve: "continuous",
+    borderTopRightRadius: 28, borderCurve: "continuous",
     overflow: "hidden",
   },
   edgeHint: {
@@ -47,7 +47,7 @@ export const styles = StyleSheet.create({
     top: 80,
     bottom: 80,
     width: 3,
-    borderRadius: 2,
+    borderRadius: 12, borderCurve: "continuous",
     backgroundColor: "rgba(26,102,255,0.35)",
     zIndex: 2,
   },
@@ -84,7 +84,7 @@ export const styles = StyleSheet.create({
   tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingTop: 8 },
   tab: {
     flex: 1,
-    borderRadius: 20,
+    borderRadius: 30, borderCurve: "continuous",
     paddingVertical: 8,
     alignItems: "center",
     backgroundColor: colors.bg,
@@ -96,7 +96,7 @@ export const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 12,
     height: 220,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     overflow: "hidden",
     backgroundColor: "#eef2f7",
   },
@@ -122,7 +122,7 @@ export const styles = StyleSheet.create({
   ctrlBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 28, borderCurve: "continuous",
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",

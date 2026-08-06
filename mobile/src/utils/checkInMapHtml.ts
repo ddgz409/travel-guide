@@ -230,7 +230,7 @@ export function buildCheckInMapHtml(
     position: absolute; left: 10px; bottom: 8px;
     font: 600 11px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     color: #757575; background: rgba(255,255,255,0.92);
-    padding: 4px 10px; border-radius: 999px;
+    padding: 4px 10px; border-radius: 10px;
     pointer-events: none;
   }
   .hint {

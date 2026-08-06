@@ -166,7 +166,7 @@ export default function HomePage() {
           {/* 搜索条 */}
           <form
             onSubmit={onSearch}
-            className="anim-fade-up w-full max-w-[640px] bg-white rounded-xl overflow-hidden shadow-[var(--shadow)]"
+            className="anim-fade-up w-full max-w-[640px] bg-white rounded-2xl overflow-hidden shadow-[var(--shadow)]"
           >
             <div className="flex border-b border-[var(--line)] text-[13px]">
               {(["全部", "目的地", "攻略"] as const).map((t) => (
@@ -239,7 +239,7 @@ export default function HomePage() {
             <Link
               key={x.title}
               href={x.href}
-              className="rounded-xl border border-[var(--line)] px-4 py-3 hover:border-[var(--brand)] hover:shadow-sm transition-all bg-[var(--background)]/40"
+              className="rounded-2xl border border-[var(--line)] px-4 py-3 hover:border-[var(--brand)] hover:shadow-sm transition-all bg-[var(--background)]/40"
             >
               <div className="text-[var(--ink)] font-semibold text-[14px]">
                 {x.title}
@@ -267,7 +267,7 @@ export default function HomePage() {
             <Link
               key={it.label}
               href={`/generate?dest=北京`}
-              className="chip rounded-2xl px-4 py-4 flex items-center gap-3 hover:-translate-y-0.5"
+              className="chip rounded-3xl px-4 py-4 flex items-center gap-3 hover:-translate-y-0.5"
             >
               <span className="text-[22px]">{it.emoji}</span>
               <div>
@@ -295,7 +295,7 @@ export default function HomePage() {
               key={d.name}
               type="button"
               onClick={() => go(d.name)}
-              className="group relative aspect-[4/5] overflow-hidden rounded-2xl text-left"
+              className="group relative aspect-[4/5] overflow-hidden rounded-3xl text-left"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -337,7 +337,7 @@ export default function HomePage() {
             <Link
               key={n.title}
               href={`/generate?dest=${encodeURIComponent(n.dest)}`}
-              className="group bg-white rounded-2xl overflow-hidden border border-[var(--line)] hover:shadow-[var(--shadow)] transition-shadow"
+              className="group bg-white rounded-3xl overflow-hidden border border-[var(--line)] hover:shadow-[var(--shadow)] transition-shadow"
             >
               <div className="relative aspect-[16/10] overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

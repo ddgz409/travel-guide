@@ -12,7 +12,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.card,
-    borderRadius: 20,
+    borderRadius: 30, borderCurve: "continuous",
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
   tabTextOn: { color: "#fff" },
   summary: {
     backgroundColor: colors.card,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     padding: 12,
     color: colors.ink,
     marginBottom: 12,
@@ -29,7 +29,7 @@ export const styles = StyleSheet.create({
   },
   item: {
     backgroundColor: colors.card,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
     padding: 12,

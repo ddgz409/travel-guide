@@ -114,7 +114,7 @@ export default async function BeijingPreviewPage() {
       </section>
 
       <div className="site-container -mt-5 relative z-10">
-        <div className="bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] px-4 py-3 mb-6 flex flex-wrap gap-2">
+        <div className="bg-white rounded-3xl border border-[var(--line)] shadow-[var(--shadow)] px-4 py-3 mb-6 flex flex-wrap gap-2">
           {days.map((d) => (
             <a
               key={d.id}
@@ -138,7 +138,7 @@ export default async function BeijingPreviewPage() {
             <section
               key={day.id}
               id={`day-${day.day_index}`}
-              className="bg-white rounded-2xl border border-[var(--line)] overflow-hidden"
+              className="bg-white rounded-3xl border border-[var(--line)] overflow-hidden"
             >
               <div className="px-5 sm:px-6 py-4 border-b border-[var(--line)] bg-[var(--background)]/60">
                 <div className="flex items-baseline gap-3">
@@ -222,7 +222,7 @@ export default async function BeijingPreviewPage() {
         </div>
 
         {trip.budget_total != null && (
-          <div className="mt-8 rounded-2xl bg-[var(--ink)] text-white px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="mt-8 rounded-3xl bg-[var(--ink)] text-white px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
             <div>
               <div className="text-[13px] text-white/60">行程预算估算</div>
               <div className="font-display text-[28px] font-semibold mt-1">

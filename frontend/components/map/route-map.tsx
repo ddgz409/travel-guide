@@ -134,7 +134,7 @@ export function RouteMap({
   if (!key) {
     return (
       <div
-        className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-[var(--background)] text-[12px] text-[var(--muted)] ${className}`}
+        className={`flex items-center justify-center rounded-2xl border border-dashed border-[var(--line)] bg-[var(--background)] text-[12px] text-[var(--muted)] ${className}`}
         style={{ height }}
       >
         配置 NEXT_PUBLIC_AMAP_JS_KEY 后显示路线地图
@@ -145,7 +145,7 @@ export function RouteMap({
   return (
     <div
       ref={containerRef}
-      className={`w-full overflow-hidden rounded-xl border border-[#d6e4ff] bg-[#f0f7ff] ${className}`}
+      className={`w-full overflow-hidden rounded-2xl border border-[#d6e4ff] bg-[#f0f7ff] ${className}`}
       style={{ height }}
     />
   );

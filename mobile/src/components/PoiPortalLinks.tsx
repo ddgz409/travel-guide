@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f7f7f7",
-    borderRadius: 20,
+    borderRadius: 30, borderCurve: "continuous",
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   badge: {
     width: 18,
     height: 18,
-    borderRadius: 4,
+    borderRadius: 14, borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 6,

@@ -34,3 +34,50 @@ export const cardShadow = {
   shadowOffset: { width: 0, height: 6 },
   elevation: 3,
 } as const;
+
+/** 标准圆角 → 超椭圆视觉半径（iOS borderCurve: continuous） */
+const SQUIRCLE_RADIUS: Record<number, number> = {
+  1: 10,
+  2: 12,
+  3: 14,
+  4: 14,
+  5: 16,
+  6: 16,
+  8: 18,
+  10: 20,
+  11: 20,
+  12: 22,
+  14: 24,
+  16: 26,
+  17: 26,
+  18: 28,
+  20: 30,
+  21: 30,
+  22: 32,
+  24: 34,
+  28: 36,
+  32: 40,
+  44: 48,
+  52: 56,
+};
+
+/** 生成超椭圆圆角样式（胶囊形传 999+ 保持不变） */
+export function squircle(radius: number): {
+  borderRadius: number;
+  borderCurve?: "continuous";
+} {
+  if (radius >= 999) return { borderRadius: radius };
+  const borderRadius = SQUIRCLE_RADIUS[radius] ?? Math.max(radius + 8, 16);
+  return { borderRadius, borderCurve: "continuous" };
+}
+
+/** 预设语义化圆角 */
+export const radii = {
+  xs: squircle(4),
+  sm: squircle(8),
+  md: squircle(12),
+  lg: squircle(16),
+  xl: squircle(20),
+  xxl: squircle(24),
+  pill: { borderRadius: 999 },
+} as const;

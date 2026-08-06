@@ -12,7 +12,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
@@ -22,7 +22,7 @@ export const styles = StyleSheet.create({
   primaryBtn: {
     marginTop: 20,
     backgroundColor: colors.brand,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     paddingVertical: 14,
     alignItems: "center",
   },

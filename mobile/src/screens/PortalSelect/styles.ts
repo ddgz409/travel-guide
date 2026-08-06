@@ -45,7 +45,7 @@ export const styles = StyleSheet.create({
   card: {
     width: 140,
     height: 100,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
     ...cardShadow,

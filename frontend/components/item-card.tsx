@@ -228,7 +228,7 @@ export function ItemCard({
       {showAlts && (
         <div
           ref={altSearchRef}
-          className="mb-4 rounded-xl border border-[var(--brand)]/25 bg-[var(--brand-soft)] p-3"
+          className="mb-4 rounded-2xl border border-[var(--brand)]/25 bg-[var(--brand-soft)] p-3"
         >
           <div className="text-xs font-bold text-[var(--brand-hot)] mb-2">
             选择备选替换
@@ -238,7 +238,7 @@ export function ItemCard({
             value={altSearch}
             onChange={(e) => handleAltSearchInput(e.target.value)}
             placeholder={city ? `在${city}搜索景点替换…` : "搜索景点替换…"}
-            className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm mb-2 focus:outline-none focus:border-[var(--brand)]"
+            className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm mb-2 focus:outline-none focus:border-[var(--brand)]"
           />
           {!altSearch && item.alternatives && item.alternatives.length > 0 && (
             <div className="space-y-1.5">
@@ -249,7 +249,7 @@ export function ItemCard({
                     onSwap(i);
                     setShowAlts(false);
                   }}
-                  className="w-full text-left bg-white rounded-lg px-3 py-2 text-sm hover:bg-white/80 transition-colors flex justify-between items-center border border-[var(--line)]"
+                  className="w-full text-left bg-white rounded-xl px-3 py-2 text-sm hover:bg-white/80 transition-colors flex justify-between items-center border border-[var(--line)]"
                 >
                   <span className="font-medium text-[var(--ink)]">{alt.name}</span>
                   {alt.rating ? (
@@ -270,7 +270,7 @@ export function ItemCard({
                 <button
                   key={poi.poi_id}
                   onClick={() => handleSearchReplace(poi)}
-                  className="w-full text-left bg-white rounded-lg px-3 py-2 text-sm hover:bg-emerald-50 transition-colors flex justify-between items-center border border-[var(--line)]"
+                  className="w-full text-left bg-white rounded-xl px-3 py-2 text-sm hover:bg-emerald-50 transition-colors flex justify-between items-center border border-[var(--line)]"
                 >
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-[var(--ink)]">{poi.name}</span>

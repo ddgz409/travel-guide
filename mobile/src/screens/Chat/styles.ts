@@ -19,7 +19,7 @@ export const styles = StyleSheet.create({
   smartPlanBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 30, borderCurve: "continuous",
     backgroundColor: colors.ink,
   },
   smartPlanBtnText: { fontSize: 13, color: "#fff", fontWeight: "700" },
@@ -28,7 +28,7 @@ export const styles = StyleSheet.create({
   clearBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 18, borderCurve: "continuous",
     backgroundColor: colors.brandSoft,
   },
   clearText: { fontSize: 12, color: colors.brandHot, fontWeight: "600" },
@@ -47,7 +47,7 @@ export const styles = StyleSheet.create({
   smartPlanEntry: {
     width: "100%",
     backgroundColor: colors.ink,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: "center",
@@ -58,7 +58,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.card,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
@@ -67,7 +67,7 @@ export const styles = StyleSheet.create({
   msgUserRow: { justifyContent: "flex-end" },
   msgBubble: {
     maxWidth: "82%",
-    borderRadius: 18,
+    borderRadius: 28, borderCurve: "continuous",
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
@@ -81,7 +81,7 @@ export const styles = StyleSheet.create({
   msgAIText: { fontSize: 15, color: colors.ink, lineHeight: 22 },
   reasoningBox: {
     backgroundColor: "#f5f0e8",
-    borderRadius: 10,
+    borderRadius: 20, borderCurve: "continuous",
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginBottom: 8,
@@ -118,7 +118,7 @@ export const styles = StyleSheet.create({
   input: {
     flex: 1,
     backgroundColor: colors.bg,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
     paddingHorizontal: 14,
@@ -131,7 +131,7 @@ export const styles = StyleSheet.create({
   sendBtn: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 30, borderCurve: "continuous",
     backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
@@ -141,7 +141,7 @@ export const styles = StyleSheet.create({
   stopBtn: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 30, borderCurve: "continuous",
     backgroundColor: colors.danger,
     alignItems: "center",
     justifyContent: "center",
@@ -152,7 +152,7 @@ export const styles = StyleSheet.create({
     alignSelf: "flex-start",
     height: 32,
     paddingHorizontal: 10,
-    borderRadius: 10,
+    borderRadius: 20, borderCurve: "continuous",
     backgroundColor: colors.brandSoft,
     alignItems: "center",
     justifyContent: "center",

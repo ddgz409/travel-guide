@@ -23,7 +23,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.card,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     borderWidth: 1.5,
     borderColor: "#dbeafe",
     paddingHorizontal: 14,
@@ -45,7 +45,7 @@ export const styles = StyleSheet.create({
   clearChip: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     backgroundColor: "#e5e7eb",
     alignItems: "center",
     justifyContent: "center",
@@ -79,7 +79,7 @@ export const styles = StyleSheet.create({
   smartRowGo: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 28, borderCurve: "continuous",
     backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
@@ -110,7 +110,7 @@ export const styles = StyleSheet.create({
   cityRowGo: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
@@ -130,7 +130,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff8ef",
-    borderRadius: 16,
+    borderRadius: 26, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: "#f5d9a8",
     paddingHorizontal: 16,
@@ -140,7 +140,7 @@ export const styles = StyleSheet.create({
   invalidBox: {
     marginTop: 16,
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 24, borderCurve: "continuous",
     backgroundColor: "#fef2f2",
     borderWidth: 1,
     borderColor: "#fecaca",
@@ -159,7 +159,7 @@ export const styles = StyleSheet.create({
   invalidChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 24, borderCurve: "continuous",
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
@@ -172,7 +172,7 @@ export const styles = StyleSheet.create({
   confirmCard: {
     marginTop: 12,
     backgroundColor: colors.card,
-    borderRadius: 20,
+    borderRadius: 30, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
     padding: 20,
@@ -252,7 +252,7 @@ export const styles = StyleSheet.create({
   },
   confirmBtn: {
     backgroundColor: colors.ink,
-    borderRadius: 24,
+    borderRadius: 34, borderCurve: "continuous",
     paddingVertical: 14,
     alignItems: "center",
   },

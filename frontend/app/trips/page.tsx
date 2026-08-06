@@ -112,7 +112,7 @@ export default function TripsPage() {
       </div>
 
       {!trips || trips.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-2xl border border-[var(--line)]">
+        <div className="text-center py-20 bg-white squircle rounded-3xl border border-[var(--line)]">
           <p className="text-[var(--muted)] mb-5">还没有攻略，先去生成一份吧</p>
           <Link
             href="/generate"
@@ -128,7 +128,7 @@ export default function TripsPage() {
             return (
               <div
                 key={t.id}
-                className="bg-white rounded-2xl border border-[var(--line)] overflow-hidden hover:shadow-[var(--shadow)] transition-shadow group"
+                className="bg-white squircle rounded-3xl border border-[var(--line)] overflow-hidden hover:shadow-[var(--shadow)] transition-shadow group"
               >
                 <Link href={`/trips/${t.id}`} className="block">
                   <div className="relative aspect-[16/10] overflow-hidden">
@@ -139,7 +139,7 @@ export default function TripsPage() {
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                     <span
-                      className={`absolute top-3 right-3 text-[11px] px-2 py-0.5 rounded-full font-semibold ${badge.cls}`}
+                      className={`absolute top-3 right-3 text-[11px] px-2 py-0.5 squircle rounded-xl font-semibold ${badge.cls}`}
                     >
                       {badge.label}
                     </span>

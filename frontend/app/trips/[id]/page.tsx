@@ -230,7 +230,7 @@ export default function TripDetailPage() {
 
       <div className="site-container -mt-5 relative z-10">
         {shareUrl && (
-          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800 flex items-center justify-between">
+          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-sm text-emerald-800 flex items-center justify-between">
             <span>分享链接已复制：{shareUrl}</span>
             <button onClick={() => setShareUrl(null)} className="hover:underline">
               关闭
@@ -247,18 +247,18 @@ export default function TripDetailPage() {
         />
 
         {canceledCount > 0 && (
-          <div className="mb-4 bg-[var(--brand-soft)] border border-[var(--brand)]/20 rounded-xl p-3 text-sm text-[var(--brand-hot)]">
+          <div className="mb-4 bg-[var(--brand-soft)] border border-[var(--brand)]/20 rounded-2xl p-3 text-sm text-[var(--brand-hot)]">
             编辑模式：已取消 {canceledCount} 个安排 · 可拖拽调整顺序
           </div>
         )}
 
         {days.length === 0 ? (
-          <div className="text-center py-20 text-[var(--muted)] bg-white rounded-2xl border border-[var(--line)]">
+          <div className="text-center py-20 text-[var(--muted)] bg-white rounded-3xl border border-[var(--line)]">
             暂无行程数据
           </div>
         ) : (
           <>
-            <div className="deal-toolbar mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-3 shadow-[var(--shadow)]">
+            <div className="deal-toolbar mb-6 flex flex-wrap items-center gap-2 rounded-3xl border border-[var(--line)] bg-white px-3 py-3 shadow-[var(--shadow)]">
               <div className="flex gap-1.5 flex-wrap">
                 {days.map((d, i) => (
                   <button
@@ -289,7 +289,7 @@ export default function TripDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
               <div className="min-w-0">
                 {currentDay?.summary && (
-                  <div className="mb-5 rounded-2xl border border-[var(--line)] bg-white px-5 py-4 shadow-[var(--shadow)]">
+                  <div className="mb-5 rounded-3xl border border-[var(--line)] bg-white px-5 py-4 shadow-[var(--shadow)]">
                     <div className="text-[12px] font-semibold text-[var(--brand)] mb-1">
                       当日亮点
                     </div>
@@ -350,7 +350,7 @@ export default function TripDetailPage() {
               </div>
 
               <aside className="lg:sticky lg:top-[72px] space-y-4">
-                <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[var(--shadow)]">
+                <div className="overflow-hidden rounded-3xl border border-[var(--line)] bg-white shadow-[var(--shadow)]">
                   <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
                     <span className="font-semibold text-[var(--ink)] text-[14px]">
                       当日路线地图
@@ -367,7 +367,7 @@ export default function TripDetailPage() {
                   />
                 </div>
 
-                <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[var(--shadow)]">
+                <div className="rounded-3xl border border-[var(--line)] bg-white p-5 shadow-[var(--shadow)]">
                   <h3 className="font-display text-[16px] font-semibold text-[var(--ink)] mb-3">
                     预算估算
                   </h3>

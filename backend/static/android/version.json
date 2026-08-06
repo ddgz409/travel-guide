@@ -1,7 +1,7 @@
 {
-  "versionCode": 14,
-  "versionName": "2.1.0",
+  "versionCode": 15,
+  "versionName": "2.2.0",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.1.0：+号菜单拆分「快速模式/专属定制」；专属定制页可切换生成模型（与AI助手一致），设置里切换模型立即生效",
+  "notes": "2.2.0：行程地图分类气泡与 POI 详情；小红书/携程/去哪儿跳转；添加/打卡/导航可用；营业时间电话；全局圆角 UI 优化",
   "force": false
 }

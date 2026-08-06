@@ -134,7 +134,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 px-4 py-10">
-      <div className="w-full max-w-lg mx-auto bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] p-8">
+      <div className="w-full max-w-lg mx-auto bg-white rounded-3xl border border-[var(--line)] shadow-[var(--shadow)] p-8">
         <h1 className="font-display text-[26px] font-semibold text-[var(--ink)] mb-1">
           LLM 设置
         </h1>
@@ -199,7 +199,7 @@ export default function SettingsPage() {
                   type="text"
                   value={provider}
                   onChange={(e) => setProvider(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+                  className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
                   placeholder="提供商 ID，如 moonshot / qwen"
                   autoComplete="off"
                 />
@@ -207,7 +207,7 @@ export default function SettingsPage() {
                   type="url"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+                  className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
                   placeholder="Base URL，如 https://api.moonshot.cn/v1"
                   autoComplete="off"
                 />
@@ -268,7 +268,7 @@ export default function SettingsPage() {
                 setCustomMode(true);
               }}
               onFocus={() => setCustomMode(true)}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder="自定义模型名，如 glm-4.5 / deepseek-reasoner"
               autoComplete="off"
             />
@@ -288,7 +288,7 @@ export default function SettingsPage() {
                 setApiKey(e.target.value);
                 if (e.target.value) setClearKey(false);
               }}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
+              className="w-full rounded-2xl border border-[var(--line)] px-4 py-3 text-[15px] outline-none focus:border-[var(--brand)]"
               placeholder={
                 settings?.has_api_key
                   ? `已保存 ${settings.api_key_hint || ""}，留空则不修改`
@@ -369,12 +369,12 @@ export default function SettingsPage() {
           </div>
 
           {error && (
-            <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+            <div className="rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
               {error}
             </div>
           )}
           {ok && (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3">
               {ok}
             </div>
           )}
@@ -382,7 +382,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="w-full btn-brand rounded-xl py-3 disabled:opacity-50"
+            className="w-full btn-brand rounded-2xl py-3 disabled:opacity-50"
           >
             {saving ? "保存中…" : "保存设置"}
           </button>

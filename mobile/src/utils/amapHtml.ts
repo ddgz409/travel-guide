@@ -54,7 +54,7 @@ export function buildAmapHtml(opts: {
   <style>
     html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#f3f4f6;overflow:hidden}
     .pin{
-      width:32px;height:32px;border-radius:50%;
+      width:32px;height:32px;border-radius:11px;
       background:#ff6d00;color:#fff;
       font:700 13px/32px -apple-system,BlinkMacSystemFont,sans-serif;
       text-align:center;

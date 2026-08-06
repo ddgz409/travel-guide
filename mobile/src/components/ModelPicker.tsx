@@ -189,8 +189,8 @@ const styles = StyleSheet.create({
   },
   panel: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 30, borderCurve: "continuous",
+    borderTopRightRadius: 30, borderCurve: "continuous",
     paddingHorizontal: 20,
     paddingVertical: 16,
     paddingBottom: 30,
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   card: {
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     marginBottom: 6,
     borderWidth: 1,
     borderColor: colors.line,
@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: 14, borderCurve: "continuous",
     backgroundColor: colors.line,
     marginRight: 10,
   },
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 18, borderCurve: "continuous",
     overflow: "hidden",
   },
   manage: {
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingVertical: 12,
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     backgroundColor: colors.bg,
   },
   closeText: { fontSize: 14, color: colors.muted },

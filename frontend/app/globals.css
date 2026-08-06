@@ -93,8 +93,16 @@ button {
 .deal-card {
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 24px;
   box-shadow: 0 4px 18px rgba(26, 26, 26, 0.05);
+}
+
+@supports (corner-shape: squircle) {
+  .deal-card,
+  .squircle {
+    corner-shape: squircle;
+    border-radius: 20px;
+  }
 }
 
 .deal-card:hover {

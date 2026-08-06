@@ -79,8 +79,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 34, borderCurve: "continuous",
+    borderTopRightRadius: 34, borderCurve: "continuous",
     ...cardShadow,
     shadowOffset: { width: 0, height: -2 },
     overflow: "hidden",
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   grabber: {
     width: 40,
     height: 4,
-    borderRadius: 2,
+    borderRadius: 12, borderCurve: "continuous",
     backgroundColor: colors.line,
   },
   sheetBody: {

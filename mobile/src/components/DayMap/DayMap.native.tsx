@@ -173,12 +173,12 @@ const styles = StyleSheet.create({
   box: {
     backgroundColor: colors.card,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
   },
   mapWrap: {
-    borderRadius: 12,
+    borderRadius: 22, borderCurve: "continuous",
     overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.line,
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     right: 10,
     bottom: 10,
     backgroundColor: "rgba(0,0,0,0.55)",
-    borderRadius: 14,
+    borderRadius: 24, borderCurve: "continuous",
     paddingHorizontal: 10,
     paddingVertical: 5,
   },

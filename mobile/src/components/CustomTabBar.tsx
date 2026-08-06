@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   plusCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 36, borderCurve: "continuous",
     backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",

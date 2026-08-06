@@ -341,7 +341,7 @@ function GenerateContent() {
               setGenMode("quick");
               setError(null);
             }}
-            className={`rounded-2xl border p-4 text-left transition-colors ${
+            className={`rounded-3xl border p-4 text-left transition-colors ${
               genMode === "quick"
                 ? "border-[var(--brand)] bg-[var(--brand-soft)]"
                 : "border-[var(--line)] bg-white"
@@ -358,7 +358,7 @@ function GenerateContent() {
               setGenMode("custom");
               setError(null);
             }}
-            className={`rounded-2xl border p-4 text-left transition-colors ${
+            className={`rounded-3xl border p-4 text-left transition-colors ${
               genMode === "custom"
                 ? "border-[var(--brand)] bg-[var(--brand-soft)]"
                 : "border-[var(--line)] bg-white"
@@ -372,7 +372,7 @@ function GenerateContent() {
         </div>
 
         {/* 目的地 +（专属定制时）日期人数 */}
-        <div className="bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] p-4 sm:p-5 mb-5">
+        <div className="bg-white rounded-3xl border border-[var(--line)] shadow-[var(--shadow)] p-4 sm:p-5 mb-5">
           <div
             className={`grid grid-cols-1 gap-3 sm:gap-4 items-end ${
               genMode === "custom"
@@ -392,7 +392,7 @@ function GenerateContent() {
                   setQuickCards([]);
                 }}
                 placeholder="城市 / 地区"
-                className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[16px] font-semibold text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
+                className="w-full rounded-2xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[16px] font-semibold text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
               />
             </div>
             {genMode === "custom" ? (
@@ -405,7 +405,7 @@ function GenerateContent() {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
+                    className="w-full rounded-2xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
                   />
                 </div>
                 <div>
@@ -416,18 +416,18 @@ function GenerateContent() {
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
+                    className="w-full rounded-2xl border border-[var(--line)] bg-[var(--background)] px-3.5 py-3 text-[15px] text-[var(--ink)] outline-none focus:border-[var(--brand)] focus:bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-[12px] text-[var(--muted)] mb-1.5">
                     人数
                   </label>
-                  <div className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--background)] h-[50px] px-2">
+                  <div className="flex items-center rounded-2xl border border-[var(--line)] bg-[var(--background)] h-[50px] px-2">
                     <button
                       type="button"
                       onClick={() => setTravelers((n) => Math.max(1, n - 1))}
-                      className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
+                      className="w-9 h-9 rounded-xl hover:bg-white text-lg font-bold text-[var(--ink)]"
                     >
                       −
                     </button>
@@ -437,7 +437,7 @@ function GenerateContent() {
                     <button
                       type="button"
                       onClick={() => setTravelers((n) => Math.min(20, n + 1))}
-                      className="w-9 h-9 rounded-lg hover:bg-white text-lg font-bold text-[var(--ink)]"
+                      className="w-9 h-9 rounded-xl hover:bg-white text-lg font-bold text-[var(--ink)]"
                     >
                       +
                     </button>
@@ -471,7 +471,7 @@ function GenerateContent() {
         {genMode === "quick" ? (
           <div className="space-y-4">
             {error ? (
-              <p className="text-[14px] text-red-600 bg-red-50 rounded-xl px-4 py-3">
+              <p className="text-[14px] text-red-600 bg-red-50 rounded-2xl px-4 py-3">
                 {error}
               </p>
             ) : null}
@@ -479,7 +479,7 @@ function GenerateContent() {
               type="button"
               disabled={submitting}
               onClick={() => void handleQuickRecommend()}
-              className="w-full sm:w-auto min-w-[180px] rounded-xl bg-[var(--brand)] text-white font-semibold px-6 py-3.5 disabled:opacity-60"
+              className="w-full sm:w-auto min-w-[180px] rounded-2xl bg-[var(--brand)] text-white font-semibold px-6 py-3.5 disabled:opacity-60"
             >
               {submitting ? "加载中…" : "查看参考"}
             </button>
@@ -545,7 +545,7 @@ function GenerateContent() {
                                       }
                                     }, 1200);
                                   }}
-                                  className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 hover:bg-[var(--brand-soft)] transition-colors"
+                                  className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2.5 hover:bg-[var(--brand-soft)] transition-colors"
                                 >
                                   <span className="text-[14px] font-medium text-[var(--ink)] truncate">
                                     {t.title}
@@ -573,7 +573,7 @@ function GenerateContent() {
         <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start">
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 必去景点 */}
-            <section className="bg-white rounded-2xl border border-[var(--line)] p-5 sm:p-6">
+            <section className="bg-white rounded-3xl border border-[var(--line)] p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-1">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-soft)] text-[var(--brand)] text-[12px] font-bold">
                   1
@@ -615,7 +615,7 @@ function GenerateContent() {
               )}
 
               <div ref={searchRef} className="relative">
-                <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--background)] px-3 focus-within:border-[var(--brand)] focus-within:bg-white">
+                <div className="flex items-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--background)] px-3 focus-within:border-[var(--brand)] focus-within:bg-white">
                   <span className="text-[var(--muted)] text-[14px]">🔍</span>
                   <input
                     type="text"
@@ -634,12 +634,12 @@ function GenerateContent() {
                 </div>
 
                 {searching && (
-                  <div className="absolute z-30 mt-1 w-full bg-white rounded-xl border border-[var(--line)] shadow-lg p-3 text-sm text-[var(--muted)]">
+                  <div className="absolute z-30 mt-1 w-full bg-white rounded-2xl border border-[var(--line)] shadow-lg p-3 text-sm text-[var(--muted)]">
                     搜索中…
                   </div>
                 )}
                 {showResults && searchResults.length > 0 && (
-                  <div className="absolute z-30 mt-1 w-full bg-white rounded-xl border border-[var(--line)] shadow-lg overflow-hidden max-h-72 overflow-y-auto">
+                  <div className="absolute z-30 mt-1 w-full bg-white rounded-2xl border border-[var(--line)] shadow-lg overflow-hidden max-h-72 overflow-y-auto">
                     {searchResults.map((poi) => {
                       const added = mustInclude.some(
                         (m) => m.poi_id === poi.poi_id,
@@ -696,7 +696,7 @@ function GenerateContent() {
             </section>
 
             {/* 兴趣 */}
-            <section className="bg-white rounded-2xl border border-[var(--line)] p-5 sm:p-6">
+            <section className="bg-white rounded-3xl border border-[var(--line)] p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-4">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-soft)] text-[var(--brand)] text-[12px] font-bold">
                   2
@@ -713,7 +713,7 @@ function GenerateContent() {
                       key={it.id}
                       type="button"
                       onClick={() => toggleInterest(it.id)}
-                      className={`rounded-xl border px-2 py-3 text-center transition-all ${
+                      className={`rounded-2xl border px-2 py-3 text-center transition-all ${
                         on
                           ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand-hot)]"
                           : "border-[var(--line)] bg-[var(--background)] text-[var(--ink)] hover:border-[var(--brand)]/50"
@@ -728,7 +728,7 @@ function GenerateContent() {
             </section>
 
             {/* 预算 + 交通 */}
-            <section className="bg-white rounded-2xl border border-[var(--line)] p-5 sm:p-6 space-y-5">
+            <section className="bg-white rounded-3xl border border-[var(--line)] p-5 sm:p-6 space-y-5">
               <div className="flex items-center gap-2">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-soft)] text-[var(--brand)] text-[12px] font-bold">
                   3
@@ -748,7 +748,7 @@ function GenerateContent() {
                         key={b.id}
                         type="button"
                         onClick={() => setBudgetLevel(b.id)}
-                        className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                        className={`rounded-2xl border px-3 py-3 text-left transition-all ${
                           on
                             ? "border-[var(--brand)] bg-[var(--brand)] text-white"
                             : "border-[var(--line)] bg-[var(--background)] hover:border-[var(--brand)]/50"
@@ -776,7 +776,7 @@ function GenerateContent() {
                         key={t.id}
                         type="button"
                         onClick={() => setTransport(t.id)}
-                        className={`rounded-xl border px-2 py-3 text-center transition-all ${
+                        className={`rounded-2xl border px-2 py-3 text-center transition-all ${
                           on
                             ? "border-[var(--brand)] bg-[var(--brand-soft)]"
                             : "border-[var(--line)] bg-[var(--background)] hover:border-[var(--brand)]/50"
@@ -794,7 +794,7 @@ function GenerateContent() {
             </section>
 
             {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+              <div className="rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
                 {error}
               </div>
             )}
@@ -803,7 +803,7 @@ function GenerateContent() {
             <button
               type="submit"
               disabled={submitting}
-              className="hidden lg:flex w-full btn-brand rounded-2xl py-4 text-[16px] items-center justify-center gap-2 disabled:opacity-50"
+              className="hidden lg:flex w-full btn-brand rounded-3xl py-4 text-[16px] items-center justify-center gap-2 disabled:opacity-50"
             >
               {submitting
                 ? "正在生成…"
@@ -834,7 +834,7 @@ function GenerateContent() {
 
           {/* 右侧行程摘要 — 主流订票站风格 */}
           <aside className="hidden lg:block sticky top-20">
-            <div className="bg-white rounded-2xl border border-[var(--line)] shadow-[var(--shadow)] overflow-hidden">
+            <div className="bg-white rounded-3xl border border-[var(--line)] shadow-[var(--shadow)] overflow-hidden">
               <div className="relative h-28">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -880,7 +880,7 @@ function GenerateContent() {
                   type="button"
                   onClick={() => handleSubmit()}
                   disabled={submitting}
-                  className="w-full btn-brand rounded-xl py-3.5 text-[15px] disabled:opacity-50"
+                  className="w-full btn-brand rounded-2xl py-3.5 text-[15px] disabled:opacity-50"
                 >
                   {submitting ? "生成中…" : "确认生成"}
                 </button>
