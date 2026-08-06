@@ -63,6 +63,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
   const webRef = useRef<WebView>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const previewScrollRef = useRef<ScrollView>(null);
+  const loadGenRef = useRef(0);
   const baseCoord = useMemo(() => cityCoord(city), [city]);
 
   const applyResult = useCallback((result: { foods?: CityFood[]; spots?: CitySpot[] }) => {
@@ -73,6 +74,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
   }, []);
 
   const load = useCallback(async () => {
+    const loadGen = ++loadGenRef.current;
     setError(null);
     streamAbortRef.current?.abort();
     const ctrl = new AbortController();
@@ -91,29 +93,45 @@ export function CityDetailScreen({ navigation, route }: Props) {
       setStreamPreview("");
     }
 
+    const isStale = () => loadGen !== loadGenRef.current || ctrl.signal.aborted;
+
     try {
       let result: CityInfo | null = null;
-      const { url, headers } = await api.destinations.infoStream(city);
+      try {
+        const { url, headers } = await api.destinations.infoStream(city);
+        if (!isStale()) {
+          await readCityInfoSSE(
+            url,
+            headers,
+            (evt) => {
+              if (isStale()) return;
+              if (evt.type === "status") {
+                setStreamMessage(evt.message);
+              } else if (evt.type === "preview" || evt.type === "reasoning") {
+                setStreamPreview((prev) => prev + evt.content);
+              } else if (evt.type === "result") {
+                result = evt.data;
+              } else if (evt.type === "error" && !hasCache) {
+                setError(evt.message);
+              }
+            },
+            ctrl.signal,
+          );
+        }
+      } catch {
+        /* SSE 不可用时不阻断，继续 REST 降级 */
+      }
 
-      await readCityInfoSSE(
-        url,
-        headers,
-        (evt) => {
-          if (evt.type === "status") {
-            setStreamMessage(evt.message);
-          } else if (evt.type === "preview" || evt.type === "reasoning") {
-            setStreamPreview((prev) => prev + evt.content);
-          } else if (evt.type === "result") {
-            result = evt.data;
-          } else if (evt.type === "error") {
-            if (!hasCache) setError(evt.message);
-          }
-        },
-        ctrl.signal,
-      );
+      if (!result && !isStale()) {
+        setStreamMessage(`正在搜索 ${city} 真实信息…`);
+        result = await api.destinations.info(city);
+      }
+
+      if (isStale()) return;
 
       if (result) {
         applyResult(result);
+        setError(null);
         if ((result.foods?.length ?? 0) > 0 || (result.spots?.length ?? 0) > 0) {
           await setCachedCityInfo(city, result);
         }
@@ -121,15 +139,16 @@ export function CityDetailScreen({ navigation, route }: Props) {
         setError("搜索失败，请重试");
       }
     } catch (e) {
-      if (!hasCache && !ctrl.signal.aborted) {
+      if (!isStale() && !hasCache) {
         setError(e instanceof ApiError ? e.message : "搜索失败，请重试");
       }
     } finally {
-      setLoading(false);
-      setStreamPreview("");
-      setStreamMessage("");
+      if (loadGen === loadGenRef.current) {
+        setLoading(false);
+        setStreamPreview("");
+        setStreamMessage("");
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city, applyResult]);
 
   useFocusEffect(

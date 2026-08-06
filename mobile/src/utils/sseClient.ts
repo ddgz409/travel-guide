@@ -22,8 +22,12 @@ export async function readSSE<T>(
   onEvent: (evt: T) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false;
+
   try {
     const res = await fetch(url, { headers, signal });
+    if (!res.ok) return false;
+
     const reader = res.body?.getReader();
     if (reader) {
       const decoder = new TextDecoder();
@@ -40,6 +44,7 @@ export async function readSSE<T>(
       return true;
     }
   } catch {
+    if (signal?.aborted) return false;
     /* fallback below */
   }
 
@@ -101,5 +106,6 @@ export async function readCityInfoSSE(
   onEvent: (evt: CityInfoStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  return readSSE(url, headers, onEvent, signal);
+  // React Native 上 XHR 对 SSE 更稳定；fetch.body 流式常收不到分块
+  return readSSXHR(url, headers, onEvent, signal);
 }
