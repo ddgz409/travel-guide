@@ -191,12 +191,38 @@ export function createApiClient(opts: CreateApiClientOptions) {
           body: JSON.stringify({ destination }),
           timeoutMs: 15000,
         }),
-      validateDestination: (destination: string) =>
-        request<ValidateDestinationResult>("/trips/validate-destination", {
-          method: "POST",
-          body: JSON.stringify({ destination }),
-          timeoutMs: 12000,
-        }),
+      validateDestination: async (destination: string) => {
+        const trimmed = destination.trim();
+        const optimistic = (): ValidateDestinationResult => ({
+          valid: trimmed.length >= 2,
+          message: trimmed.length >= 2 ? "" : "请输入目的地",
+          resolved_name: trimmed.length >= 2 ? trimmed : null,
+          suggestions: [],
+        });
+        try {
+          return await request<ValidateDestinationResult>(
+            "/trips/validate-destination",
+            {
+              method: "POST",
+              body: JSON.stringify({ destination: trimmed }),
+              timeoutMs: 12000,
+            },
+          );
+        } catch (e) {
+          if (!(e instanceof ApiError) || (e.status !== 405 && e.status !== 404)) {
+            throw e;
+          }
+          try {
+            return await request<ValidateDestinationResult>(
+              `/trips/validate-destination?destination=${encodeURIComponent(trimmed)}`,
+              { timeoutMs: 12000 },
+            );
+          } catch {
+            // 旧版后端无独立校验接口；生成时仍会校验地名
+            return optimistic();
+          }
+        }
+      },
       getDayRoutes: (tripId: string, dayId: string, mode: string) =>
         request<DayRoutesResult>(
           `/trips/${tripId}/map-routes/${dayId}?mode=${encodeURIComponent(mode)}`,

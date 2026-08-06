@@ -279,6 +279,12 @@ def validate_destination(payload: ValidateDestinationRequest):
     return check_destination(payload.destination).to_dict()
 
 
+@router.get("/validate-destination", response_model=ValidateDestinationResponse)
+def validate_destination_get(destination: str):
+    """校验目的地（GET，兼容旧网关或未部署 POST 路由的环境）。"""
+    return check_destination(destination).to_dict()
+
+
 @router.get("/pois/search")
 def search_pois(
     q: str,
