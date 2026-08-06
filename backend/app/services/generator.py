@@ -45,7 +45,7 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
 3. 评分仅作参考；地标性与知名度权重大于评分
 4. 如果用户指定了"必去景点"，每条路线都应尽量包含（至少经典路线必须全部包含）
 5. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
-6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目
+6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目；**每天至少 1 顿午餐（afternoon, type=meal）+ 1 顿晚餐（evening, type=meal）**，必须来自可选餐饮列表
 7. 同一区域的景点安排在同一天，路线合理不绕路
 8. 为每个条目提供简短描述和实用贴士，合理估算 cost（元）
 9. 住宿：三条路线尽量共用同一家靠前酒店；全程同一家
@@ -70,6 +70,14 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
               "duration_min": 120,
               "description": "简短描述与贴士",
               "cost": 0
+            },
+            {
+              "time_slot": "afternoon",
+              "type": "meal",
+              "name": "餐厅名（须来自候选列表）",
+              "duration_min": 90,
+              "description": "午餐推荐",
+              "cost": 80
             }
           ]
         }
@@ -214,9 +222,16 @@ class GuideGenerator:
                 message="整理路线方案、预算与地图…",
             )
             for route in routes:
+                self._ensure_meals_per_day(route.get("days") or [], pool)
                 self._assign_nearest_hotel(route.get("days") or [], pool)
 
+            interests = (trip.preferences or {}).get("interests") or []
+            prefer_food = any("美食" in str(i) for i in interests)
             selected = routes[0]
+            if prefer_food:
+                food_route = next((r for r in routes if r.get("id") == "food"), None)
+                if food_route:
+                    selected = food_route
             prefs = dict(trip.preferences or {})
             prefs["route_options"] = [
                 {
@@ -414,9 +429,36 @@ class GuideGenerator:
             [p.name for p in pool["attraction"][:5]],
         )
 
+        meal_hits: list[Poi] = []
+        for kw in (
+            f"{destination}美食",
+            f"{destination}餐厅",
+            f"{destination}特色菜",
+        ):
+            try:
+                meal_hits.extend(
+                    self.amap.search_poi_by_keyword(
+                        kw, city=geo.city or destination, limit=10
+                    )
+                )
+            except AmapError:
+                pass
+
         # 餐饮/酒店仍按评分，去掉明显附属名
         for kind in ("meal", "hotel"):
-            cleaned = [p for p in pool.get(kind, []) if not is_micro_poi(p.name)]
+            merged = list(pool.get(kind, []) or [])
+            if kind == "meal":
+                merged = meal_hits + merged
+            cleaned: list[Poi] = []
+            seen_meal: set[str] = set()
+            for p in merged:
+                if is_micro_poi(p.name):
+                    continue
+                key = p.id or p.name
+                if key in seen_meal:
+                    continue
+                seen_meal.add(key)
+                cleaned.append(p)
             cleaned.sort(key=lambda p: p.rating or 0, reverse=True)
             pool[kind] = cleaned[:POI_LIMIT]
 
@@ -799,6 +841,7 @@ class GuideGenerator:
                 for d in days:
                     for item in d.get("items") or []:
                         self._validate_and_enrich(item, pool, trip.destination)
+                self._ensure_meals_per_day(days, pool)
                 routes.append(
                     {
                         "id": r.get("id") or meta_id,
@@ -816,6 +859,7 @@ class GuideGenerator:
             for d in days:
                 for item in d.get("items") or []:
                     self._validate_and_enrich(item, pool, trip.destination)
+            self._ensure_meals_per_day(days, pool)
             routes.append(
                 {
                     "id": "classic",
@@ -836,6 +880,56 @@ class GuideGenerator:
                     continue
                 routes.append(fb)
         return routes
+
+    @staticmethod
+    def _meal_item(p: Poi, slot: str, description: str, cost: int = 80) -> dict[str, Any]:
+        return {
+            "time_slot": slot,
+            "type": "meal",
+            "name": p.name,
+            "duration_min": 90,
+            "description": description,
+            "cost": cost,
+            "poi_id": p.id,
+            "location": {
+                "lng": p.lng,
+                "lat": p.lat,
+                "address": p.address,
+            },
+            "rating": p.rating,
+            "alternatives": [],
+        }
+
+    def _ensure_meals_per_day(
+        self, days: list[dict[str, Any]], pool: dict[str, list[Poi]]
+    ) -> None:
+        """补全缺失的午餐/晚餐，避免某天无餐饮或只有一顿。"""
+        meals = list(pool.get("meal") or [])
+        if not meals:
+            return
+        mi = 0
+        for day in days:
+            items = list(day.get("items") or [])
+            meal_items = [it for it in items if it.get("type") == "meal"]
+            has_lunch = any(
+                it.get("type") == "meal" and it.get("time_slot") == "afternoon"
+                for it in items
+            )
+            has_dinner = any(
+                it.get("type") == "meal" and it.get("time_slot") == "evening"
+                for it in items
+            )
+            if len(meal_items) >= 2 and has_lunch and has_dinner:
+                continue
+            if not has_lunch:
+                p = meals[mi % len(meals)]
+                mi += 1
+                items.append(self._meal_item(p, "afternoon", "午餐推荐"))
+            if not has_dinner:
+                p = meals[mi % len(meals)]
+                mi += 1
+                items.append(self._meal_item(p, "evening", "晚餐推荐"))
+            day["items"] = items
 
     def _route_highlights(self, days: list[dict[str, Any]], limit: int = 4) -> list[str]:
         names: list[str] = []
@@ -912,27 +1006,11 @@ class GuideGenerator:
                             "alternatives": [],
                         }
                     )
-            if mi < len(meals):
-                p = meals[mi]
-                mi += 1
-                items.append(
-                    {
-                        "time_slot": "evening",
-                        "type": "meal",
-                        "name": p.name,
-                        "duration_min": 90,
-                        "description": "当地餐饮",
-                        "cost": 80,
-                        "poi_id": p.id,
-                        "location": {
-                            "lng": p.lng,
-                            "lat": p.lat,
-                            "address": p.address,
-                        },
-                        "rating": p.rating,
-                        "alternatives": [],
-                    }
-                )
+            for slot, desc in (("afternoon", "午餐推荐"), ("evening", "晚餐推荐")):
+                if mi < len(meals):
+                    p = meals[mi]
+                    mi += 1
+                    items.append(self._meal_item(p, slot, desc))
             if hotel:
                 items.append(
                     {
@@ -1062,6 +1140,7 @@ class GuideGenerator:
 
 请严格使用以上候选地点，一次生成恰好 3 条风格不同的 {days_count} 日路线（routes），id 分别为 classic / culture / food。
 硬性要求：三条路线的景点组合要有明显差异；以热门地标为主，不要打卡点子点；
+**每条路线每一天都必须包含午餐+晚餐（type=meal）**；food 路线应安排更多餐饮；
 住宿选列表靠前酒店且三条尽量同一家。{closing_hints}"""
 
     def _validate_and_enrich(
@@ -1196,25 +1275,10 @@ class GuideGenerator:
                     }
                 )
             if meals:
-                m = meals[(d - 1) % len(meals)]
-                items.append(
-                    {
-                        "time_slot": "evening",
-                        "type": "meal",
-                        "name": m.name,
-                        "duration_min": 90,
-                        "description": "",
-                        "cost": 100,
-                        "poi_id": m.id,
-                        "location": {
-                            "lng": m.lng,
-                            "lat": m.lat,
-                            "address": m.address,
-                        },
-                        "rating": m.rating,
-                        "alternatives": [],
-                    }
-                )
+                lunch = meals[(d - 1) % len(meals)]
+                items.append(self._meal_item(lunch, "afternoon", "午餐推荐"))
+                dinner = meals[d % len(meals)]
+                items.append(self._meal_item(dinner, "evening", "晚餐推荐"))
             days.append({"day_index": d, "summary": "（降级生成）", "items": items})
         return days
 

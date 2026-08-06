@@ -24,6 +24,7 @@ import { ApiError } from "@travel-guide/shared";
 import { api, apiBase, getStoredToken } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
+import { DayMap } from "../../components/DayMap/DayMap";
 import { TripDetailSheet } from "../../components/TripDetailSheet";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
@@ -335,7 +336,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill}>
+      <View style={[StyleSheet.absoluteFill, styles.heroMapLayer]}>
         <Pressable
           style={[styles.mapBackBtn, { top: Math.max(insets.top, 8) + 4 }]}
           onPress={() => navigation.goBack()}
@@ -360,7 +361,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
         </FadeSwitch>
       </View>
 
-      <TripDetailSheet>
+      <TripDetailSheet initialRatio={0.38}>
         <ScrollView
           style={styles.scrollBody}
           contentContainerStyle={styles.content}
@@ -496,6 +497,16 @@ export function TripDetailScreen({ route, navigation }: Props) {
             <Text style={styles.summaryText}>{currentDay.summary}</Text>
           </FadeSlideIn>
         ) : null}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>当日路线地图</Text>
+          <DayMap
+            tripId={trip.id}
+            dayId={currentDay?.id}
+            items={selectedItems}
+            title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
+          />
+        </View>
 
         <Text style={styles.sectionTitle}>
           精选行程 · {selectedItems.length} 个安排

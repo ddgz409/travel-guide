@@ -16,6 +16,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   mapBackText: { fontSize: 15, fontWeight: "700", color: colors.ink },
+  heroMapLayer: { zIndex: 0 },
   center: {
     flex: 1,
     justifyContent: "center",

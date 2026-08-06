@@ -24,10 +24,10 @@ import { styles } from "./styles";
 type MapCategory = "all" | ItemType;
 
 const CATEGORIES: { id: MapCategory; label: string; icon: string }[] = [
-  { id: "all", label: "全部", icon: "🗺" },
-  { id: "attraction", label: "景点", icon: "🌳" },
-  { id: "meal", label: "美食", icon: "🍴" },
-  { id: "hotel", label: "住宿", icon: "🛏" },
+  { id: "all", label: "??", icon: "??" },
+  { id: "attraction", label: "??", icon: "??" },
+  { id: "meal", label: "??", icon: "??" },
+  { id: "hotel", label: "??", icon: "??" },
 ];
 
 type Props = {
