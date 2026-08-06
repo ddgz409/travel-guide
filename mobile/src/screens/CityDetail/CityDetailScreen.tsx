@@ -38,6 +38,7 @@ import {
 } from "./helpers";
 import { PoiDetailSheet } from "./PoiDetailSheet";
 import { DraggableBottomSheet } from "./DraggableBottomSheet";
+import { CityInfoLoadingView } from "./CityInfoLoadingView";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "CityDetail">;
@@ -51,6 +52,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [streamMessage, setStreamMessage] = useState("");
   const [streamPreview, setStreamPreview] = useState("");
+  const [streamPhase, setStreamPhase] = useState("search");
   const [foods, setFoods] = useState<CityFood[]>([]);
   const [spots, setSpots] = useState<CitySpot[]>([]);
   const [category, setCategory] = useState<ExploreCategory>("spots");
@@ -89,6 +91,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
       setLoading(false);
     } else {
       setLoading(true);
+      setStreamPhase("search");
       setStreamMessage(`正在搜索 ${city} 真实信息…`);
       setStreamPreview("");
     }
@@ -106,6 +109,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
             (evt) => {
               if (isStale()) return;
               if (evt.type === "status") {
+                setStreamPhase(evt.phase);
                 setStreamMessage(evt.message);
               } else if (evt.type === "preview" || evt.type === "reasoning") {
                 setStreamPreview((prev) => prev + evt.content);
@@ -123,6 +127,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
       }
 
       if (!result && !isStale()) {
+        setStreamPhase("location");
         setStreamMessage(`正在搜索 ${city} 真实信息…`);
         result = await api.destinations.info(city);
       }
@@ -286,23 +291,13 @@ export function CityDetailScreen({ navigation, route }: Props) {
           <Text style={styles.overlayTitle}>{city}</Text>
         </View>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.brand} size="large" />
-            <Text style={styles.loadingText}>
-              {streamMessage || `正在搜索 ${city} 真实信息…`}
-            </Text>
-            {streamPreview ? (
-              <ScrollView
-                ref={previewScrollRef}
-                style={styles.streamPreviewScroll}
-                contentContainerStyle={styles.streamPreviewContent}
-                showsVerticalScrollIndicator={false}
-              >
-                <Text style={styles.streamPreviewText}>{streamPreview}</Text>
-                <Text style={styles.streamPreviewCursor}>▍</Text>
-              </ScrollView>
-            ) : null}
-          </View>
+          <CityInfoLoadingView
+            city={city}
+            message={streamMessage}
+            phase={streamPhase}
+            preview={streamPreview}
+            previewScrollRef={previewScrollRef}
+          />
         ) : error ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>{error}</Text>
