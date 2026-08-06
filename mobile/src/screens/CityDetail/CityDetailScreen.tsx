@@ -298,19 +298,21 @@ export function CityDetailScreen({ navigation, route }: Props) {
         </Pressable>
         <View style={styles.topCityBlock}>
           <Text style={styles.topCityName}>{city}</Text>
-          <Text style={styles.topCitySub}>探索当地 · 真实信息</Text>
+          <View style={styles.topCitySubRow}>
+            {refreshing ? (
+              <>
+                <ActivityIndicator size="small" color={colors.brand} />
+                <Text style={styles.topCitySub}>正在更新推荐…</Text>
+              </>
+            ) : (
+              <Text style={styles.topCitySub}>探索当地 · 真实信息</Text>
+            )}
+          </View>
         </View>
         <Pressable style={styles.searchBtn} onPress={goGenerate}>
           <Text style={styles.searchIcon}>🔍</Text>
         </Pressable>
       </View>
-
-      {refreshing ? (
-        <View style={[styles.refreshBanner, { top: topPad + 52 }]}>
-          <ActivityIndicator size="small" color={colors.brand} />
-          <Text style={styles.refreshBannerText}>正在更新推荐…</Text>
-        </View>
-      ) : null}
 
       <View style={[styles.filterBar, { top: filterTop }]}>
         <ScrollView
