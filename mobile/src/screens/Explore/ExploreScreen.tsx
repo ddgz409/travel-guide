@@ -142,7 +142,8 @@ export function ExploreScreen() {
   function goCityDetail(city: string) {
     if (navigatingRef.current) return;
     navigatingRef.current = true;
-    (navigation as any).navigate("CityDetail", { city });
+    // 与首页热门目的地一致：进入景点/美食/人文网格页
+    (navigation as any).navigate("CityGuide", { city });
     setTimeout(() => {
       navigatingRef.current = false;
     }, 500);
