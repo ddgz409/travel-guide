@@ -1,10 +1,11 @@
 """destination_service 单测。"""
 from unittest.mock import MagicMock, patch
 
-from app.services.amap_client import Poi
+from app.services.amap_client import POI_TYPES, Poi
 from app.services.destination_service import (
     _CITY_CACHE,
     _fallback_from_amap,
+    _local_culture,
     _local_foods,
     city_info_stream,
     get_city_info,
@@ -15,6 +16,18 @@ def setup_function() -> None:
     _CITY_CACHE.clear()
 
 
+def _poi(pid: str, name: str, ptype: str) -> Poi:
+    return Poi(
+        id=pid,
+        name=name,
+        type=ptype,
+        lng=104.0,
+        lat=30.6,
+        address="青羊区",
+        rating=4.7,
+    )
+
+
 def test_fallback_from_amap_builds_foods_and_spots():
     mock_amap = MagicMock()
     mock_amap.api_key = "test-key"
@@ -22,30 +35,17 @@ def test_fallback_from_amap_builds_foods_and_spots():
         location="104.066,30.572",
         city="成都市",
     )
-    mock_amap.search_poi_around.side_effect = [
-        [
-            Poi(
-                id="1",
-                name="宽窄巷子",
-                type="attraction",
-                lng=104.0,
-                lat=30.6,
-                address="青羊区",
-                rating=4.7,
-            ),
-        ],
-        [
-            Poi(
-                id="2",
-                name="龙抄手",
-                type="meal",
-                lng=104.1,
-                lat=30.6,
-                address="春熙路",
-                rating=4.5,
-            ),
-        ],
-    ]
+
+    def fake_search(location, poi_type, radius=20000, limit=8, city=None):
+        if poi_type == POI_TYPES["attraction"]:
+            return [_poi("1", "宽窄巷子", "attraction")]
+        if poi_type == POI_TYPES["meal"]:
+            return [_poi("2", "龙抄手", "meal")]
+        if poi_type == POI_TYPES["culture"]:
+            return [_poi("3", "成都博物馆", "culture")]
+        return []
+
+    mock_amap.search_poi_around.side_effect = fake_search
 
     with patch("app.services.destination_service.get_amap_client", return_value=mock_amap):
         with patch(
@@ -58,7 +58,9 @@ def test_fallback_from_amap_builds_foods_and_spots():
     assert len(result["spots"]) >= 2
     assert len(result["foods"]) == 1
     assert result["foods"][0]["name"] == "龙抄手"
-    assert result["foods"][0]["lng"] == 104.1
+    assert result["foods"][0]["lng"] == 104.0
+    assert len(result["humanities"]) == 1
+    assert result["humanities"][0]["name"] == "成都博物馆"
 
 
 def test_get_city_info_uses_cache():
@@ -95,6 +97,11 @@ def test_get_city_info_fast_amap():
 def test_local_foods_fallback():
     foods = _local_foods("成都")
     assert any("火锅" in f["name"] for f in foods)
+
+
+def test_local_culture_fallback():
+    culture = _local_culture("北京")
+    assert any("博物馆" in c["name"] for c in culture)
 
 
 def test_city_info_stream_returns_result():

@@ -102,7 +102,7 @@ export const styles = StyleSheet.create({
   },
   bottomSheet: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 34, borderCurve: "continuous",
+    borderTopLeftRadius: 34,
     borderTopRightRadius: 34, borderCurve: "continuous",
     ...cardShadow,
   },
@@ -260,7 +260,7 @@ export const styles = StyleSheet.create({
   detailSheet: {
     maxHeight: "88%",
     backgroundColor: "#fff",
-    borderTopLeftRadius: 30, borderCurve: "continuous",
+    borderTopLeftRadius: 30,
     borderTopRightRadius: 30, borderCurve: "continuous",
     overflow: "hidden",
   },

@@ -3,7 +3,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../api/client";
 
-export type PlaceCategory = "spots" | "foods";
+export type PlaceCategory = "spots" | "foods" | "humanities";
 
 const memCache = new Map<string, string[]>();
 const STORAGE_PREFIX = "place_img:xhs:v1:";

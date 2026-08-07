@@ -30,7 +30,7 @@ export const styles = StyleSheet.create({
   suggestionChipOn: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
   suggestionChipText: { fontSize: 13, color: colors.ink },
   suggestionChipTextOn: { color: colors.brandHot, fontWeight: "600" },
-  alphabetBar: { width: 22, alignItems: "center", justifyContent: "center", paddingVertical: 4, backgroundColor: colors.bg, borderLeftWidth: 1, borderLeftColor: colors.line, borderTopRightRadius: 24, borderCurve: "continuous", borderBottomRightRadius: 24, borderCurve: "continuous" },
+  alphabetBar: { width: 22, alignItems: "center", justifyContent: "center", paddingVertical: 4, backgroundColor: colors.bg, borderLeftWidth: 1, borderLeftColor: colors.line, borderTopRightRadius: 24, borderBottomRightRadius: 24, borderCurve: "continuous" },
   alphabetLetter: { fontSize: 10, fontWeight: "700", color: colors.muted, paddingVertical: 1 },
   alphabetLetterOn: { color: colors.brand, fontWeight: "800" },
   modeLabel: { fontSize: 14, fontWeight: "600", color: colors.ink, marginBottom: 10 },

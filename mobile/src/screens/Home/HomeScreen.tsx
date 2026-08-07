@@ -135,6 +135,14 @@ export function HomeScreen({ navigation }: Props) {
     setTimeout(() => { navigatingRef.current = false; }, 500);
   }
 
+  /** 热门目的地卡片 → Tab+两列网格详情页 */
+  function goCityGuide(city: string) {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    navigation.navigate("CityGuide", { city });
+    setTimeout(() => { navigatingRef.current = false; }, 500);
+  }
+
   // 卡片左右各 margin 6；分区左右 padding 20
   const shortcutW = (screenW - 30 - 20) / 2;
   // section padding 16*2 + gap 10 -> 一行两个
@@ -371,7 +379,7 @@ export function HomeScreen({ navigation }: Props) {
                 key={d.name}
                 style={[styles.destCardPress, { width: destW }]}
                 scaleTo={0.985}
-                onPress={() => goGenerate(d.name)}
+                onPress={() => goCityGuide(d.name)}
               >
                 <View
                   style={[

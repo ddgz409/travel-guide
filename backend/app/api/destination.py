@@ -65,7 +65,7 @@ def city_info_stream_endpoint(
 def place_images(
     city: str = Query(..., min_length=1, max_length=128),
     name: str = Query(..., min_length=1, max_length=128),
-    kind: str = Query("", pattern="^(|foods|spots)$"),
+    kind: str = Query("", pattern="^(|foods|spots|humanities)$"),
     limit: int = Query(3, ge=1, le=6),
 ):
     """从小红书笔记抓取地点真实封面图。"""

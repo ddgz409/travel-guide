@@ -57,6 +57,7 @@ type Props = {
 const CAT_LABEL: Record<ExploreCategory, string> = {
   spots: "景点",
   foods: "美食",
+  humanities: "人文",
 };
 
 function pickPoiMatch(list: PoiSearchResult[], name: string): PoiSearchResult | null {

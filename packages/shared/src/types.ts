@@ -355,6 +355,9 @@ export interface CitySpot {
   address?: string;
 }
 
+/** 人文条目（博物馆/美术馆/文化场馆等），结构与景点一致 */
+export type CityHumanity = CitySpot;
+
 export interface PlaceImagesResult {
   city: string;
   name: string;
@@ -367,6 +370,7 @@ export interface CityInfo {
   city: string;
   foods: CityFood[];
   spots: CitySpot[];
+  humanities: CityHumanity[];
 }
 
 /** 城市真实信息 SSE 流事件 */

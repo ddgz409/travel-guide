@@ -345,7 +345,7 @@ export function createApiClient(opts: CreateApiClientOptions) {
       placeImages: (
         city: string,
         name: string,
-        kind: "" | "foods" | "spots" = "",
+        kind: "" | "foods" | "spots" | "humanities" = "",
         limit = 3,
       ) =>
         request<PlaceImagesResult>(

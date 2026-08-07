@@ -2,7 +2,7 @@ import { DESTINATIONS } from "../Explore/content";
 import { landmarksFor } from "../../data/landmarks";
 import type { CityInfo } from "@travel-guide/shared";
 
-export type ExploreCategory = "spots" | "foods";
+export type ExploreCategory = "spots" | "foods" | "humanities";
 
 export const CATEGORIES: Array<{
   key: ExploreCategory;
@@ -58,6 +58,7 @@ export function buildLocalCityPreview(city: string): CityInfo | null {
       name,
       desc: "本地特色美食",
     })),
+    humanities: [],
   };
 }
 
@@ -148,7 +149,9 @@ export function formatPoiAddress(
 /** 分类级小红书搜索词（与后端 xiaohongshu_client 对齐） */
 export function xhsCategoryKeyword(city: string, category: ExploreCategory): string {
   const dest = city.trim() || "旅游";
-  return category === "foods" ? `${dest} 美食推荐` : `${dest} 必去景点`;
+  if (category === "foods") return `${dest} 美食推荐`;
+  if (category === "humanities") return `${dest} 人文打卡`;
+  return `${dest} 必去景点`;
 }
 
 /** 单个 POI 的小红书搜索词 */
@@ -159,5 +162,7 @@ export function xhsItemKeyword(
 ): string {
   const dest = city.trim() || "旅游";
   const poi = name.trim();
-  return category === "foods" ? `${dest} ${poi}` : `${dest} ${poi} 攻略`;
+  if (category === "foods") return `${dest} ${poi}`;
+  if (category === "humanities") return `${dest} ${poi} 人文`;
+  return `${dest} ${poi} 攻略`;
 }

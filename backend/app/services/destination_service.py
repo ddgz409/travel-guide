@@ -33,6 +33,19 @@ FOOD_HINTS: dict[str, list[str]] = {
     "大理": ["乳扇", "饵丝", "酸辣鱼"],
 }
 
+# 人文（博物馆/美术馆/图书馆等）本地兜底，避免无高德 Key 时人文 Tab 为空
+CULTURE_HINTS: dict[str, list[str]] = {
+    "北京": ["中国国家博物馆", "首都博物馆", "国家图书馆", "中国美术馆"],
+    "上海": ["上海博物馆", "中华艺术宫", "上海当代艺术博物馆", "上海图书馆"],
+    "成都": ["成都博物馆", "金沙遗址博物馆", "四川博物院", "成都永陵博物馆"],
+    "杭州": ["浙江省博物馆", "中国丝绸博物馆", "浙江美术馆", "杭州博物馆"],
+    "西安": ["陕西历史博物馆", "西安博物院", "西安碑林博物馆", "西安美术馆"],
+    "厦门": ["厦门市博物馆", "华侨博物院", "厦门美术馆", "陈嘉庚纪念馆"],
+    "三亚": ["三亚市博物馆", "崖州古城", "大小洞天旅游区"],
+    "大理": ["大理州博物馆", "喜洲古镇", "大理古城"],
+    "广州": ["广东省博物馆", "广州艺术博物院", "广东美术馆", "南越王博物院"],
+}
+
 
 def _cache_get(city: str) -> dict[str, Any] | None:
     entry = _CITY_CACHE.get(city)
@@ -82,6 +95,20 @@ def _local_foods(city: str) -> list[dict[str, Any]]:
     ]
 
 
+def _local_culture(city: str) -> list[dict[str, Any]]:
+    for key, names in CULTURE_HINTS.items():
+        if key in city or city in key:
+            return [
+                {"name": n, "desc": "城市人文地标"}
+                for n in names[:4]
+            ]
+    return [
+        {"name": "城市博物馆", "desc": "了解城市历史"},
+        {"name": "美术馆", "desc": "艺术人文空间"},
+        {"name": "图书馆", "desc": "文化地标"},
+    ]
+
+
 def _fallback_from_amap(city: str) -> dict[str, Any]:
     """本地精选景点 + 高德餐饮 POI（并行），毫秒~秒级返回。"""
     city = (city or "").strip()
@@ -92,14 +119,24 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
 
     amap = get_amap_client()
     if not (amap.api_key or "").strip():
-        return {"city": city, "foods": _local_foods(city), "spots": spots}
+        return {
+            "city": city,
+            "foods": _local_foods(city),
+            "spots": spots,
+            "humanities": _local_culture(city),
+        }
 
     try:
         geo = amap.geocode(city)
         city_name = geo.city or city
     except AmapError as e:
         logger.warning("get_city_info geocode failed city=%s: %s", city, e)
-        return {"city": city, "foods": _local_foods(city), "spots": spots}
+        return {
+            "city": city,
+            "foods": _local_foods(city),
+            "spots": spots,
+            "humanities": _local_culture(city),
+        }
 
     def load_foods() -> list[dict[str, Any]]:
         try:
@@ -146,14 +183,46 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
             logger.exception("spot poi search failed city=%s", city)
             return []
 
+    def load_culture() -> list[dict[str, Any]]:
+        try:
+            pois = amap.search_poi_around(
+                geo.location,
+                POI_TYPES["culture"],
+                radius=20000,
+                limit=8,
+                city=city_name,
+            )
+        except Exception:
+            logger.exception("culture poi search failed city=%s", city)
+            return []
+        items: list[dict[str, Any]] = []
+        seen = {s["name"] for s in spots}
+        for poi in pois:
+            if not poi.name or poi.name in seen or is_micro_poi(poi.name):
+                continue
+            # 科教文化类 POI 混入学校/培训等噪点，按名称过滤
+            if any(
+                k in poi.name
+                for k in ("大学", "学院", "学校", "中学", "小学", "幼儿园", "培训", "驾校")
+            ):
+                continue
+            seen.add(poi.name)
+            items.append(_poi_to_item(poi, _poi_desc(poi, f"{city_name}人文地标")))
+            if len(items) >= 4:
+                break
+        return items
+
     foods: list[dict[str, Any]] = []
+    culture: list[dict[str, Any]] = _local_culture(city_name)
     try:
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             f_foods = pool.submit(load_foods)
             f_spots = pool.submit(load_extra_spots) if len(spots) < 4 else None
+            f_culture = pool.submit(load_culture)
             foods = f_foods.result(timeout=5)
             if f_spots:
                 spots.extend(f_spots.result(timeout=5))
+            culture = f_culture.result(timeout=5) or culture
     except FuturesTimeoutError:
         logger.warning("city info amap parallel timeout city=%s", city)
 
@@ -161,12 +230,18 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
         foods = _local_foods(city_name)
 
     logger.info(
-        "City info fast city=%s foods=%d spots=%d",
+        "City info fast city=%s foods=%d spots=%d humanities=%d",
         city,
         len(foods),
         len(spots),
+        len(culture),
     )
-    return {"city": city, "foods": foods, "spots": spots}
+    return {
+        "city": city,
+        "foods": foods,
+        "spots": spots,
+        "humanities": culture,
+    }
 
 
 def city_info_stream(
@@ -177,7 +252,10 @@ def city_info_stream(
     del user  # 保留签名兼容
     city = (city or "").strip()
     if not city:
-        yield {"type": "result", "data": {"city": city, "foods": [], "spots": []}}
+        yield {
+            "type": "result",
+            "data": {"city": city, "foods": [], "spots": [], "humanities": []},
+        }
         return
 
     cached = _cache_get(city)
@@ -201,11 +279,11 @@ def city_info_stream(
 
 
 def get_city_info(city: str, user: "User | None" = None) -> dict[str, Any]:
-    """极速返回城市美食 + 景点概览。"""
+    """极速返回城市美食 + 景点 + 人文概览。"""
     del user
     city = (city or "").strip()
     if not city:
-        return {"city": city, "foods": [], "spots": []}
+        return {"city": city, "foods": [], "spots": [], "humanities": []}
 
     cached = _cache_get(city)
     if cached:
