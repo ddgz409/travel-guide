@@ -24,12 +24,27 @@ const fileEnv = loadDotEnv();
 const DEFAULT_API_BASE = "http://81.71.159.218:8000/api/v1";
 const DEFAULT_AMAP_JS_KEY = "e2d15f867f9e7c13777ca47de260999b";
 
+function isDevOnlyApiBase(url) {
+  return /^(https?:\/\/)?(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(
+    String(url || "").trim(),
+  );
+}
+
+function resolveApiBase() {
+  const raw =
+    process.env.EXPO_PUBLIC_API_BASE ||
+    fileEnv.EXPO_PUBLIC_API_BASE ||
+    DEFAULT_API_BASE;
+  // app.extra 不要写入 localhost，避免 Release 构建误用 mobile/.env
+  if (isDevOnlyApiBase(raw)) return DEFAULT_API_BASE;
+  return raw;
+}
+
 const amapJsKey =
   process.env.EXPO_PUBLIC_AMAP_JS_KEY ||
   fileEnv.EXPO_PUBLIC_AMAP_JS_KEY ||
   DEFAULT_AMAP_JS_KEY;
-const apiBase =
-  process.env.EXPO_PUBLIC_API_BASE || fileEnv.EXPO_PUBLIC_API_BASE || DEFAULT_API_BASE;
+const apiBase = resolveApiBase();
 
 const appJson = require("./app.json");
 

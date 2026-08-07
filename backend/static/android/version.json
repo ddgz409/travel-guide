@@ -1,7 +1,7 @@
 {
-  "versionCode": 15,
-  "versionName": "2.2.0",
+  "versionCode": 16,
+  "versionName": "2.2.1",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.0：行程地图分类气泡与 POI 详情；小红书/携程/去哪儿跳转；添加/打卡/导航可用；营业时间电话；全局圆角 UI 优化",
+  "notes": "2.2.1：修复 Release 包误连 localhost 导致智能规划失败",
   "force": false
 }
