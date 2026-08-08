@@ -39,8 +39,6 @@ def test_fallback_from_amap_builds_foods_and_spots():
     def fake_search(location, poi_type, radius=20000, limit=8, city=None):
         if poi_type == POI_TYPES["attraction"]:
             return [_poi("1", "宽窄巷子", "attraction")]
-        if poi_type == POI_TYPES["meal"]:
-            return [_poi("2", "龙抄手", "meal")]
         if poi_type == POI_TYPES["culture"]:
             return [_poi("3", "成都博物馆", "culture")]
         return []
@@ -56,9 +54,10 @@ def test_fallback_from_amap_builds_foods_and_spots():
 
     assert result["city"] == "成都"
     assert len(result["spots"]) >= 2
-    assert len(result["foods"]) == 1
-    assert result["foods"][0]["name"] == "龙抄手"
-    assert result["foods"][0]["lng"] == 104.0
+    assert result["spots"][0]["name"] == "大熊猫繁育研究基地"
+    # 美食来自本地菜名库（按名气排序），而非高德饭店 POI
+    assert len(result["foods"]) >= 3
+    assert result["foods"][0]["name"] == "火锅"
     assert len(result["humanities"]) == 1
     assert result["humanities"][0]["name"] == "成都博物馆"
 
@@ -97,11 +96,15 @@ def test_get_city_info_fast_amap():
 def test_local_foods_fallback():
     foods = _local_foods("成都")
     assert any("火锅" in f["name"] for f in foods)
+    # 美食 Tab 内容充足，按名气排序
+    assert len(foods) >= 8
+    assert foods[0]["name"] == "火锅"
 
 
 def test_local_culture_fallback():
     culture = _local_culture("北京")
     assert any("博物馆" in c["name"] for c in culture)
+    assert len(culture) >= 8
 
 
 def test_city_info_stream_returns_result():

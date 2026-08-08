@@ -56,7 +56,6 @@ export const styles = StyleSheet.create({
   list: { padding: 16, gap: 12 },
   column: { gap: 12 },
   card: {
-    flex: 1,
     backgroundColor: colors.card,
     borderRadius: 22,
     borderCurve: "continuous",

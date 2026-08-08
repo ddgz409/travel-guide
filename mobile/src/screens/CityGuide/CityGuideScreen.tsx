@@ -15,6 +15,7 @@ import { ApiError } from "@travel-guide/shared";
 import type { CityInfo, CitySpot } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { PlaceImage } from "../../components/PlaceImage";
+import { coverFor } from "../../data/covers";
 import { FadeSwitch, PressScale } from "../../utils/motion";
 import {
   getCachedCityInfo,
@@ -235,7 +236,7 @@ export function CityGuideScreen({ navigation, route }: Props) {
               columnWrapperStyle={styles.column}
               renderItem={({ item }) => (
                 <PressScale
-                  style={styles.card}
+                  style={[styles.card, { width: cardW }]}
                   scaleTo={0.97}
                   onPress={() => setSelected({ item, category: activeTab })}
                 >
@@ -247,6 +248,7 @@ export function CityGuideScreen({ navigation, route }: Props) {
                       image={item.image}
                       images={item.images}
                       style={styles.cardImage}
+                      fallback={coverFor(city)}
                     />
                   </View>
                   <Text style={styles.cardName} numberOfLines={1}>

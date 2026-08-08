@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  type ImageSourcePropType,
   type ImageStyle,
   type StyleProp,
+  StyleSheet,
   View,
 } from "react-native";
 import { colors } from "../theme";
@@ -23,6 +25,8 @@ type PlaceImageProps = {
   images?: string[];
   style?: StyleProp<ImageStyle>;
   resizeMode?: "cover" | "contain" | "stretch" | "center";
+  /** 真实图片未就绪/抓取失败时的兜底图（如城市封面），保证卡片不空 */
+  fallback?: ImageSourcePropType;
 };
 
 export function PlaceImage({
@@ -33,6 +37,7 @@ export function PlaceImage({
   images,
   style,
   resizeMode = "cover",
+  fallback,
 }: PlaceImageProps) {
   const [uri, setUri] = useState<string | null>(image || images?.[0] || null);
   const [loading, setLoading] = useState(!image && !images?.[0]);
@@ -55,6 +60,24 @@ export function PlaceImage({
       cancelled = true;
     };
   }, [city, name, category, image, images]);
+
+  // 兜底图：加载中/抓取失败时先铺上，真实图就绪后替换
+  if (!uri && fallback) {
+    return (
+      <View style={style}>
+        <Image
+          source={fallback}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+        {loading ? (
+          <View style={styles.fallbackMask}>
+            <ActivityIndicator color="#ffffff" size="small" />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
 
   if (loading && !uri) {
     return (
@@ -92,6 +115,19 @@ export function PlaceImage({
     <Image source={{ uri }} style={style} resizeMode={resizeMode} />
   );
 }
+
+const styles = StyleSheet.create({
+  fallbackMask: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+});
 
 type PlaceGalleryProps = {
   city: string;

@@ -21,29 +21,83 @@ logger = logging.getLogger(__name__)
 _CITY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_S = 3600
 
+# 本地美食（菜名，按名气排序）——美食 Tab 展示的是「菜」，不是饭店名
 FOOD_HINTS: dict[str, list[str]] = {
-    "北京": ["北京烤鸭", "炸酱面", "涮羊肉"],
-    "上海": ["小笼包", "生煎", "本帮菜"],
-    "成都": ["火锅", "龙抄手", "担担面"],
-    "杭州": ["西湖醋鱼", "东坡肉", "片儿川"],
-    "西安": ["肉夹馍", "羊肉泡馍", "凉皮"],
-    "广州": ["早茶", "肠粉", "煲仔饭"],
-    "厦门": ["沙茶面", "土笋冻", "海蛎煎"],
-    "三亚": ["海鲜", "清补凉", "椰子鸡"],
-    "大理": ["乳扇", "饵丝", "酸辣鱼"],
+    "北京": [
+        "北京烤鸭", "涮羊肉", "炸酱面", "卤煮火烧", "炒肝",
+        "驴打滚", "门钉肉饼", "糖葫芦", "豆汁儿", "老北京面茶",
+    ],
+    "上海": [
+        "小笼包", "生煎", "葱油拌面", "红烧肉", "白斩鸡",
+        "排骨年糕", "蟹壳黄", "大馄饨", "酒酿圆子", "青团",
+    ],
+    "成都": [
+        "火锅", "担担面", "龙抄手", "串串香", "钵钵鸡",
+        "夫妻肺片", "麻婆豆腐", "钟水饺", "甜水面", "三大炮",
+    ],
+    "杭州": [
+        "西湖醋鱼", "东坡肉", "龙井虾仁", "叫花鸡", "片儿川",
+        "宋嫂鱼羹", "葱包桧", "定胜糕", "猫耳朵", "西湖藕粉",
+    ],
+    "西安": [
+        "肉夹馍", "羊肉泡馍", "凉皮", "Biangbiang面", "臊子面",
+        "甑糕", "葫芦头", "灌汤包", "镜糕", "油泼面",
+    ],
+    "广州": [
+        "早茶", "肠粉", "煲仔饭", "白切鸡", "烧鹅",
+        "云吞面", "艇仔粥", "萝卜牛杂", "双皮奶", "叉烧",
+    ],
+    "厦门": [
+        "沙茶面", "海蛎煎", "土笋冻", "姜母鸭", "花生汤",
+        "面线糊", "五香卷", "烧肉粽", "鱼丸汤", "闽南薄饼",
+    ],
+    "三亚": [
+        "海鲜大餐", "椰子鸡", "清补凉", "文昌鸡", "抱罗粉",
+        "海南粉", "和乐蟹", "东山羊", "芒果肠粉", "陵水酸粉",
+    ],
+    "大理": [
+        "乳扇", "饵丝", "酸辣鱼", "大理砂锅鱼", "喜洲粑粑",
+        "豌豆粉", "凉鸡米线", "烧饵块", "雕梅", "诺邓火腿",
+    ],
 }
 
-# 人文（博物馆/美术馆/图书馆等）本地兜底，避免无高德 Key 时人文 Tab 为空
+# 人文（博物馆/美术馆/图书馆等，按名气排序）本地兜底，避免无高德 Key 时人文 Tab 为空
 CULTURE_HINTS: dict[str, list[str]] = {
-    "北京": ["中国国家博物馆", "首都博物馆", "国家图书馆", "中国美术馆"],
-    "上海": ["上海博物馆", "中华艺术宫", "上海当代艺术博物馆", "上海图书馆"],
-    "成都": ["成都博物馆", "金沙遗址博物馆", "四川博物院", "成都永陵博物馆"],
-    "杭州": ["浙江省博物馆", "中国丝绸博物馆", "浙江美术馆", "杭州博物馆"],
-    "西安": ["陕西历史博物馆", "西安博物院", "西安碑林博物馆", "西安美术馆"],
-    "厦门": ["厦门市博物馆", "华侨博物院", "厦门美术馆", "陈嘉庚纪念馆"],
-    "三亚": ["三亚市博物馆", "崖州古城", "大小洞天旅游区"],
-    "大理": ["大理州博物馆", "喜洲古镇", "大理古城"],
-    "广州": ["广东省博物馆", "广州艺术博物院", "广东美术馆", "南越王博物院"],
+    "北京": [
+        "首都博物馆", "国家图书馆", "中国美术馆", "中国科学技术馆",
+        "北京鲁迅博物馆", "中华世纪坛", "老舍纪念馆", "国家大剧院",
+    ],
+    "上海": [
+        "中华艺术宫", "上海当代艺术博物馆", "上海科技馆", "上海历史博物馆",
+        "上海图书馆", "刘海粟美术馆", "西岸美术馆", "上海电影博物馆",
+    ],
+    "成都": [
+        "成都博物馆", "金沙遗址博物馆", "四川博物院", "四川美术馆",
+        "成都永陵博物馆", "成都图书馆", "东郊记忆", "成都当代美术馆",
+    ],
+    "杭州": [
+        "浙江省博物馆", "中国丝绸博物馆", "浙江美术馆", "杭州博物馆",
+        "中国茶叶博物馆", "良渚博物院", "杭州工艺美术博物馆", "浙江图书馆",
+    ],
+    "西安": [
+        "西安博物院", "西安碑林博物馆", "陕西考古博物馆", "西安美术馆",
+        "大唐西市博物馆", "大明宫遗址博物馆", "西安曲江艺术博物馆", "西安图书馆",
+    ],
+    "厦门": [
+        "厦门市博物馆", "华侨博物院", "厦门科技馆", "厦门美术馆",
+        "陈嘉庚纪念馆", "厦门文化馆",
+    ],
+    "三亚": [
+        "三亚市博物馆", "崖州古城", "大小洞天旅游区", "南山文化旅游区",
+    ],
+    "大理": [
+        "大理州博物馆", "周城扎染", "云南提督府旧址", "大理图书馆",
+        "凤阳邑古村", "巍山古城",
+    ],
+    "广州": [
+        "广东省博物馆", "广州艺术博物院", "广东美术馆", "南越王博物院",
+        "广州图书馆", "广州大剧院",
+    ],
 }
 
 
@@ -85,8 +139,8 @@ def _local_foods(city: str) -> list[dict[str, Any]]:
     for key, names in FOOD_HINTS.items():
         if key in city or city in key:
             return [
-                {"name": n, "desc": "本地特色美食"}
-                for n in names[:3]
+                {"name": n, "desc": "当地特色美食"}
+                for n in names
             ]
     return [
         {"name": "当地特色菜", "desc": "本地特色美食"},
@@ -100,7 +154,7 @@ def _local_culture(city: str) -> list[dict[str, Any]]:
         if key in city or city in key:
             return [
                 {"name": n, "desc": "城市人文地标"}
-                for n in names[:4]
+                for n in names
             ]
     return [
         {"name": "城市博物馆", "desc": "了解城市历史"},
@@ -110,20 +164,23 @@ def _local_culture(city: str) -> list[dict[str, Any]]:
 
 
 def _fallback_from_amap(city: str) -> dict[str, Any]:
-    """本地精选景点 + 高德餐饮 POI（并行），毫秒~秒级返回。"""
+    """本地精选景点/美食/人文（按名气排序）+ 高德景点/人文补充，毫秒~秒级返回。"""
     city = (city or "").strip()
-    spot_names = landmarks_for(city)[:4]
+    # 本地精选库已按名气排序，全量返回（北京等热门城市 10+ 条）
+    spot_names = landmarks_for(city)
     spots: list[dict[str, Any]] = [
         {"name": n, "desc": f"{city}热门必去"} for n in spot_names
     ]
+    foods = _local_foods(city)
+    culture = _local_culture(city)
 
     amap = get_amap_client()
     if not (amap.api_key or "").strip():
         return {
             "city": city,
-            "foods": _local_foods(city),
+            "foods": foods,
             "spots": spots,
-            "humanities": _local_culture(city),
+            "humanities": culture,
         }
 
     try:
@@ -133,38 +190,21 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
         logger.warning("get_city_info geocode failed city=%s: %s", city, e)
         return {
             "city": city,
-            "foods": _local_foods(city),
+            "foods": foods,
             "spots": spots,
-            "humanities": _local_culture(city),
+            "humanities": culture,
         }
 
-    def load_foods() -> list[dict[str, Any]]:
-        try:
-            pois = amap.search_poi_around(
-                geo.location,
-                POI_TYPES["meal"],
-                radius=15000,
-                limit=4,
-                city=city_name,
-            )
-            return [
-                _poi_to_item(p, _poi_desc(p, "本地特色美食"))
-                for p in pois
-                if p.name
-            ][:4]
-        except Exception:
-            logger.exception("meal poi search failed city=%s", city)
-            return []
-
     def load_extra_spots() -> list[dict[str, Any]]:
-        if len(spots) >= 4:
+        # 本地精选不足 8 条时，用高德风景名胜补足
+        if len(spots) >= 8:
             return []
         try:
             around = amap.search_poi_around(
                 geo.location,
                 POI_TYPES["attraction"],
                 radius=20000,
-                limit=8,
+                limit=12,
                 city=city_name,
             )
             extra: list[dict[str, Any]] = []
@@ -176,7 +216,7 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
                 extra.append(
                     _poi_to_item(poi, _poi_desc(poi, f"{city_name}人气景点")),
                 )
-                if len(spots) + len(extra) >= 4:
+                if len(spots) + len(extra) >= 8:
                     break
             return extra
         except Exception:
@@ -189,7 +229,7 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
                 geo.location,
                 POI_TYPES["culture"],
                 radius=20000,
-                limit=8,
+                limit=12,
                 city=city_name,
             )
         except Exception:
@@ -208,26 +248,19 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
                 continue
             seen.add(poi.name)
             items.append(_poi_to_item(poi, _poi_desc(poi, f"{city_name}人文地标")))
-            if len(items) >= 4:
+            if len(items) >= 10:
                 break
         return items
 
-    foods: list[dict[str, Any]] = []
-    culture: list[dict[str, Any]] = _local_culture(city_name)
     try:
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            f_foods = pool.submit(load_foods)
-            f_spots = pool.submit(load_extra_spots) if len(spots) < 4 else None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_spots = pool.submit(load_extra_spots) if len(spots) < 8 else None
             f_culture = pool.submit(load_culture)
-            foods = f_foods.result(timeout=5)
             if f_spots:
                 spots.extend(f_spots.result(timeout=5))
             culture = f_culture.result(timeout=5) or culture
     except FuturesTimeoutError:
         logger.warning("city info amap parallel timeout city=%s", city)
-
-    if not foods:
-        foods = _local_foods(city_name)
 
     logger.info(
         "City info fast city=%s foods=%d spots=%d humanities=%d",
