@@ -946,8 +946,7 @@ class GuideGenerator:
                 routes.append(
                     {
                         "id": r.get("id") or meta_id,
-                        "title": r.get("title")
-                        or f"{trip.destination}·{meta_theme}",
+                        "title": r.get("title") or meta_theme,
                         "theme": r.get("theme") or meta_theme,
                         "tagline": r.get("tagline") or meta_tag,
                         "highlights": r.get("highlights")
@@ -1060,7 +1059,7 @@ class GuideGenerator:
             routes.append(
                 {
                     "id": rid,
-                    "title": f"{trip.destination}·{theme}",
+                    "title": theme,
                     "theme": theme,
                     "tagline": tag,
                     "highlights": self._route_highlights(days),

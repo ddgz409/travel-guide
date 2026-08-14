@@ -67,6 +67,10 @@ export const styles = StyleSheet.create({
   },
   filterLabel: { fontSize: 14, fontWeight: "700", color: colors.ink },
   filterLabelOn: { color: "#fff" },
+  sheetMain: {
+    flex: 1,
+    minHeight: 0,
+  },
   sheetScroll: {
     flex: 1,
     minHeight: 0,
@@ -139,6 +143,91 @@ export const styles = StyleSheet.create({
     color: colors.ready,
   },
   section: { marginTop: 16 },
+  collabSection: {
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  collabSectionBottom: {
+    marginTop: 0,
+    marginBottom: 6,
+    paddingHorizontal: 16,
+  },
+  collabShell: {
+    backgroundColor: "#fff",
+    borderRadius: 999,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    ...cardShadow,
+  },
+  collabShellCollapsed: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  collabShellExpanded: {
+    borderRadius: 28,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+  },
+  collabHeader: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.muted,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+  },
+  collabPeekRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  collabPeekAvatar: {
+    zIndex: 1,
+  },
+  collabPeekOverlap: {
+    marginLeft: -10,
+  },
+  collabPeekLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.ink,
+  },
+  collabScroll: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 6,
+  },
+  collabChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#EEF6FC",
+    borderRadius: 999,
+    borderCurve: "continuous",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    maxWidth: 136,
+  },
+  collabTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  collabName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.ink,
+    lineHeight: 18,
+  },
+  collabRole: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 1,
+  },
+  routeSection: {
+    marginTop: 4,
+    marginBottom: 12,
+  },
   mapPlaceholder: {
     height: 220,
     borderRadius: 22, borderCurve: "continuous",
@@ -156,36 +245,8 @@ export const styles = StyleSheet.create({
     color: colors.ink,
     marginBottom: 10,
   },
-  routeRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  routeTile: {
-    flex: 1,
-    minHeight: 72,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 16,
-    borderCurve: "continuous",
-    paddingHorizontal: 6,
-    paddingVertical: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  routeTileOn: {
-    borderColor: colors.brand,
-    backgroundColor: colors.brandSoft,
-  },
-  routeTileTitle: {
-    fontWeight: "700",
-    color: colors.ink,
-    fontSize: 13,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-  routeTileTitleOn: {
-    color: colors.brandHot,
+  daySection: {
+    marginTop: 4,
   },
   dayTabs: { marginTop: 16, marginBottom: 8 },
   dayTab: {
@@ -199,7 +260,7 @@ export const styles = StyleSheet.create({
   dayTabOn: { backgroundColor: colors.brand, borderColor: colors.brand },
   dayTabText: { fontSize: 13, fontWeight: "600", color: colors.ink },
   dayTabTextOn: { color: "#fff" },
-  regen: { alignSelf: "flex-start", marginBottom: 10 },
+  regen: { alignSelf: "flex-start", marginBottom: 12 },
   regenText: { color: colors.brand, fontWeight: "600", fontSize: 13 },
   summaryBox: {
     backgroundColor: colors.card,

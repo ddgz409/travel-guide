@@ -1,43 +1,70 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
-import { colors, cardShadow } from "../../theme";
-import { buildCheckInMapHtml } from "../../utils/checkInMapHtml";
+import {
+  buildCheckInMapHtml,
+  type ProvincePhotoData,
+} from "../../utils/checkInMapHtml";
+import {
+  buildProvincePhotoDataUris,
+  getAllProvincePhotos,
+  subscribeMapPhotos,
+} from "../../utils/mapPhotoStore";
 import { styles } from "./styles";
 
 type Props = {
   checkedPrefectureIds: string[];
-  checkInCount: number;
+  checkInCount?: number;
   loading?: boolean;
   onPress?: () => void;
 };
 
 export function CheckInMapCard({
   checkedPrefectureIds,
-  checkInCount,
   loading,
   onPress,
 }: Props) {
+  const [provincePhotos, setProvincePhotos] = useState<ProvincePhotoData>({});
+  const [photosLoading, setPhotosLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      setPhotosLoading(true);
+      try {
+        const store = await getAllProvincePhotos();
+        const data = await buildProvincePhotoDataUris(store);
+        if (!cancelled) setProvincePhotos(data);
+      } finally {
+        if (!cancelled) setPhotosLoading(false);
+      }
+    };
+    void refresh();
+    const unsub = subscribeMapPhotos(() => {
+      void refresh();
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
+
   const html = useMemo(
-    () => buildCheckInMapHtml(checkedPrefectureIds),
-    [checkedPrefectureIds],
+    () =>
+      buildCheckInMapHtml(checkedPrefectureIds, {
+        provincePhotos,
+      }),
+    [checkedPrefectureIds, provincePhotos],
   );
+
+  const busy = loading || photosLoading;
 
   return (
     <Pressable style={styles.checkInMapCard} onPress={onPress}>
-      <View style={styles.checkInMapHead}>
-        <Text style={styles.checkInMapTitle}>打卡地图</Text>
-        <Text style={styles.checkInMapSub}>
-          {checkInCount > 0
-            ? `已打卡 ${checkInCount} 处 · 淡蓝为已到访地级市`
-            : "打卡后地级市将以淡蓝色标记"}
-        </Text>
-        <Text style={styles.checkInMapTap}>点击放大 ›</Text>
-      </View>
       <View style={styles.checkInMapBody}>
-        {loading ? (
+        {busy ? (
           <View style={styles.checkInMapLoading}>
-            <ActivityIndicator color={colors.brand} />
+            <ActivityIndicator color="#9B8EC4" />
           </View>
         ) : (
           <WebView
@@ -55,16 +82,7 @@ export function CheckInMapCard({
           />
         )}
       </View>
-      <View style={styles.checkInMapLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: "#FFFFFF", borderColor: "#B8B8B8" }]} />
-          <Text style={styles.legendText}>未打卡</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: "#D7EAF8", borderColor: "#B8B8B8" }]} />
-          <Text style={styles.legendText}>已打卡</Text>
-        </View>
-      </View>
+      <Text style={styles.checkInMapHint}>点开地图 · 再点省份，从相册选一张照片填色</Text>
     </Pressable>
   );
 }

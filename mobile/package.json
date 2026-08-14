@@ -16,6 +16,8 @@
     "expo-blur": "~57.0.2",
     "expo-clipboard": "~57.0.1",
     "expo-file-system": "~57.0.1",
+    "expo-image-manipulator": "~57.0.10",
+    "expo-image-picker": "~57.0.10",
     "expo-location": "~57.0.5",
     "expo-sharing": "~57.0.6",
     "expo-status-bar": "~57.0.1",

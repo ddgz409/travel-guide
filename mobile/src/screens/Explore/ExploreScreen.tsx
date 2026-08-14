@@ -27,6 +27,7 @@ import { getAmapJsKey } from "../../api/config";
 import { buildAmapHtml } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import { CityCoverImage } from "../../components/PlaceImage";
+import { HeaderAvatarButton } from "../../components/HeaderAvatarButton";
 import { resolveImageUrl } from "../../utils/placeImage";
 import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation, peekCachedAccuracy } from "../../utils/location";
 import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
@@ -224,7 +225,7 @@ export function ExploreScreen() {
       <View
         style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <Text style={styles.logo}>旅迹</Text>
+        <HeaderAvatarButton />
         <View style={styles.topActions}>
           <PressScale
             style={styles.topActionItem}

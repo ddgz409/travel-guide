@@ -3,11 +3,33 @@ import { colors } from "../../theme";
 
 export const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: colors.card },
-  backBtn: { paddingRight: 12, paddingVertical: 4 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    backgroundColor: colors.card,
+  },
+  headerSide: {
+    width: 72,
+  },
   backText: { fontSize: 16, color: colors.muted },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: colors.ink },
-  body: { flex: 1, padding: 20 },
+  headerTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 18,
+    fontWeight: "800",
+    color: colors.ink,
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 100,
+    justifyContent: "center",
+  },
   centerTitle: { textAlign: "center", fontSize: 28, marginBottom: 8 },
   centerSub: { textAlign: "center", fontSize: 14, color: colors.muted, marginBottom: 28 },
   inputRow: { flexDirection: "row", alignItems: "center", marginBottom: 20 },

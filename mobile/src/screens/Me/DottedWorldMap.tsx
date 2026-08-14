@@ -3,28 +3,46 @@ import { StyleSheet, View } from "react-native";
 import type { ContinentId } from "../../utils/footprintStats";
 
 /**
- * 点阵世界地图（. 海洋 / N北美 S南美 E欧洲 F非洲 A亚洲 O大洋洲）
- * 打卡过的大洲用绿色实心点高亮，其余浅灰。
+ * 点阵世界地图（方格像素）
+ * . 海洋  N北美  S南美  E欧洲  F非洲  A亚洲  O大洋洲  T南极
  */
 const WORLD = [
-  "............NNNNN.........E.AAAAAAAA.............",
-  "........NNNNNNNNNN......EEEAAAAAAAAAAA...........",
-  "......NNNNNNNNNNNNN....EEAAAAAAAAAAAAAA..........",
-  ".....NNNNNNNNNNNNNN....EAAAAAAAAAAAAAAAA.........",
-  "....NNNNNNNNNNNNNN.....AAAAAAAAAAAAAAAAA.A.......",
-  "....NNNNNNNNNNNNN.......AAAAAAAAAAAAAAAA.A.......",
-  ".....NNNNNNNNNNN........AAAAAAAAAAAAAAAAA........",
-  "......NNNNNNNN..........AAAAAAAAAAAAAAAA.........",
-  ".......NNNNNN.....FF....AAAAAAAAAAAAAAA..........",
-  "........NNNN.....FFFF...AAAAAAAAAAAAAA...........",
-  ".........NN.....FFFFFF..AAAAAAAAAAA....OO........",
-  ".........S......FFFFFF...AAAAAAAA.......OOO......",
-  "........SSS.....FFFFFF....AAAAA..........OOO.....",
-  ".......SSSSS....FFFFF......................OO....",
-  ".......SSSSSS....FFF.............................",
-  "........SSSSS.....FF.............................",
-  ".........SSSS....................................",
-  "..........SSS....................................",
+  "..............NN.NN.........................AAAAAAAAAA.................",
+  "...........NNNNNNNNNN.........NN.........AAAAAAAAAAAAAAA...............",
+  ".........NNNNNNNNNNNNN......NNNNN.......AAAAAAAAAAAAAAAAA..............",
+  ".......NNNNNNNN..NNNNNN.....NNNNN......AAAAAAAAAAAAAAAAAAA.............",
+  "......NNNNNNNNN...NNNNN.....NNNN.......AAAAAAAAAAAAAAAAAAAA............",
+  ".....NNNNNNNNNNN..NNNN......NNN.E......AAAAAAAAAAAAAAAAAAAAA...........",
+  ".....NNNNNNNNNNNN.NNN........EEEE......AAAAAAAAAAAAAAAAAAAAAA..........",
+  ".....NNNNNNNNNNNNNNN........EEEEE......AAAAAAAAAAAAAAAAAAAAAAA.........",
+  ".....NNNNNNNNNNNNNN.........EEEEE......AAAAAAAAAAAAAAAAAAAAAAA.AA......",
+  "......NNNNNNNNNNNN..........EEEEE.......AAAAAAAAAAAAAAAAAAAAAAA.A......",
+  ".......NNNNNNNNNNN..........EEEE........AAAAAAAAAAAAAAAAAAAAAAA........",
+  "........NNNNNNNNN...........EEE.F.......AAAAAAAAAAAAAAAAAAAAAA.........",
+  ".........NNNNNNN.............FFFFF......A.AAAAAAAAAAAAAAAAAAAA.........",
+  "..........NNNNN..............FFFFFF.....AAAAAAAAAAAAAAAAAAAAA..........",
+  "...........NNNN.............FFFFFFFF....AAAAAAAAAAAAAAAAAAAA...........",
+  "............NN..............FFFFFFFFF...AAAAAAAAAAAAAAAAAAA............",
+  "............N...............FFFFFFFFFF..AAAAAAAAAAAAAAA................",
+  "...........N.N..............FFFFFFFFFF...AAAAAAAAAAAAA......A..........",
+  "............S...............FFFFFFFFFF....AAAAAAAAAAA......AAA.........",
+  "...........SSS..............FFFFFFFFF......AAAAAAAAA......AAAAA........",
+  "..........SSSSS.............FFFFFFFF........AAAAAAA.......AAAAA........",
+  ".........SSSSSS.............FFFFFFF..........AAAAA.........AAA.........",
+  "........SSSSSSS.............FFFFFF............AA..........OO...........",
+  "........SSSSSSS..............FFFFF.......................OOOO..........",
+  ".......SSSSSSSS...............FFFF......................OOOOOO.........",
+  ".......SSSSSSS.................FFF.........F............OOOOOOO........",
+  "........SSSSSS..................FF.........F.............OOOOOO........",
+  ".........SSSSS............................................OOOO.........",
+  "..........SSSS.............................................OOO.....O...",
+  "...........SSS..............................................O......OO..",
+  "............SS.........................................................",
+  ".............S.........................................................",
+  ".......................................................................",
+  "...TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.....",
+  "..TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT....",
+  "...TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.....",
 ];
 
 const COLS = Math.max(...WORLD.map((r) => r.length));
@@ -37,10 +55,11 @@ const CHAR_TO_ID: Record<string, ContinentId> = {
   F: "AF",
   A: "AS",
   O: "OC",
+  T: "AN",
 };
 
-const ON = "#2F8A52";
-const OFF = "#C9D6CE";
+const ON = "#3D9A5C";
+const OFF = "#C2C2C2";
 
 type Props = {
   visited: ContinentId[];
@@ -53,7 +72,8 @@ export function DottedWorldMap({ visited }: Props) {
   const cols = COLS;
   const rows = ROWS.length;
   const cell = width > 0 ? width / cols : 0;
-  const dot = Math.max(2.4, cell * 0.58);
+  const gap = Math.max(0.55, cell * 0.2);
+  const dot = Math.max(2, cell - gap);
 
   const dots = useMemo(() => {
     if (cell <= 0) return [];
@@ -62,7 +82,6 @@ export function DottedWorldMap({ visited }: Props) {
       for (let c = 0; c < row.length; c += 1) {
         const id = CHAR_TO_ID[row[c]];
         if (!id) continue;
-        const lit = on.has(id);
         out.push(
           <View
             key={`${r}-${c}`}
@@ -72,8 +91,8 @@ export function DottedWorldMap({ visited }: Props) {
               top: r * cell + (cell - dot) / 2,
               width: dot,
               height: dot,
-              borderRadius: lit ? 1.6 : 1,
-              backgroundColor: lit ? ON : OFF,
+              borderRadius: 0.5,
+              backgroundColor: on.has(id) ? ON : OFF,
             }}
           />,
         );
@@ -84,7 +103,7 @@ export function DottedWorldMap({ visited }: Props) {
 
   return (
     <View
-      style={[styles.box, { height: cell > 0 ? cell * rows : 132 }]}
+      style={[styles.box, { height: cell > 0 ? cell * rows : 156 }]}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
     >
       {dots}

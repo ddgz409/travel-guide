@@ -106,6 +106,7 @@ export const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 34, borderCurve: "continuous",
     borderTopRightRadius: 34, borderCurve: "continuous",
+    overflow: "hidden",
     ...cardShadow,
   },
   sheetDragZone: {
@@ -113,6 +114,7 @@ export const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingHorizontal: 20,
     alignItems: "center",
+    flexShrink: 0,
     zIndex: 2,
   },
   sheetHandle: {
@@ -124,6 +126,9 @@ export const styles = StyleSheet.create({
   sheetBody: {
     flex: 1,
     minHeight: 0,
+  },
+  sheetFooter: {
+    flexShrink: 0,
   },
   sheetScroll: {
     flex: 1,
@@ -399,22 +404,11 @@ export const styles = StyleSheet.create({
   infoChevron: { fontSize: 18, color: colors.muted, fontWeight: "300" },
   tripEditSection: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingTop: 10,
+    paddingBottom: 2,
     borderTopWidth: 1,
     borderTopColor: colors.line,
-    gap: 10,
   },
-  tripEditToggle: {
-    alignSelf: "flex-start",
-    borderRadius: 20,
-    borderCurve: "continuous",
-    borderWidth: 1,
-    borderColor: colors.line,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  tripEditToggleText: { fontSize: 13, fontWeight: "700", color: colors.brandHot },
   tripEditAlts: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
   tripEditAltsLabel: { fontSize: 12, color: colors.muted },
   tripEditAltChip: {
@@ -433,17 +427,30 @@ export const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.line,
   },
+  detailActionsFour: {
+    gap: 6,
+    paddingHorizontal: 12,
+  },
   detailActionBtn: {
     flex: 1,
     borderRadius: 34, borderCurve: "continuous",
     borderWidth: 1,
     borderColor: colors.line,
     paddingVertical: 12,
+    paddingHorizontal: 4,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
   },
   detailActionPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
+  detailActionRemove: {
+    borderColor: colors.brandHot,
+    backgroundColor: "#FFF5F5",
+  },
   detailActionChecked: { backgroundColor: colors.brandSoft, borderColor: colors.brand },
-  detailActionText: { fontSize: 14, fontWeight: "700", color: colors.ink },
+  detailActionText: { fontSize: 14, fontWeight: "700", color: colors.ink, textAlign: "center" },
+  detailActionTextCompact: { fontSize: 12 },
+  detailActionRemoveText: { fontSize: 11, fontWeight: "700", color: colors.brandHot, lineHeight: 14 },
   detailActionTextChecked: { color: colors.brandHot },
   detailActionTextPrimary: { color: "#fff" },
 });

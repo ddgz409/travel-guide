@@ -20,6 +20,8 @@ const SNAP_VELOCITY_DELTA = 8 + DRAG_MM;
 type Props = {
   bottomInset: number;
   children: React.ReactNode;
+  /** 固定在抽屉最底部（如协作者横条，可独立收起） */
+  footer?: React.ReactNode;
 };
 
 function nearestSnap(current: number, snaps: number[], velocityY: number): number {
@@ -48,7 +50,11 @@ function nearestSnap(current: number, snaps: number[], velocityY: number): numbe
   return best;
 }
 
-export function DraggableBottomSheet({ bottomInset, children }: Props) {
+export function DraggableBottomSheet({
+  bottomInset,
+  children,
+  footer,
+}: Props) {
   const { height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const snapHeights = useMemo(() => {
@@ -61,11 +67,11 @@ export function DraggableBottomSheet({ bottomInset, children }: Props) {
       .sort((a, b) => a - b);
   }, [screenH, insets.top]);
 
-  const sheetHeight = useSharedValue(0);
+  const sheetHeight = useSharedValue(snapHeights[1] ?? snapHeights[0] ?? 0);
   const dragStart = useSharedValue(0);
 
   useEffect(() => {
-    sheetHeight.value = snapHeights[1] ?? snapHeights[0];
+    sheetHeight.value = snapHeights[1] ?? snapHeights[0] ?? 0;
   }, [snapHeights, sheetHeight]);
 
   const pan = useMemo(
@@ -107,6 +113,7 @@ export function DraggableBottomSheet({ bottomInset, children }: Props) {
           </View>
         </GestureDetector>
         <View style={styles.sheetBody}>{children}</View>
+        {footer ? <View style={styles.sheetFooter}>{footer}</View> : null}
       </Animated.View>
     </GestureHandlerRootView>
   );

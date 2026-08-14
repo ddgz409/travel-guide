@@ -10,8 +10,8 @@ export type FootprintStats = {
   topSeason: string | null;
   farthest: CheckInRecord | null;
   northernmost: CheckInRecord | null;
+  southernmost: CheckInRecord | null;
   latest: CheckInRecord | null;
-  highest: CheckInRecord | null;
   continentCount: number;
   visitedContinents: ContinentId[];
   topCategory: { label: string; count: number } | null;
@@ -100,8 +100,8 @@ export function buildFootprintStats(items: CheckInRecord[]): FootprintStats {
       topSeason: null,
       farthest: null,
       northernmost: null,
+      southernmost: null,
       latest: null,
-      highest: null,
       continentCount: 0,
       visitedContinents: [],
       topCategory: null,
@@ -115,7 +115,9 @@ export function buildFootprintStats(items: CheckInRecord[]): FootprintStats {
   let farthest = items[0];
   let farthestKm = -1;
   let northernmost = items[0];
+  let southernmost = items[0];
   let maxLat = -90;
+  let minLat = 90;
 
   for (const it of items) {
     seasons[seasonOf(it.checkedAt)] += 1;
@@ -133,6 +135,10 @@ export function buildFootprintStats(items: CheckInRecord[]): FootprintStats {
         maxLat = coord.lat;
         northernmost = it;
       }
+      if (coord.lat < minLat) {
+        minLat = coord.lat;
+        southernmost = it;
+      }
     }
   }
 
@@ -148,8 +154,8 @@ export function buildFootprintStats(items: CheckInRecord[]): FootprintStats {
     topSeason,
     farthest,
     northernmost,
+    southernmost,
     latest: items[0],
-    highest: northernmost,
     continentCount: visitedContinents.length,
     visitedContinents,
     topCategory: topCatEntry

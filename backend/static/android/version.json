@@ -1,7 +1,7 @@
 {
-  "versionCode": 16,
-  "versionName": "2.2.1",
+  "versionCode": 17,
+  "versionName": "2.2.2",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.1：修复 Release 包误连 localhost 导致智能规划失败",
+  "notes": "2.2.2：旅行地图省份填色、我的收藏、足迹概览、头像与 Me 页体验优化",
   "force": false
 }

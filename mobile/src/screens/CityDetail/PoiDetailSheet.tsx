@@ -467,56 +467,85 @@ export function PoiDetailSheet({
             </View>
           </ScrollView>
 
-          {tripItemId && tripCanEdit ? (
+          {(tripItemId && tripCanEdit && (tripAlternatives?.length ?? 0) > 0) ? (
             <View style={styles.tripEditSection}>
-              <Pressable
-                style={styles.tripEditToggle}
-                onPress={() => void handleToggleTripItem()}
-                disabled={tripEditBusy}
-              >
-                <Text style={styles.tripEditToggleText}>
-                  {tripEditBusy
-                    ? "处理中…"
-                    : tripSelected
-                      ? "从行程中移除"
-                      : "恢复此项"}
-                </Text>
-              </Pressable>
-              {(tripAlternatives?.length ?? 0) > 0 ? (
-                <View style={styles.tripEditAlts}>
-                  <Text style={styles.tripEditAltsLabel}>换一个：</Text>
-                  {tripAlternatives!.slice(0, 3).map((alt, i) => (
-                    <Pressable
-                      key={`${alt.poi_id}-${i}`}
-                      style={styles.tripEditAltChip}
-                      onPress={() => void handleSwapTripItem(i)}
-                      disabled={tripEditBusy}
-                    >
-                      <Text style={styles.tripEditAltText}>{alt.name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
+              <View style={styles.tripEditAlts}>
+                <Text style={styles.tripEditAltsLabel}>换一个：</Text>
+                {tripAlternatives!.slice(0, 3).map((alt, i) => (
+                  <Pressable
+                    key={`${alt.poi_id}-${i}`}
+                    style={styles.tripEditAltChip}
+                    onPress={() => void handleSwapTripItem(i)}
+                    disabled={tripEditBusy}
+                  >
+                    <Text style={styles.tripEditAltText}>{alt.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           ) : null}
 
-          <View style={styles.detailActions}>
-            <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
-              <Text style={styles.detailActionText}>+ 添加至</Text>
-            </Pressable>
+          <View
+            style={[
+              styles.detailActions,
+              tripItemId && tripCanEdit ? styles.detailActionsFour : null,
+            ]}
+          >
+            {tripItemId && tripCanEdit ? (
+              <Pressable style={styles.detailActionBtn} onPress={handleFeedback}>
+                <Text
+                  style={[styles.detailActionText, styles.detailActionTextCompact]}
+                  numberOfLines={1}
+                >
+                  反馈
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
+                <Text style={styles.detailActionText} numberOfLines={1}>
+                  + 添加至
+                </Text>
+              </Pressable>
+            )}
             <CheckInButton
               checked={checked}
               busy={checkInBusy}
               onPress={() => void handleCheckIn()}
+              compact={Boolean(tripItemId && tripCanEdit)}
             />
             <Pressable
               style={[styles.detailActionBtn, styles.detailActionPrimary]}
               onPress={handleNavigate}
             >
-              <Text style={[styles.detailActionText, styles.detailActionTextPrimary]}>
-                ➤ 导航
+              <Text
+                style={[
+                  styles.detailActionText,
+                  styles.detailActionTextPrimary,
+                  tripItemId && tripCanEdit ? styles.detailActionTextCompact : null,
+                ]}
+                numberOfLines={1}
+              >
+                导航
               </Text>
             </Pressable>
+            {tripItemId && tripCanEdit ? (
+              <Pressable
+                style={[styles.detailActionBtn, styles.detailActionRemove]}
+                onPress={() => void handleToggleTripItem()}
+                disabled={tripEditBusy}
+              >
+                <Text
+                  style={[styles.detailActionText, styles.detailActionRemoveText]}
+                  numberOfLines={2}
+                >
+                  {tripEditBusy
+                    ? "…"
+                    : tripSelected
+                      ? "从行程中移除"
+                      : "恢复此项"}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>

@@ -58,6 +58,11 @@ const AddFootprintScreen = lazy(() =>
     default: m.AddFootprintScreen,
   })),
 );
+const FavoritesScreen = lazy(() =>
+  import("./src/screens/Me/FavoritesScreen").then((m) => ({
+    default: m.FavoritesScreen,
+  })),
+);
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
@@ -164,6 +169,11 @@ function RootNavigator() {
         name="AddFootprint"
         component={AddFootprintScreen}
         options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="Favorites"
+        component={FavoritesScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
       />
       <Stack.Screen
         name="CityDetail"

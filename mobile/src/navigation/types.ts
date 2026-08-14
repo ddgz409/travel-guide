@@ -40,4 +40,5 @@ export type AppStackParamList = {
   CheckInMapFull: undefined;
   FootprintOverview: undefined;
   AddFootprint: undefined;
+  Favorites: undefined;
 };

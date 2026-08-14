@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View, Platform } from "react-native";
+import {
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +25,69 @@ import { DottedWorldMap } from "./DottedWorldMap";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "FootprintOverview">;
+
+function PolePager({
+  north,
+  south,
+}: {
+  north: CheckInRecord;
+  south: CheckInRecord;
+}) {
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
+
+  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!width) return;
+    setPage(Math.round(e.nativeEvent.contentOffset.x / width));
+  };
+
+  const pages = [
+    { title: "去过最北的地方", item: north },
+    { title: "去过最南的地方", item: south },
+  ];
+
+  return (
+    <View
+      style={styles.poleWrap}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+    >
+      {width > 0 ? (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          onMomentumScrollEnd={onScrollEnd}
+        >
+          {pages.map((p) => (
+            <View key={p.title} style={[styles.polePage, { width }]}>
+              <Text style={styles.brownTitle}>{p.title}</Text>
+              <Text style={styles.brownName} numberOfLines={2}>
+                {p.item.name}
+              </Text>
+              {p.item.city ? (
+                <Text style={styles.brownCity} numberOfLines={1}>
+                  {p.item.city}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.polePage} />
+      )}
+      <View style={styles.poleDots} pointerEvents="none">
+        {pages.map((p, i) => (
+          <View
+            key={p.title}
+            style={[styles.poleDot, i === page ? styles.poleDotOn : null]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 export function FootprintOverviewScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -113,30 +184,14 @@ export function FootprintOverviewScreen({ navigation }: Props) {
             </View>
           ) : null}
 
-          {stats.highest ? (
-            <View style={styles.cardLav}>
-              <Text style={styles.cardCity}>{stats.highest.city}</Text>
-              <Text style={styles.cardSub}>
-                {stats.highest.name} · {formatCheckDate(stats.highest.checkedAt)}
-              </Text>
-              <View style={styles.altRow}>
-                <Text style={styles.cardKicker}>去过海拔最高的地方</Text>
-                <Text style={styles.altNum}>— M</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {stats.northernmost ? (
-            <View style={styles.cardBrown}>
-              <Text style={styles.brownTitle}>去过最北的地方</Text>
-              <Text style={styles.brownName} numberOfLines={2}>
-                {stats.northernmost.name}
-              </Text>
-            </View>
+          {stats.northernmost && stats.southernmost ? (
+            <PolePager
+              north={stats.northernmost}
+              south={stats.southernmost}
+            />
           ) : null}
 
           <View style={styles.cardMint}>
-            <View style={styles.mintDivider} />
             <View style={styles.mintHead}>
               <Text style={styles.mintChevrons} numberOfLines={1}>
                 {"<<< 打卡的大洲 " + "<".repeat(24)}
