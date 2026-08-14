@@ -17,9 +17,13 @@ import { getAmapJsKey } from "../../api/config";
 import { cityCenterFor } from "../../data/cityCenters";
 import { landmarksFor } from "../../data/landmarks";
 import type { AppStackParamList } from "../../navigation/types";
-import { PoiDetailSheet } from "../../screens/CityDetail/PoiDetailSheet";
 import type { ExploreCategory } from "../../screens/CityDetail/helpers";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
+import { peekCachedAccuracy, peekCachedLocation } from "../../utils/location";
+import {
+  poiSheetFromMarker,
+  type PoiSheetData,
+} from "../../utils/poiDetailHelpers";
 import { colors } from "../../theme";
 import {
   fetchCategoryMarkers,
@@ -49,6 +53,7 @@ type Props = {
   showCategoryChips?: boolean;
   categoryBarTop?: number;
   onMapGestureChange?: (active: boolean) => void;
+  onPoiPress?: (poi: PoiSheetData) => void;
 };
 
 function itemMarkers(items: Item[]): MapMarker[] {
@@ -81,6 +86,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     showCategoryChips = false,
     categoryBarTop,
     onMapGestureChange,
+    onPoiPress,
   },
   ref,
 ) {
@@ -97,11 +103,6 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   const [categoryMarkers, setCategoryMarkers] = useState<MapMarker[]>([]);
   const lastCategoryMarkersRef = useRef<MapMarker[]>([]);
   const [viewportStats, setViewportStats] = useState({ visible: 0, total: 0 });
-  const [poiSheet, setPoiSheet] = useState<{
-    name: string;
-    lng: number;
-    lat: number;
-  } | null>(null);
   const [fallbackMarkers, setFallbackMarkers] = useState<MapMarker[]>(() => {
     const center = cityCenterFor(destination);
     if (center) {
@@ -162,6 +163,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   const sheetCategory = useMemo((): ExploreCategory => {
     if (category === "food" || category === "drink") return "foods";
+    if (category === "hotel") return "hotels";
     return "spots";
   }, [category]);
 
@@ -172,20 +174,15 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
       lat: number;
       itemId?: string | null;
     }) => {
-      if (tripId) {
-        const itemId = resolveTripItemId(poiSourceItems, payload);
-        if (itemId) {
-          navigation.navigate("TripItemDetail", { tripId, itemId });
-          return;
-        }
-      }
-      setPoiSheet({
-        name: payload.name,
-        lng: payload.lng,
-        lat: payload.lat,
-      });
+      const itemId = resolveTripItemId(poiSourceItems, payload);
+      const tripItem = itemId
+        ? poiSourceItems.find((it) => it.id === itemId)
+        : null;
+      onPoiPress?.(
+        poiSheetFromMarker(payload, tripItem, sheetCategory),
+      );
     },
-    [tripId, poiSourceItems, navigation],
+    [poiSourceItems, sheetCategory, onPoiPress],
   );
 
   useEffect(() => {
@@ -368,10 +365,14 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   function openFullMap() {
     if (!mapMarkers.length) return;
+    const cached = peekCachedLocation();
     navigation.navigate("MapFull", {
       title: title || statusTitle || destination || "地图",
       markers: mapMarkers,
       polyline: categoryActive ? [] : polyline,
+      userLocation: cached
+        ? { ...cached, accuracy: peekCachedAccuracy() }
+        : undefined,
     });
   }
 
@@ -508,23 +509,6 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
           </View>
         ) : null}
       </View>
-      <PoiDetailSheet
-        visible={poiSheet != null}
-        item={
-          poiSheet
-            ? {
-                name: poiSheet.name,
-                desc: "",
-                lng: poiSheet.lng,
-                lat: poiSheet.lat,
-              }
-            : null
-        }
-        category={sheetCategory}
-        city={destination || ""}
-        userLocation={null}
-        onClose={() => setPoiSheet(null)}
-      />
     </View>
   );
 });

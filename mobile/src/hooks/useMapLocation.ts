@@ -9,7 +9,10 @@ import {
   describeLocationError,
   ensureLocationAccess,
   getFreshDeviceLocation,
+  peekCachedAccuracy,
+  type LatLng,
 } from "../utils/location";
+import { buildMapUserLocationJs } from "../utils/mapUserLocation";
 
 type InjectFn = (js: string) => void;
 type MapReadyRef = { current: boolean };
@@ -18,6 +21,7 @@ export function useMapLocation(
   inject: InjectFn,
   mapReadyRef: MapReadyRef,
   scopeLabel: string,
+  onLocated?: (loc: LatLng) => void,
 ) {
   const [locating, setLocating] = useState(false);
 
@@ -44,24 +48,24 @@ export function useMapLocation(
         Alert.alert("未开启定位", "可在「设置」中打开定位权限后再试。");
         return;
       }
-      const { lng, lat } = await getFreshDeviceLocation();
+      const loc = await getFreshDeviceLocation();
+      onLocated?.(loc);
       if (!mapReadyRef.current) {
         await new Promise((r) => setTimeout(r, 600));
       }
       inject(
-        `(function(){
-          if(!window.__map)return;
-          var p=[${lng},${lat}];
-          if(window.setUserLocation)window.setUserLocation(${lng},${lat},false);
-          window.__map.setZoomAndCenter(15,p);
-        })();true;`,
+        buildMapUserLocationJs(loc.lng, loc.lat, {
+          center: true,
+          zoom: 15,
+          accuracy: peekCachedAccuracy(),
+        }),
       );
     } catch (e) {
       Alert.alert("定位失败", describeLocationError(e));
     } finally {
       setLocating(false);
     }
-  }, [inject, mapReadyRef, scopeLabel]);
+  }, [inject, mapReadyRef, scopeLabel, onLocated]);
 
   return { locating, requestAndShowLocation };
 }

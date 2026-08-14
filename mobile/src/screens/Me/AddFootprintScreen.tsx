@@ -19,6 +19,7 @@ import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { colors } from "../../theme";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
+import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import {
   getDeviceLocation,
   getFreshDeviceLocation,
@@ -114,13 +115,11 @@ export function AddFootprintScreen({ navigation }: Props) {
   const centerMapOn = useCallback(
     (pos: { lng: number; lat: number }) => {
       inject(
-        `(function(){
-          if(!window.__map)return;
-          var p=[${pos.lng},${pos.lat}];
-          if(window.clearUserLocation)window.clearUserLocation();
-          if(window.updateMapData)window.updateMapData([{lng:${pos.lng},lat:${pos.lat},name:"当前位置"}],[],false,false,0);
-          window.__map.setZoomAndCenter(16,p);
-        })();true;`,
+        buildMapUserLocationJs(pos.lng, pos.lat, {
+          center: true,
+          zoom: 16,
+          clearMarkers: true,
+        }),
       );
     },
     [inject],

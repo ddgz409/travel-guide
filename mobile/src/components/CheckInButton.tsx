@@ -24,7 +24,7 @@ export function CheckInButton({ checked, busy, onPress }: Props) {
   const on = useSharedValue(checked ? 1 : 0);
 
   useEffect(() => {
-    on.value = withTiming(checked ? 1 : 0, { duration: 220 });
+    on.value = withTiming(checked ? 1 : 0, { duration: 180 });
   }, [checked, on]);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -39,9 +39,8 @@ export function CheckInButton({ checked, busy, onPress }: Props) {
 
   function bounce() {
     scale.value = withSequence(
-      withSpring(1.14, { damping: 5, stiffness: 420, mass: 0.45 }),
-      withSpring(0.9, { damping: 7, stiffness: 380, mass: 0.45 }),
-      withSpring(1, { damping: 10, stiffness: 280, mass: 0.5 }),
+      withTiming(1.07, { duration: 95 }),
+      withSpring(1, { damping: 14, stiffness: 480, mass: 0.32 }),
     );
   }
 

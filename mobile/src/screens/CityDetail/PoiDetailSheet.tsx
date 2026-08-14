@@ -12,7 +12,8 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { PoiSearchResult } from "@travel-guide/shared";
+import type { Alternative, PoiSearchResult, Trip } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { PlaceGallery } from "../../components/PlaceImage";
 import { PoiPortalLinks } from "../../components/PoiPortalLinks";
@@ -53,12 +54,19 @@ type Props = {
   checked?: boolean;
   onCheckIn?: (item: Item) => void;
   onUncheck?: (item: Item) => void;
+  tripId?: string;
+  tripItemId?: string;
+  tripItemSelected?: boolean;
+  tripAlternatives?: Alternative[] | null;
+  tripCanEdit?: boolean;
+  onTripUpdated?: (trip: Trip) => void;
   onClose: () => void;
 };
 
 const CAT_LABEL: Record<ExploreCategory, string> = {
   spots: "景点",
   foods: "美食",
+  hotels: "住宿",
 };
 
 function pickPoiMatch(list: PoiSearchResult[], name: string): PoiSearchResult | null {
@@ -90,6 +98,12 @@ export function PoiDetailSheet({
   checked: checkedProp,
   onCheckIn,
   onUncheck,
+  tripId,
+  tripItemId,
+  tripItemSelected = true,
+  tripAlternatives,
+  tripCanEdit = false,
+  onTripUpdated,
   onClose,
 }: Props) {
   const navigation =
@@ -98,6 +112,8 @@ export function PoiDetailSheet({
   const { width: screenW } = useWindowDimensions();
   const [checkedLocal, setCheckedLocal] = useState(false);
   const [checkInBusy, setCheckInBusy] = useState(false);
+  const [tripEditBusy, setTripEditBusy] = useState(false);
+  const [tripSelected, setTripSelected] = useState(tripItemSelected);
   const [poiExtra, setPoiExtra] = useState<PoiSearchResult | null>(null);
 
   const checked = checkedProp ?? checkedLocal;
@@ -115,6 +131,10 @@ export function PoiDetailSheet({
     }
     return undefined;
   }, [visible, item, city, checkedProp]);
+
+  useEffect(() => {
+    setTripSelected(tripItemSelected);
+  }, [tripItemSelected, tripItemId, visible]);
 
   useEffect(() => {
     if (!visible || !item) {
@@ -203,6 +223,42 @@ export function PoiDetailSheet({
     }
   }, [mergedItem, checkInBusy, city, category, checked, onCheckIn, onUncheck]);
 
+  const handleToggleTripItem = useCallback(async () => {
+    if (!tripId || !tripItemId || !tripCanEdit || tripEditBusy) return;
+    setTripEditBusy(true);
+    try {
+      const updated = await api.trips.toggleItem(tripId, tripItemId, !tripSelected);
+      setTripSelected(!tripSelected);
+      onTripUpdated?.(updated);
+    } catch (e) {
+      Alert.alert("失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setTripEditBusy(false);
+    }
+  }, [
+    tripId,
+    tripItemId,
+    tripCanEdit,
+    tripEditBusy,
+    tripSelected,
+    onTripUpdated,
+  ]);
+
+  const handleSwapTripItem = useCallback(
+    async (altIndex: number) => {
+      if (!tripId || !tripItemId || !tripCanEdit || tripEditBusy) return;
+      setTripEditBusy(true);
+      try {
+        onTripUpdated?.(await api.trips.swapItem(tripId, tripItemId, altIndex));
+      } catch (e) {
+        Alert.alert("失败", e instanceof ApiError ? e.message : "换一个失败");
+      } finally {
+        setTripEditBusy(false);
+      }
+    },
+    [tripId, tripItemId, tripCanEdit, tripEditBusy, onTripUpdated],
+  );
+
   const handleAdd = useCallback(() => {
     if (!mergedItem) return;
     onClose();
@@ -257,10 +313,21 @@ export function PoiDetailSheet({
 
   const { positive, neutral } = splitReviewPoints(mergedItem.desc, category);
   const catLabel = CAT_LABEL[category];
-  const portalKind = category === "foods" ? "meal" : "attraction";
+  const portalKind =
+    category === "foods"
+      ? "meal"
+      : category === "hotels"
+        ? "hotel"
+        : "attraction";
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
       <View style={styles.detailRoot}>
         <Pressable style={styles.detailBackdrop} onPress={onClose} />
         <View style={[styles.detailSheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -303,7 +370,7 @@ export function PoiDetailSheet({
               <PlaceGallery
                 city={city}
                 name={mergedItem.name}
-                category={category}
+                category={category === "hotels" ? "spots" : category}
                 image={mergedItem.image}
                 images={mergedItem.images}
                 itemWidth={screenW * 0.72}
@@ -399,6 +466,39 @@ export function PoiDetailSheet({
               </Pressable>
             </View>
           </ScrollView>
+
+          {tripItemId && tripCanEdit ? (
+            <View style={styles.tripEditSection}>
+              <Pressable
+                style={styles.tripEditToggle}
+                onPress={() => void handleToggleTripItem()}
+                disabled={tripEditBusy}
+              >
+                <Text style={styles.tripEditToggleText}>
+                  {tripEditBusy
+                    ? "处理中…"
+                    : tripSelected
+                      ? "从行程中移除"
+                      : "恢复此项"}
+                </Text>
+              </Pressable>
+              {(tripAlternatives?.length ?? 0) > 0 ? (
+                <View style={styles.tripEditAlts}>
+                  <Text style={styles.tripEditAltsLabel}>换一个：</Text>
+                  {tripAlternatives!.slice(0, 3).map((alt, i) => (
+                    <Pressable
+                      key={`${alt.poi_id}-${i}`}
+                      style={styles.tripEditAltChip}
+                      onPress={() => void handleSwapTripItem(i)}
+                      disabled={tripEditBusy}
+                    >
+                      <Text style={styles.tripEditAltText}>{alt.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.detailActions}>
             <Pressable style={styles.detailActionBtn} onPress={handleAdd}>

@@ -13,6 +13,7 @@ import type { Item } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { buildAmapHtml } from "../../utils/amapHtml";
 import { getAmapJsKey } from "../../api/config";
+import { peekCachedAccuracy, peekCachedLocation } from "../../utils/location";
 import type { AppStackParamList } from "../../navigation/types";
 import { colors } from "../../theme";
 
@@ -108,10 +109,14 @@ export function DayMap({
 
   function openFull() {
     if (!mapMarkers.length) return;
+    const cached = peekCachedLocation();
     navigation.navigate("MapFull", {
       title: title || "当日路线地图",
       markers: mapMarkers,
       polyline,
+      userLocation: cached
+        ? { ...cached, accuracy: peekCachedAccuracy() }
+        : undefined,
     });
   }
 

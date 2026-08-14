@@ -35,6 +35,7 @@ export type AppStackParamList = {
     title?: string;
     markers: Array<{ lng: number; lat: number; name: string }>;
     polyline?: number[][];
+    userLocation?: { lng: number; lat: number; accuracy?: number };
   };
   CheckInMapFull: undefined;
   FootprintOverview: undefined;

@@ -13,7 +13,7 @@ export const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingHorizontal: 16,
     paddingBottom: 8,
-    zIndex: 10,
+    zIndex: 40,
   },
   backBtn: {
     width: 40,
@@ -45,7 +45,7 @@ export const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    zIndex: 10,
+    zIndex: 12,
   },
   filterScroll: {
     paddingHorizontal: 16,

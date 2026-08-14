@@ -18,12 +18,17 @@ import { getAmapJsKey } from "../../api/config";
 import { PlaceImage } from "../../components/PlaceImage";
 import { colors } from "../../theme";
 import { getCachedCityInfo, setCachedCityInfo } from "../../utils/cityInfoCache";
-import { getDeviceLocation } from "../../utils/location";
+import {
+  getDeviceLocation,
+  peekCachedAccuracy,
+} from "../../utils/location";
 import { loadLocationConsent, saveLocationConsent } from "../../utils/locationPrefs";
 import { hasCoords, type LatLng } from "../../utils/geo";
 import { isCheckedIn } from "../../utils/checkInStore";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
+import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
+import { useMapLocation } from "../../hooks/useMapLocation";
 import { openXiaohongshu } from "../../utils/openExternal";
 import {
   buildLocalCityPreview,
@@ -60,6 +65,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
+  const mapReadyRef = useRef(false);
   const loadGenRef = useRef(0);
   const localPreview = useMemo(() => buildLocalCityPreview(city), [city]);
   const baseCoord = useMemo(() => cityCoord(city), [city]);
@@ -198,8 +204,34 @@ export function CityDetailScreen({ navigation, route }: Props) {
       markers: mapMarkers,
       interactive: true,
       linkMarkers: false,
+      userLocation: null,
     });
   }, [amapKey, mapMarkers]);
+
+  const inject = useCallback((js: string) => {
+    webRef.current?.injectJavaScript(`${js}; true;`);
+  }, []);
+
+  const { locating, requestAndShowLocation } = useMapLocation(
+    inject,
+    mapReadyRef,
+    "地图",
+    setUserLocation,
+  );
+
+  useEffect(() => {
+    setMapLoaded(false);
+    mapReadyRef.current = false;
+  }, [mapHtml]);
+
+  useEffect(() => {
+    if (!mapLoaded || !userLocation) return;
+    inject(
+      buildMapUserLocationJs(userLocation.lng, userLocation.lat, {
+        accuracy: peekCachedAccuracy(),
+      }),
+    );
+  }, [mapLoaded, userLocation, inject]);
 
   const intro = useMemo(
     () => cityIntro(city, spots.map((s) => s.desc)),
@@ -271,7 +303,23 @@ export function CityDetailScreen({ navigation, route }: Props) {
             scrollEnabled={false}
             setSupportMultipleWindows={false}
             androidLayerType="hardware"
-            onLoadEnd={() => setMapLoaded(true)}
+            onMessage={(e) => {
+              try {
+                const msg = JSON.parse(e.nativeEvent.data);
+                if (msg?.type === "ready") {
+                  mapReadyRef.current = true;
+                  setMapLoaded(true);
+                }
+              } catch {
+                /* ignore */
+              }
+            }}
+            onLoadEnd={() => {
+              setTimeout(() => {
+                mapReadyRef.current = true;
+                setMapLoaded(true);
+              }, 600);
+            }}
           />
         </>
       ) : (
@@ -330,9 +378,14 @@ export function CityDetailScreen({ navigation, route }: Props) {
 
       <Pressable
         style={[styles.locateBtn, { top: locateTop }]}
-        onPress={() => webRef.current?.injectJavaScript("window.__map && window.__map.setZoomAndCenter(12, [" + baseCoord.lng + "," + baseCoord.lat + "]); true;")}
+        onPress={() => void requestAndShowLocation()}
+        disabled={locating}
       >
-        <Text style={styles.locateIcon}>◎</Text>
+        {locating ? (
+          <ActivityIndicator color={colors.brand} size="small" />
+        ) : (
+          <Text style={styles.locateIcon}>◎</Text>
+        )}
       </Pressable>
 
       <DraggableBottomSheet bottomInset={Math.max(insets.bottom, 8)}>

@@ -23,7 +23,15 @@ import { api, apiBase, getStoredToken } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
 import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
+import { PoiDetailSheet } from "../CityDetail/PoiDetailSheet";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
+import { getDeviceLocation, peekCachedLocation } from "../../utils/location";
+import type { LatLng } from "../../utils/geo";
+import {
+  enrichPoiSheetData,
+  poiSheetFromTripItem,
+  type PoiSheetData,
+} from "../../utils/poiDetailHelpers";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { arrayBufferToBase64 } from "../../utils/base64";
@@ -71,6 +79,58 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const [poiSheet, setPoiSheet] = useState<PoiSheetData | null>(null);
+  const [userLocation, setUserLocation] = useState<LatLng | null>(() =>
+    peekCachedLocation(),
+  );
+
+  const openPoiDetail = useCallback(
+    (base: PoiSheetData) => {
+      setPoiSheet(base);
+      const city = trip?.destination?.trim() || "";
+      if (!city) return;
+      void enrichPoiSheetData(base, city).then((enriched) => {
+        setPoiSheet((prev) => {
+          if (!prev || prev.name !== enriched.name) return prev;
+          return {
+            ...enriched,
+            tripItemId: prev.tripItemId,
+            selected: prev.selected,
+            alternatives: prev.alternatives,
+          };
+        });
+      });
+    },
+    [trip?.destination],
+  );
+
+  const syncPoiSheetFromTrip = useCallback((updated: Trip) => {
+    setTrip(updated);
+    setPoiSheet((prev) => {
+      if (!prev?.tripItemId) return prev;
+      for (const day of updated.days || []) {
+        const item = day.items.find((it) => it.id === prev.tripItemId);
+        if (!item) return prev;
+        return {
+          ...prev,
+          name: item.name,
+          desc: item.description?.trim() || prev.desc,
+          lng: item.location?.lng ?? prev.lng,
+          lat: item.location?.lat ?? prev.lat,
+          address: item.location?.address ?? prev.address,
+          category:
+            item.type === "meal"
+              ? "foods"
+              : item.type === "hotel"
+                ? "hotels"
+                : "spots",
+          selected: item.selected,
+          alternatives: item.alternatives,
+        };
+      }
+      return prev;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -151,6 +211,12 @@ export function TripDetailScreen({ route, navigation }: Props) {
       }, 450);
     }
   }, [applyProgress, load, tripId]);
+
+  useEffect(() => {
+    void getDeviceLocation()
+      .then(setUserLocation)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -382,6 +448,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
           showCategoryChips
           categoryBarTop={categoryBarTop}
+          onPoiPress={openPoiDetail}
         />
       </FadeSwitch>
 
@@ -551,6 +618,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
                     tripId={trip.id}
                     destination={trip.destination}
                     hasNextRoute={hasNextRoute}
+                    onPoiPress={
+                      item.type === "attraction" ||
+                      item.type === "meal" ||
+                      item.type === "hotel"
+                        ? () => openPoiDetail(poiSheetFromTripItem(item))
+                        : undefined
+                    }
                   />
                 </FadeSlideIn>
               );
@@ -589,6 +663,32 @@ export function TripDetailScreen({ route, navigation }: Props) {
         visible={sharePayload != null}
         payload={sharePayload}
         onClose={() => setSharePayload(null)}
+      />
+      <PoiDetailSheet
+        visible={poiSheet != null}
+        item={
+          poiSheet
+            ? {
+                name: poiSheet.name,
+                desc: poiSheet.desc,
+                lng: poiSheet.lng,
+                lat: poiSheet.lat,
+                address: poiSheet.address,
+                image: poiSheet.image,
+                images: poiSheet.images,
+              }
+            : null
+        }
+        category={poiSheet?.category ?? "spots"}
+        city={trip.destination}
+        userLocation={userLocation}
+        tripId={trip.id}
+        tripItemId={poiSheet?.tripItemId}
+        tripItemSelected={poiSheet?.selected ?? true}
+        tripAlternatives={poiSheet?.alternatives}
+        tripCanEdit={canEdit}
+        onTripUpdated={syncPoiSheetFromTrip}
+        onClose={() => setPoiSheet(null)}
       />
     </View>
   );

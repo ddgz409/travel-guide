@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ExternalRefs, HotelCandidate } from "@travel-guide/shared";
 import { openExternal } from "../../utils/openExternal";
+import { openAmapPoiLookup } from "../../utils/openMapNavigation";
 import { styles } from "./styles";
 
 function hotelOpenUrl(h: HotelCandidate, _destination: string): string {
@@ -30,8 +31,11 @@ export function HotelNotesRow({
       <View style={styles.parallelRow}>
         <View style={styles.parallelCol}>
           <Text style={styles.parallelTitle}>酒店候选</Text>
+          {hotels.length ? (
+            <Text style={styles.parallelHint}>点击用高德搜索 · 长按去携程</Text>
+          ) : null}
           {status === "amap_only" && hotels.length ? (
-            <Text style={styles.parallelHint}>地图检索结果</Text>
+            <Text style={styles.parallelHint}>来源：高德地图检索</Text>
           ) : null}
           {hotels.length ? (
             hotels.map((h, i) => (
@@ -39,6 +43,9 @@ export function HotelNotesRow({
                 key={`${h.name}-${i}`}
                 style={styles.compactCard}
                 onPress={() => {
+                  void openAmapPoiLookup({ city: destination, name: h.name });
+                }}
+                onLongPress={() => {
                   void openExternal(hotelOpenUrl(h, destination));
                 }}
               >

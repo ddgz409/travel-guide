@@ -24,8 +24,11 @@ import { PressScale } from "../../utils/motion";
 import { colors, pastels } from "../../theme";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
-import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
-import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation } from "../../utils/location";
+import { buildAmapHtml } from "../../utils/amapHtml";
+import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
+import { CityCoverImage } from "../../components/PlaceImage";
+import { resolveImageUrl } from "../../utils/placeImage";
+import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation, peekCachedAccuracy } from "../../utils/location";
 import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
 
@@ -60,12 +63,27 @@ export function ExploreScreen() {
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
+  const [cityCovers, setCityCovers] = useState<Record<string, string>>({});
 
   // 组件卸载时清除 onBlur 残留定时器
   useEffect(() => {
     return () => {
       if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    // 先用北京单城验证图片链路，避免 8 城并发触发高德 QPS 限制
+    void api.destinations
+      .placeImages("北京", "故宫博物院", "spots", 1)
+      .then((res) => {
+        if (res.image) {
+          setCityCovers((prev) => ({ ...prev, 北京: resolveImageUrl(res.image!) }));
+        }
+      })
+      .catch(() => {
+        /* 失败时 CityCoverImage 显示本地 fallback */
+      });
   }, []);
 
   // 获取定位城市：先请求系统权限，再定位 + regeo
@@ -152,14 +170,6 @@ export function ExploreScreen() {
   // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
-  // 地图标记：用户当前所在城市（有坐标时显示），否则空
-  const cityMarkers: MapMarker[] = useMemo(() => {
-    if (locCoord && locCity) {
-      return [{ lng: locCoord.lng, lat: locCoord.lat, name: locCity }];
-    }
-    return [];
-  }, [locCoord, locCity]);
-
   const mapHtml = useMemo(() => {
     if (!amapKey) return "";
     return buildAmapHtml({
@@ -181,14 +191,11 @@ export function ExploreScreen() {
   useEffect(() => {
     if (!mapLoaded || !locCoord) return;
     webRef.current?.injectJavaScript(
-      `(function(){
-        if(!window.__map)return;
-        var p=[${locCoord.lng},${locCoord.lat}];
-        var name=${JSON.stringify(locCity || "当前位置")};
-        if(window.clearUserLocation)window.clearUserLocation();
-        if(window.updateMapData)window.updateMapData([{lng:${locCoord.lng},lat:${locCoord.lat},name:name}],[],false,false,0);
-        window.__map.setZoomAndCenter(15,p);
-      })();true;`,
+      buildMapUserLocationJs(locCoord.lng, locCoord.lat, {
+        center: true,
+        zoom: 15,
+        clearMarkers: true,
+      }),
     );
   }, [mapLoaded, locCoord, locCity]);
 
@@ -201,11 +208,14 @@ export function ExploreScreen() {
     return d ? d.desc : "点击查看详情";
   }, [locCity]);
 
-  // 地图点击放大 -> 跳转 MapFull
+  // 地图点击放大 -> 跳转 MapFull（官方圆点定位，不用倒水滴 marker）
   function openFullMap() {
     (navigation as any).navigate("MapFull", {
       title: locCity || "我的位置",
-      markers: cityMarkers,
+      markers: [],
+      userLocation: locCoord
+        ? { ...locCoord, accuracy: peekCachedAccuracy() }
+        : undefined,
     });
   }
 
@@ -508,8 +518,11 @@ export function ExploreScreen() {
                   </View>
                   <View style={styles.destCoverWrap} pointerEvents="none">
                     <View style={styles.destCoverInner}>
-                      <Image
-                        source={d.img}
+                      <CityCoverImage
+                        city={d.name}
+                        landmark={d.landmark}
+                        uri={cityCovers[d.name]}
+                        fallback={d.img}
                         style={styles.destCover}
                         resizeMode="cover"
                       />

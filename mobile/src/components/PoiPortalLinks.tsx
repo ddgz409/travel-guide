@@ -8,6 +8,7 @@ import {
   openXhsPoi,
   type PoiPortalKind,
 } from "../utils/poiPortals";
+import { openAmapPoiLookup } from "../utils/openMapNavigation";
 
 type Props = {
   city: string;
@@ -18,6 +19,7 @@ type Props = {
 };
 
 const PORTALS = [
+  { id: "amap" as const, label: "高德", color: "#0091FF", short: "高" },
   { id: "xhs" as const, label: "小红书", color: "#E6162D", short: "红" },
   { id: "ctrip" as const, label: "携程", color: "#1A6DB5", short: "携" },
   { id: "qunar" as const, label: "去哪儿", color: "#FF6B35", short: "去" },
@@ -29,6 +31,10 @@ export function PoiPortalLinks({ city, name, kind, itemType, compact }: Props) {
 
   function onPress(id: (typeof PORTALS)[number]["id"]) {
     const opts = { city, name, kind: portalKind };
+    if (id === "amap") {
+      void openAmapPoiLookup({ city, name });
+      return;
+    }
     if (id === "xhs") void openXhsPoi(opts);
     else if (id === "ctrip") void openCtripPoi(opts);
     else void openQunarPoi({ ...opts, kind: portalKind });

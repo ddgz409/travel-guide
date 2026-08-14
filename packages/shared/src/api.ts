@@ -370,13 +370,24 @@ export function createApiClient(opts: CreateApiClientOptions) {
         name: string,
         kind: "" | "foods" | "spots" = "",
         limit = 3,
+        poiId = "",
       ) =>
         request<PlaceImagesResult>(
           `/destinations/place-images?city=${encodeURIComponent(city)}` +
             `&name=${encodeURIComponent(name)}` +
             `&kind=${encodeURIComponent(kind)}` +
-            `&limit=${limit}`,
-          { timeoutMs: 35000 },
+            `&limit=${limit}` +
+            (poiId ? `&poi_id=${encodeURIComponent(poiId)}` : ""),
+          { timeoutMs: 12000 },
+        ),
+      cityCovers: (pairs: Array<{ city: string; landmark: string }>) =>
+        request<{ covers: Record<string, string | null> }>(
+          "/destinations/city-covers",
+          {
+            method: "POST",
+            body: JSON.stringify(pairs),
+            timeoutMs: 20000,
+          },
         ),
     },
   };

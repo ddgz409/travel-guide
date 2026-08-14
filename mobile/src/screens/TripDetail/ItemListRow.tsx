@@ -34,11 +34,13 @@ export const ItemListRow = memo(function ItemListRow({
   tripId,
   destination,
   hasNextRoute,
+  onPoiPress,
 }: {
   item: Item;
   tripId: string;
   destination: string;
   hasNextRoute: boolean;
+  onPoiPress?: () => void;
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -55,9 +57,13 @@ export const ItemListRow = memo(function ItemListRow({
   return (
     <View style={[styles.feedCard, !item.selected && styles.itemOff]}>
       <PressScale
-        onPress={() =>
-          navigation.navigate("TripItemDetail", { tripId, itemId: item.id })
-        }
+        onPress={() => {
+          if (onPoiPress) {
+            onPoiPress();
+            return;
+          }
+          navigation.navigate("TripItemDetail", { tripId, itemId: item.id });
+        }}
         style={styles.feedRow}
       >
         <View style={styles.feedThumbWrap}>

@@ -1,12 +1,12 @@
 """城市探索服务：本地精选 + 高德轻量 POI，极速返回。
 
-图片由客户端 /place-images 懒加载；不做 LLM 与阻塞式坐标补全。
+图片由客户端 /place-images 懒加载（优先高德 POI 图）；城市接口返回时也会补全 POI 封面。
 """
 from __future__ import annotations
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
@@ -63,9 +63,52 @@ def _poi_to_item(poi: Poi, desc: str) -> dict[str, Any]:
     item: dict[str, Any] = {"name": poi.name, "desc": desc[:50]}
     item["lng"] = poi.lng
     item["lat"] = poi.lat
+    if poi.id:
+        item["poi_id"] = poi.id
     if poi.address:
         item["address"] = poi.address
+    if poi.photos:
+        item["image"] = poi.photos[0]
+        item["images"] = poi.photos[:3]
     return item
+
+
+def _enrich_items_with_photos(
+    items: list[dict[str, Any]],
+    city: str,
+    kind: str,
+    *,
+    max_items: int = 4,
+) -> list[dict[str, Any]]:
+    """为缺少封面的条目串行补全高德 POI 实景图（避免 QPS 超限）。"""
+    if not items:
+        return items
+    amap = get_amap_client()
+    if not (amap.api_key or "").strip():
+        return items
+
+    poi_type = POI_TYPES.get("meal") if kind == "foods" else POI_TYPES.get("attraction")
+    out = [dict(it) for it in items]
+    count = 0
+    for idx, it in enumerate(out):
+        if count >= max_items:
+            break
+        if it.get("image") or not (it.get("name") or "").strip():
+            continue
+        name = str(it.get("name") or "").strip()
+        photos = amap.get_poi_photos(
+            poi_id=str(it.get("poi_id") or "").strip() or None,
+            keyword=name,
+            city=city,
+            poi_type=poi_type,
+            limit=3,
+        )
+        if photos:
+            out[idx]["image"] = photos[0]
+            out[idx]["images"] = photos[:3]
+        count += 1
+        time.sleep(0.15)
+    return out
 
 
 def _local_foods(city: str) -> list[dict[str, Any]]:
@@ -160,6 +203,9 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
     if not foods:
         foods = _local_foods(city_name)
 
+    spots = _enrich_items_with_photos(spots, city_name, "spots")
+    foods = _enrich_items_with_photos(foods, city_name, "foods")
+
     logger.info(
         "City info fast city=%s foods=%d spots=%d",
         city,
@@ -221,17 +267,65 @@ def get_place_images(
     name: str,
     kind: str = "",
     limit: int = 3,
+    poi_id: str = "",
 ) -> dict[str, Any]:
-    """单地点小红书图片（列表/详情懒加载）。"""
+    """单地点图片：优先高德 POI 实景图，失败再尝试小红书。"""
     from app.services.xhs_image_client import fetch_xhs_images
 
     city = (city or "").strip()
     name = (name or "").strip()
-    imgs = fetch_xhs_images(city, name, kind, limit=max(1, min(limit, 6)))
+    limit = max(1, min(limit, 6))
+    poi_type = POI_TYPES.get("meal") if kind == "foods" else POI_TYPES.get("attraction") if kind == "spots" else None
+
+    imgs: list[str] = []
+    source: str | None = None
+    try:
+        amap = get_amap_client()
+        if (amap.api_key or "").strip():
+            imgs = amap.get_poi_photos(
+                poi_id=poi_id.strip() or None,
+                keyword=name,
+                city=city or None,
+                poi_type=poi_type,
+                limit=limit,
+            )
+            if imgs:
+                source = "amap"
+    except Exception:
+        logger.exception("amap place images failed city=%s name=%s", city, name)
+
+    if not imgs and not (get_amap_client().api_key or "").strip():
+        imgs = fetch_xhs_images(city, name, kind, limit=limit)
+        if imgs:
+            source = "xhs"
+
     return {
         "city": city,
         "name": name,
         "kind": kind,
         "image": imgs[0] if imgs else None,
         "images": imgs,
+        "source": source,
     }
+
+
+def get_city_covers(pairs: list[dict[str, str]]) -> dict[str, str | None]:
+    """批量拉取热门城市代表景点封面（串行 + 缓存，避免高德 QPS 超限）。"""
+    amap = get_amap_client()
+    if not (amap.api_key or "").strip():
+        return {}
+    out: dict[str, str | None] = {}
+    for row in pairs:
+        city = (row.get("city") or "").strip()
+        landmark = (row.get("landmark") or city).strip()
+        if not city:
+            continue
+        photos = amap.get_poi_photos(
+            keyword=landmark,
+            city=city,
+            poi_type=POI_TYPES["attraction"],
+            limit=1,
+        )
+        out[city] = photos[0] if photos else None
+        time.sleep(0.35)
+    return out

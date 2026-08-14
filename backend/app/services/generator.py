@@ -46,7 +46,7 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
 4. 如果用户指定了"必去景点"，每条路线都应尽量包含（至少经典路线必须全部包含）
 5. 仅使用提供的候选景点/餐饮/住宿，不要编造不存在的地点
 6. 每天安排 morning/afternoon/evening 三个时段，每时段 1-2 个条目；**每天至少 1 顿午餐（afternoon, type=meal）+ 1 顿晚餐（evening, type=meal）**，必须来自可选餐饮列表
-7. 同一区域的景点安排在同一天，路线合理不绕路
+7. 同一区域的景点安排在同一天；**同一天内按地理位置就近串联，以总交通时间最短为准**，避免折返绕路
 8. 为每个条目提供简短描述和实用贴士，合理估算 cost（元）
 9. 住宿：三条路线尽量共用同一家靠前酒店；全程同一家
 10. 必须返回 JSON 对象，格式如下：
@@ -223,6 +223,7 @@ class GuideGenerator:
             )
             for route in routes:
                 self._ensure_meals_per_day(route.get("days") or [], pool)
+                self._optimize_route_days(route.get("days") or [])
                 self._assign_nearest_hotel(route.get("days") or [], pool)
 
             interests = (trip.preferences or {}).get("interests") or []
@@ -316,6 +317,9 @@ class GuideGenerator:
             target = next((d for d in day_plans if d.get("day_index") == day_index), None)
             if not target:
                 raise GeneratorError(f"未生成第 {day_index} 天的行程")
+
+            self._ensure_meals_per_day([target], pool)
+            self._optimize_route_days([target])
 
             # 删除原该天数据
             old_day = next((d for d in trip.days if d.day_index == day_index), None)
@@ -582,6 +586,103 @@ class GuideGenerator:
         dlmb = math.radians(lng2 - lng1)
         a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
         return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+    @staticmethod
+    def _item_coords(item: dict[str, Any]) -> tuple[float, float] | None:
+        loc = item.get("location") or {}
+        try:
+            lng = float(loc.get("lng"))
+            lat = float(loc.get("lat"))
+        except (TypeError, ValueError):
+            return None
+        if abs(lng) < 0.01 and abs(lat) < 0.01:
+            return None
+        return lng, lat
+
+    def _est_travel_time_s(
+        self, a: tuple[float, float], b: tuple[float, float]
+    ) -> int:
+        """估算两坐标间交通耗时（秒），与落库逻辑一致。"""
+        dist = int(self._haversine_m(a[0], a[1], b[0], b[1]))
+        if dist <= 0:
+            return 0
+        if dist <= WALK_MAX_DISTANCE_M:
+            return max(60, int(dist / 1.2))
+        return max(180, int(dist / 6.0))
+
+    def _nearest_neighbor_items(
+        self,
+        items: list[dict[str, Any]],
+        start: tuple[float, float] | None,
+    ) -> list[dict[str, Any]]:
+        """贪心最近邻：在时段内按预估交通时间最短排序。"""
+        if len(items) <= 1:
+            return list(items)
+        no_coord = [it for it in items if not self._item_coords(it)]
+        remaining = [it for it in items if self._item_coords(it)]
+        if not remaining:
+            return list(items)
+
+        ordered: list[dict[str, Any]] = []
+        cur = start
+        while remaining:
+            best_i = 0
+            best_t = 10**9
+            for i, it in enumerate(remaining):
+                c = self._item_coords(it)
+                if not c:
+                    continue
+                t = 0 if cur is None else self._est_travel_time_s(cur, c)
+                if t < best_t:
+                    best_t = t
+                    best_i = i
+            pick = remaining.pop(best_i)
+            ordered.append(pick)
+            c = self._item_coords(pick)
+            if c:
+                cur = c
+        return ordered + no_coord
+
+    def _optimize_day_visit_order(
+        self, items: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """按 morning → afternoon → evening，各时段内最短交通串联。"""
+        slot_order = ("morning", "afternoon", "evening")
+        by_slot: dict[str, list[dict[str, Any]]] = {s: [] for s in slot_order}
+        tail: list[dict[str, Any]] = []
+        for it in items:
+            slot = it.get("time_slot") or "morning"
+            if slot in by_slot:
+                by_slot[slot].append(it)
+            else:
+                tail.append(it)
+
+        result: list[dict[str, Any]] = []
+        prev: tuple[float, float] | None = None
+        for slot in slot_order:
+            group = by_slot[slot]
+            if not group:
+                continue
+            hotels = [x for x in group if x.get("type") == "hotel"]
+            rest = [x for x in group if x.get("type") != "hotel"]
+            ordered = self._nearest_neighbor_items(rest, prev)
+            result.extend(ordered)
+            result.extend(hotels)
+            for it in reversed(result):
+                c = self._item_coords(it)
+                if c:
+                    prev = c
+                    break
+        result.extend(tail)
+        return result
+
+    def _optimize_route_days(self, days: list[dict[str, Any]]) -> None:
+        """就地优化每条路线的日内访问顺序。"""
+        for day in days:
+            items = day.get("items")
+            if not items or len(items) < 2:
+                continue
+            day["items"] = self._optimize_day_visit_order(items)
 
     def _attraction_anchors(self, pool: dict[str, list[Poi]], top_n: int = 12) -> list[Poi]:
         attrs = [
@@ -1033,6 +1134,7 @@ class GuideGenerator:
             days.append(
                 {"day_index": d, "summary": f"{theme} · Day {d}", "items": items}
             )
+            self._optimize_route_days([days[-1]])
         return days
 
     def _build_user_prompt(
@@ -1141,6 +1243,7 @@ class GuideGenerator:
 请严格使用以上候选地点，一次生成恰好 3 条风格不同的 {days_count} 日路线（routes），id 分别为 classic / culture / food。
 硬性要求：三条路线的景点组合要有明显差异；以热门地标为主，不要打卡点子点；
 **每条路线每一天都必须包含午餐+晚餐（type=meal）**；food 路线应安排更多餐饮；
+**同一天内各站点的访问顺序必须按地理位置就近排列，使当日总交通时间尽量最短**；
 住宿选列表靠前酒店且三条尽量同一家。{closing_hints}"""
 
     def _validate_and_enrich(

@@ -28,6 +28,11 @@ export function peekCachedCity(maxAgeMs = 1000 * 60 * 30): string | undefined {
   return memCache.city;
 }
 
+export function peekCachedAccuracy(maxAgeMs = 1000 * 60 * 30): number | undefined {
+  if (!memCache || Date.now() - memCache.at > maxAgeMs) return undefined;
+  return memCache.accuracy;
+}
+
 export function rememberLocation(loc: LatLng, city?: string, accuracy?: number) {
   memCache = {
     loc,
