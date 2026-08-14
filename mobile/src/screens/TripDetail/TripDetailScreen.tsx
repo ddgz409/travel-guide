@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share as RnShare,
   Text,
   View,
 } from "react-native";
@@ -28,6 +27,9 @@ import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { arrayBufferToBase64 } from "../../utils/base64";
+import { shareUrlForToken } from "../../utils/shareUrl";
+import { ShareChoiceSheet } from "../../components/ShareChoiceSheet";
+import type { ShareChoicePayload } from "../../utils/shareChoice";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { ItemListRow } from "./ItemListRow";
 import { HotelNotesRow } from "./HotelNotesRow";
@@ -54,11 +56,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const { tripId } = route.params;
   const insets = useSafeAreaInsets();
   const { user, isGuest } = useAuth();
-  const canEdit = Boolean(user) || isGuest;
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState(0);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [sharePayload, setSharePayload] = useState<ShareChoicePayload | null>(
+    null,
+  );
   const [actionBusy, setActionBusy] = useState(false);
   const [genMessage, setGenMessage] = useState("正在启动生成…");
   const [genReadable, setGenReadable] = useState("");
@@ -73,6 +77,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
       const data = await api.trips.get(tripId);
       setTrip((prev) => {
         if (
+          data.share_mode === "collab" ||
           data.status === "generating" ||
           !prev ||
           prev.status !== data.status ||
@@ -171,6 +176,14 @@ export function TripDetailScreen({ route, navigation }: Props) {
     };
   }, [load, tripId, subscribeGenerateStream]);
 
+  useEffect(() => {
+    if (!trip || trip.status === "generating" || trip.share_mode !== "collab") {
+      return;
+    }
+    const id = setInterval(() => void load(), 4000);
+    return () => clearInterval(id);
+  }, [trip?.id, trip?.status, trip?.share_mode, load]);
+
   const days = trip?.days || [];
   const currentDay = days[activeDay] || days[0];
   const dayItems = currentDay?.items || [];
@@ -203,6 +216,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const selectedRouteId =
     (trip?.preferences?.selected_route_id as string | undefined) ||
     routeOptions[0]?.id;
+  const canEdit = trip ? Boolean(trip.can_edit) : Boolean(user) || isGuest;
 
   useEffect(() => {
     setActiveDay(0);
@@ -214,19 +228,32 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
   async function onShare() {
     if (!trip || !user) {
-      Alert.alert("提示", "登录后才能创建分享链接");
+      Alert.alert("提示", "登录后才能分享，邀请好友一起编辑");
       return;
     }
+    void createAndShare("collab");
+  }
+
+  async function createAndShare(mode: "read" | "collab") {
+    if (!trip) return;
     setActionBusy(true);
     try {
-      const t = await api.trips.createShare(trip.id);
+      const t = await api.trips.createShare(trip.id, mode);
       setTrip(t);
       const token = t.share_token;
       if (!token) throw new Error("未返回分享令牌");
-      const url = `http://localhost:3000/share/${token}`;
+      const url = shareUrlForToken(token);
       await Clipboard.setStringAsync(url);
       setShareMsg(url);
-      await RnShare.share({ message: `旅迹攻略：${t.title}\n${url}`, url });
+      const prefix =
+        mode === "collab"
+          ? `邀请你一起编辑旅迹攻略「${t.title}」（需登录）`
+          : `旅迹攻略：${t.title}`;
+      setSharePayload({
+        url,
+        title: t.title,
+        message: `${prefix}\n${url}`,
+      });
     } catch (e) {
       Alert.alert("分享失败", e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -402,6 +429,21 @@ export function TripDetailScreen({ route, navigation }: Props) {
       ) : null}
 
       <DraggableBottomSheet bottomInset={Math.max(insets.bottom, 8)}>
+        <Pressable
+          style={styles.shareBanner}
+          onPress={onShare}
+          disabled={actionBusy}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.shareBannerTitle}>分享链接</Text>
+            <Text style={styles.shareBannerSub} numberOfLines={2}>
+              {shareMsg || "邀请好友一起编辑这条行程 · 微信 / QQ / 复制"}
+            </Text>
+          </View>
+          <Text style={styles.shareBannerCta}>
+            {actionBusy ? "…" : "分享"}
+          </Text>
+        </Pressable>
         <View style={styles.actions}>
           <PressScale
             style={[styles.actionBtn, styles.actionAi]}
@@ -416,13 +458,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
             <Text style={[styles.actionText, { color: colors.brandHot }]}>
               问 AI 助手
             </Text>
-          </PressScale>
-          <PressScale
-            style={[styles.actionBtn, styles.actionPrimary]}
-            onPress={onShare}
-            disabled={actionBusy}
-          >
-            <Text style={styles.actionPrimaryText}>分享</Text>
           </PressScale>
           <PressScale
             style={styles.actionBtn}
@@ -442,10 +477,17 @@ export function TripDetailScreen({ route, navigation }: Props) {
             </PressScale>
           ) : null}
         </View>
-        {shareMsg ? (
-          <Text style={styles.shareMsg} selectable>
-            已复制：{shareMsg}
-          </Text>
+        {(trip.collaborators || []).length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>协作者</Text>
+            <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20 }}>
+              {(trip.collaborators || [])
+                .map((c) =>
+                  c.role === "owner" ? `${c.username}（创建者）` : c.username,
+                )
+                .join("、")}
+            </Text>
+          </View>
         ) : null}
 
         <ScrollView
@@ -457,26 +499,26 @@ export function TripDetailScreen({ route, navigation }: Props) {
           {routeOptions.length > 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>路线方案</Text>
-              {routeOptions.map((opt) => {
-                const on = opt.id === selectedRouteId;
-                return (
-                  <PressScale
-                    key={opt.id}
-                    disabled={!canEdit || actionBusy}
-                    onPress={() => onSelectRoute(opt.id)}
-                    style={[styles.routeCard, on && styles.routeCardOn]}
-                  >
-                    <Text style={styles.routeTitle}>{opt.title}</Text>
-                    <Text style={styles.routeTheme}>{opt.theme}</Text>
-                    {opt.tagline ? (
-                      <Text style={styles.routeTag}>{opt.tagline}</Text>
-                    ) : null}
-                    {on ? (
-                      <Text style={styles.routeOnHint}>当前方案</Text>
-                    ) : null}
-                  </PressScale>
-                );
-              })}
+              <View style={styles.routeRow}>
+                {routeOptions.map((opt) => {
+                  const on = opt.id === selectedRouteId;
+                  return (
+                    <PressScale
+                      key={opt.id}
+                      disabled={!canEdit || actionBusy}
+                      onPress={() => onSelectRoute(opt.id)}
+                      style={[styles.routeTile, on && styles.routeTileOn]}
+                    >
+                      <Text
+                        style={[styles.routeTileTitle, on && styles.routeTileTitleOn]}
+                        numberOfLines={2}
+                      >
+                        {opt.title}
+                      </Text>
+                    </PressScale>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
 
@@ -493,13 +535,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
                   {actionBusy ? "处理中…" : "重新生成当天"}
                 </Text>
               </PressScale>
-            ) : null}
-
-            {currentDay?.summary ? (
-              <FadeSlideIn delay={40} style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>当日亮点</Text>
-                <Text style={styles.summaryText}>{currentDay.summary}</Text>
-              </FadeSlideIn>
             ) : null}
 
             <Text style={styles.sectionTitle}>
@@ -550,6 +585,11 @@ export function TripDetailScreen({ route, navigation }: Props) {
           </FadeSwitch>
         </ScrollView>
       </DraggableBottomSheet>
+      <ShareChoiceSheet
+        visible={sharePayload != null}
+        payload={sharePayload}
+        onClose={() => setSharePayload(null)}
+      />
     </View>
   );
 }

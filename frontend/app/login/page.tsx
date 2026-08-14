@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 
 import { useAuthStore } from "@/stores/auth";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/trips";
   const { login } = useAuthStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +22,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(username, password);
-      router.push("/trips");
+      router.push(next.startsWith("/") ? next : "/trips");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
     } finally {
@@ -82,7 +84,7 @@ export default function LoginPage() {
         <p className="text-center text-sm text-[var(--muted)] mt-6">
           还没有账号？{" "}
           <Link
-            href="/register"
+            href={`/register${next && next !== "/trips" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="text-[var(--brand)] hover:underline font-semibold"
           >
             立即注册
@@ -90,5 +92,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-gray-400">加载中...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

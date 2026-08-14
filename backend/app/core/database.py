@@ -57,6 +57,10 @@ def ensure_sqlite_columns() -> None:
             alters.append(
                 "ALTER TABLE trips ADD COLUMN hotel_candidates JSON DEFAULT '[]'"
             )
+        if "share_mode" not in cols:
+            alters.append(
+                "ALTER TABLE trips ADD COLUMN share_mode VARCHAR(16) DEFAULT 'read'"
+            )
 
     if "users" in tables:
         ucols = {c["name"] for c in inspector.get_columns("users")}

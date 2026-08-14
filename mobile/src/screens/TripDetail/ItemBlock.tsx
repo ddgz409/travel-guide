@@ -9,7 +9,6 @@ import type { Item, TransportToNext, Trip } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { TransportRouteSheet } from "../../components/TransportRouteSheet";
-import { PoiPortalLinks } from "../../components/PoiPortalLinks";
 import { colors } from "../../theme";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { styles } from "./styles";
@@ -112,11 +111,6 @@ export const ItemBlock = memo(function ItemBlock({
           <Text style={styles.itemMeta}>评分 {item.rating}</Text>
         ) : null}
       </View>
-      <PoiPortalLinks
-        city={destination}
-        name={item.name}
-        itemType={item.type}
-      />
       {showRouteBtn && transportForSheet ? (
         <TransportRouteSheet
           tripId={tripId}

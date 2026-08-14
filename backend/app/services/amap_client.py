@@ -161,25 +161,33 @@ class AmapClient:
     def search_poi_around(
         self,
         location: str,
-        poi_type: str,
+        poi_type: str | None = None,
         radius: int = 20000,
         limit: int = 30,
         city: str | None = None,
+        keywords: str | None = None,
+        *,
+        sortrule: str = "distance",
     ) -> list[Poi]:
         """周边 POI 搜索。
 
-        location: "lng,lat"  poi_type: POI_TYPES 中的值或类型码
+        location: "lng,lat"；keywords 与 poi_type 至少传一个。
         """
+        if not poi_type and not keywords:
+            raise ValueError("search_poi_around requires keywords or poi_type")
         params = {
             "key": self.api_key,
             "location": location,
-            "types": poi_type,
             "radius": radius,
-            "offset": limit,
+            "offset": min(limit, 25),
             "page": 1,
             "extensions": "all",
-            "sortrule": "weight",  # 按权重排序
+            "sortrule": sortrule,
         }
+        if poi_type:
+            params["types"] = poi_type
+        if keywords:
+            params["keywords"] = keywords
         if city:
             params["city"] = city
         resp = self._client.get(f"{AMAP_BASE}/place/around", params=params)
@@ -220,10 +228,12 @@ class AmapClient:
         page: int = 1,
         city_limit: bool = False,
         poi_type: str | None = None,
+        location_center: str | None = None,
     ) -> list[Poi]:
         """关键词 POI 搜索。
 
         city_limit=True 时结果限制在指定城市（景点搜索框必开）。
+        location_center: "lng,lat"，有则按距离排序（添加足迹等场景）。
         """
         params: dict = {
             "key": self.api_key,
@@ -236,6 +246,9 @@ class AmapClient:
             params["city"] = city
             if city_limit:
                 params["citylimit"] = "true"
+        if location_center:
+            params["location"] = location_center
+            params["sortrule"] = "distance"
         if poi_type:
             params["types"] = poi_type
         resp = self._client.get(f"{AMAP_BASE}/place/text", params=params)

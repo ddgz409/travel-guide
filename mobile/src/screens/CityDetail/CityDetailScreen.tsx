@@ -164,6 +164,14 @@ export function CityDetailScreen({ navigation, route }: Props) {
     setCheckedKeys((prev) => new Set(prev).add(`${city}::${item.name}`));
   }, [city]);
 
+  const handleUncheck = useCallback((item: PoiItem) => {
+    setCheckedKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(`${city}::${item.name}`);
+      return next;
+    });
+  }, [city]);
+
   const activeItems: PoiItem[] = category === "foods" ? foods : spots;
   const activeCat = CATEGORIES.find((c) => c.key === category)!;
 
@@ -394,6 +402,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
             : false
         }
         onCheckIn={handleCheckIn}
+        onUncheck={handleUncheck}
         onClose={() => setSelectedItem(null)}
       />
     </View>

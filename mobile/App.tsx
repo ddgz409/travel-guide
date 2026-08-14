@@ -4,13 +4,15 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
 import { maybePromptUpdateOnLaunch } from "./src/utils/appUpdate";
 import type { AppStackParamList } from "./src/navigation/types";
 import { LoginScreen } from "./src/screens/Login/LoginScreen";
 import { RegisterScreen } from "./src/screens/Register/RegisterScreen";
 import { TripsScreen } from "./src/screens/Trips/TripsScreen";
+import { ExploreScreen } from "./src/screens/Explore/ExploreScreen";
+import { MeScreen } from "./src/screens/Me/MeScreen";
 import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
 import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
@@ -19,6 +21,7 @@ import { TravelSearchScreen } from "./src/screens/TravelSearch/TravelSearchScree
 import { PortalSelectScreen } from "./src/screens/PortalSelect/PortalSelectScreen";
 import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
 import { CustomTabBar } from "./src/components/CustomTabBar";
+import { MainTabContext, type MainTab } from "./src/navigation/MainTabContext";
 import { colors } from "./src/theme";
 
 /** 推迟加载带地图的页面 */
@@ -35,9 +38,6 @@ const TripItemDetailScreen = lazy(() =>
 const ShareScreen = lazy(() =>
   import("./src/screens/Share/ShareScreen").then((m) => ({ default: m.ShareScreen })),
 );
-const ExploreScreen = lazy(() =>
-  import("./src/screens/Explore/ExploreScreen").then((m) => ({ default: m.ExploreScreen })),
-);
 const CityDetailScreen = lazy(() =>
   import("./src/screens/CityDetail/CityDetailScreen").then((m) => ({
     default: m.CityDetailScreen,
@@ -48,21 +48,52 @@ const CheckInMapFullScreen = lazy(() =>
     default: m.CheckInMapFullScreen,
   })),
 );
+const FootprintOverviewScreen = lazy(() =>
+  import("./src/screens/Me/FootprintOverviewScreen").then((m) => ({
+    default: m.FootprintOverviewScreen,
+  })),
+);
+const AddFootprintScreen = lazy(() =>
+  import("./src/screens/Me/AddFootprintScreen").then((m) => ({
+    default: m.AddFootprintScreen,
+  })),
+);
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
-/** 底部 Tab 容器（探索 / + / 行程） */
+/** 底部 Tab 容器（计划 / 探索 / 我的）：仅探索页保活，避免 WebView 挡住其它 Tab */
 function MainScreen() {
-  const [tab, setTab] = useState<"Trips" | "Explore">("Explore");
-  const insets = useSafeAreaInsets();
+  const [tab, setTab] = useState<MainTab>("Explore");
+  const [exploreMounted, setExploreMounted] = useState(true);
+
+  function onTabChange(next: MainTab) {
+    if (next === "Explore") setExploreMounted(true);
+    setTab(next);
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <MainTabContext.Provider value={{ tab, setTab: onTabChange }}>
       <View style={{ flex: 1 }}>
-        {tab === "Trips" ? <TripsScreen /> : <ExploreScreen />}
+        <View style={{ flex: 1 }}>
+          {tab === "Trips" ? <TripsScreen /> : null}
+          {tab === "Me" ? <MeScreen /> : null}
+          {exploreMounted ? (
+            <View
+              style={{ flex: 1, display: tab === "Explore" ? "flex" : "none" }}
+              pointerEvents={tab === "Explore" ? "auto" : "none"}
+            >
+              <ExploreScreen />
+            </View>
+          ) : null}
+        </View>
+        <View
+          pointerEvents="box-none"
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+        >
+          <CustomTabBar activeTab={tab} onTabChange={onTabChange} />
+        </View>
       </View>
-      <CustomTabBar activeTab={tab} onTabChange={setTab} />
-    </View>
+    </MainTabContext.Provider>
   );
 }
 
@@ -122,6 +153,16 @@ function RootNavigator() {
       <Stack.Screen
         name="CheckInMapFull"
         component={CheckInMapFullScreen}
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="FootprintOverview"
+        component={FootprintOverviewScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
+      <Stack.Screen
+        name="AddFootprint"
+        component={AddFootprintScreen}
         options={{ headerShown: false, animation: "slide_from_bottom" }}
       />
       <Stack.Screen

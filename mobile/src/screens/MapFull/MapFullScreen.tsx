@@ -79,18 +79,6 @@ export function MapFullScreen({ route }: Props) {
 
       <View style={styles.controls} pointerEvents="box-none">
         <Pressable
-          style={styles.ctrlBtn}
-          onPress={() => inject("window.zoomIn && window.zoomIn()")}
-        >
-          <Text style={styles.ctrlText}>＋</Text>
-        </Pressable>
-        <Pressable
-          style={styles.ctrlBtn}
-          onPress={() => inject("window.zoomOut && window.zoomOut()")}
-        >
-          <Text style={styles.ctrlText}>－</Text>
-        </Pressable>
-        <Pressable
           style={[styles.ctrlBtn, styles.locateBtn]}
           onPress={() => void requestAndShowLocation()}
           disabled={locating}

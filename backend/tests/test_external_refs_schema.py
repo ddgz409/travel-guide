@@ -23,3 +23,6 @@ def test_external_tip_roundtrip():
 def test_trip_out_includes_external_refs():
     fields = TripOut.model_fields
     assert "external_refs" in fields
+    assert "share_mode" in fields
+    assert "can_edit" in fields
+    assert "collaborators" in fields

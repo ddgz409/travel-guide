@@ -9,7 +9,6 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { Trip } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
-import { useAuth } from "../../auth/AuthContext";
 import { colors } from "../../theme";
 import { PressScale } from "../../utils/motion";
 import type { AppStackParamList } from "../../navigation/types";
@@ -24,8 +23,6 @@ function hasCoords(loc: { lng?: number | null; lat?: number | null } | null | un
 
 export function TripItemDetailScreen({ route }: Props) {
   const { tripId, itemId } = route.params;
-  const { user, isGuest } = useAuth();
-  const canEdit = Boolean(user) || isGuest;
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +77,8 @@ export function TripItemDetailScreen({ route }: Props) {
       </View>
     );
   }
+
+  const canEdit = Boolean(trip.can_edit);
 
   return (
     <ScrollView

@@ -8,8 +8,10 @@ export type MapMarker = {
   itemId?: string;
   /** 自定义 pin 背景色 */
   color?: string;
-  /** pin 内显示的 emoji 或单字符 */
+  /** pin 内显示：emoji，或 1–2 位序号（行程路线） */
   icon?: string;
+  /** 与 icon 相同，纯倒水滴时可省略 */
+  label?: string;
 };
 
 export function buildAmapHtml(opts: {
@@ -53,16 +55,45 @@ export function buildAmapHtml(opts: {
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#f3f4f6;overflow:hidden}
-    .pin{
-      width:32px;height:32px;border-radius:11px;
-      background:#ff6d00;color:#fff;
-      font:700 13px/32px -apple-system,BlinkMacSystemFont,sans-serif;
-      text-align:center;
+    .pin-drop{
+      position:relative;
+      width:32px;
+      height:42px;
+    }
+    .pin-drop-shape{
+      position:absolute;
+      top:5px;
+      left:3px;
+      width:26px;
+      height:26px;
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      background:var(--pin,#1a66ff);
       border:2.5px solid #fff;
       box-shadow:0 2px 8px rgba(0,0,0,.28);
-      display:flex;align-items:center;justify-content:center;
     }
-    .pin-emoji{font-size:15px;line-height:1}
+    .pin-drop-label{
+      position:absolute;
+      top:11px;
+      left:0;
+      width:32px;
+      text-align:center;
+      color:#fff;
+      font:700 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+      z-index:1;
+      pointer-events:none;
+    }
+    .pin-emoji{
+      position:absolute;
+      top:10px;
+      left:0;
+      width:32px;
+      text-align:center;
+      font-size:14px;
+      line-height:1;
+      z-index:1;
+      pointer-events:none;
+    }
     .pin-marker{transition:opacity .25s ease,transform .25s ease,filter .25s ease;cursor:pointer}
     .user-dot{
       width:16px;height:16px;border-radius:50%;
@@ -227,14 +258,19 @@ export function buildAmapHtml(opts: {
           markers.forEach(function (m, i) {
             var pos = [m.lng, m.lat];
             points.push(pos);
-            var bg = m.color || '#ff6d00';
-            var inner = m.icon
-              ? '<span class="pin-emoji">' + m.icon + '</span>'
-              : String(i + 1);
+            var bg = m.color || '#1a66ff';
+            var label = m.icon ? String(m.icon) : (m.label ? String(m.label) : '');
+            var isEmoji = label && !/^[0-9]{1,2}$/.test(label);
+            var inner = '';
+            if (label && isEmoji) {
+              inner = '<span class="pin-emoji">' + label + '</span>';
+            } else if (label) {
+              inner = '<span class="pin-drop-label">' + label + '</span>';
+            }
             var div = document.createElement('div');
-            div.className = 'pin' + (data.focusCenter ? ' pin-marker' : '');
-            div.style.background = bg;
-            div.innerHTML = inner;
+            div.className = 'pin-drop' + (data.focusCenter ? ' pin-marker' : '');
+            div.style.setProperty('--pin', bg);
+            div.innerHTML = '<div class="pin-drop-shape"></div>' + inner;
             if (!data.focusCenter) div.style.opacity = '1';
             var lastMarkerTap = 0;
             function emitMarkerTap(m) {
@@ -252,7 +288,7 @@ export function buildAmapHtml(opts: {
               map: map,
               position: pos,
               title: m.name,
-              offset: new AMap.Pixel(-16, -16),
+              offset: new AMap.Pixel(-16, -40),
               content: div,
               zIndex: data.focusCenter ? 10 : 100 + i
             });
@@ -366,6 +402,11 @@ export function buildAmapHtml(opts: {
           });
         }
         if (center) window.__map.setZoomAndCenter(15, pos);
+      };
+      window.clearUserLocation = function () {
+        if (!window.__userMarker) return;
+        try { window.__userMarker.setMap(null); } catch (e) {}
+        window.__userMarker = null;
       };
 
       window.updateMapData = function (nextMarkers, nextPolyline, linkMarkers, focusCenter, viewportLimit) {

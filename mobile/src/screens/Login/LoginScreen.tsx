@@ -17,7 +17,7 @@ import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Login">;
 
-export function LoginScreen({ navigation }: Props) {
+export function LoginScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { login, enterGuest } = useAuth();
   const [username, setUsername] = useState("");
@@ -34,7 +34,12 @@ export function LoginScreen({ navigation }: Props) {
     setError(null);
     try {
       await login(username.trim(), password);
-      navigation.popToTop();
+      const next = route.params?.next;
+      if (next?.screen === "Share") {
+        navigation.replace("Share", { token: next.token });
+      } else {
+        navigation.popToTop();
+      }
     } catch (e) {
       setError(formatAuthError(e));
     } finally {
@@ -102,15 +107,21 @@ export function LoginScreen({ navigation }: Props) {
             <Text style={styles.primaryBtnText}>登录</Text>
           )}
         </PressScale>
-        <PressScale
-          style={[styles.guestBtn, busy && styles.btnDisabled]}
-          onPress={onGuest}
-          disabled={busy}
-        >
-          <Text style={styles.guestBtnText}>游客体验</Text>
-        </PressScale>
-        <Text style={styles.guestHint}>无需登录，先生成一份攻略试试</Text>
-        <PressScale onPress={() => navigation.navigate("Register")}>
+        {route.params?.next?.screen === "Share" ? (
+          <Text style={styles.guestHint}>共同编辑需要登录账号</Text>
+        ) : (
+          <>
+            <PressScale
+              style={[styles.guestBtn, busy && styles.btnDisabled]}
+              onPress={onGuest}
+              disabled={busy}
+            >
+              <Text style={styles.guestBtnText}>游客体验</Text>
+            </PressScale>
+            <Text style={styles.guestHint}>无需登录，先生成一份攻略试试</Text>
+          </>
+        )}
+        <PressScale onPress={() => navigation.navigate("Register", { next: route.params?.next })}>
           <Text style={styles.link}>没有账号？去注册</Text>
         </PressScale>
       </FadeSlideIn>

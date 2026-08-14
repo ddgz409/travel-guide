@@ -13,8 +13,8 @@ type Props = {
   city: string;
   name: string;
   kind?: PoiPortalKind;
-  /** 使用 item.type 自动推断 kind */
   itemType?: string;
+  compact?: boolean;
 };
 
 const PORTALS = [
@@ -23,7 +23,8 @@ const PORTALS = [
   { id: "qunar" as const, label: "去哪儿", color: "#FF6B35", short: "去" },
 ];
 
-export function PoiPortalLinks({ city, name, kind, itemType }: Props) {
+/** 打开第三方 App 看攻略，不含行程分享 */
+export function PoiPortalLinks({ city, name, kind, itemType, compact }: Props) {
   const portalKind = kind ?? (itemType ? itemTypeToPortalKind(itemType) : "attraction");
 
   function onPress(id: (typeof PORTALS)[number]["id"]) {
@@ -34,8 +35,8 @@ export function PoiPortalLinks({ city, name, kind, itemType }: Props) {
   }
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.label}>查看攻略</Text>
+    <View style={[styles.wrap, compact && styles.wrapCompact]}>
+      {compact ? null : <Text style={styles.label}>在其他平台查看</Text>}
       <View style={styles.row}>
         {PORTALS.map((p) => (
           <Pressable
@@ -56,12 +57,23 @@ export function PoiPortalLinks({ city, name, kind, itemType }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: 4,
+    marginTop: 8,
+    backgroundColor: "#F7FBFF",
+    borderRadius: 22,
+    borderCurve: "continuous",
+    borderWidth: 1,
+    borderColor: "#D7EAF8",
+    padding: 14,
+  },
+  wrapCompact: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#EEF7FF",
   },
   label: {
-    fontSize: 13,
-    color: colors.muted,
-    fontWeight: "600",
+    fontSize: 15,
+    color: colors.ink,
+    fontWeight: "800",
     marginBottom: 10,
   },
   row: {
@@ -72,17 +84,19 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f7f7f7",
-    borderRadius: 30, borderCurve: "continuous",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    borderCurve: "continuous",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderWidth: 1,
     borderColor: colors.line,
   },
   badge: {
-    width: 18,
-    height: 18,
-    borderRadius: 14, borderCurve: "continuous",
+    width: 20,
+    height: 20,
+    borderRadius: 14,
+    borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 6,
@@ -93,7 +107,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 14,
     color: colors.ink,
     fontWeight: "700",
   },

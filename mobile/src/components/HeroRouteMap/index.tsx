@@ -36,9 +36,9 @@ import { styles } from "./styles";
 type Props = {
   tripId?: string;
   dayId?: string;
-  /** ???????? selected ????????? */
+  /** 当日行程点（selected 且有坐标的会画路线） */
   items?: Item[];
-  /** ??????????????? items????????? */
+  /** 分类筛选用的全部行程点，缺省则用 items */
   categoryItems?: Item[];
   destination?: string;
   title?: string;
@@ -328,14 +328,14 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     if (!amapKey) return "";
     const seed = fallbackMarkers.length
       ? fallbackMarkers
-      : [{ lng: 116.4074, lat: 39.9042, name: "??" }];
+      : [{ lng: 116.4074, lat: 39.9042, name: destination || "地图" }];
     return buildAmapHtml({
       key: amapKey,
       markers: seed,
       polyline: [],
       interactive: true,
     });
-  }, [amapKey, fallbackMarkers]);
+  }, [amapKey, fallbackMarkers, destination]);
 
   const inject = useCallback((js: string) => {
     webRef.current?.injectJavaScript(`${js}; true;`);
@@ -369,7 +369,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   function openFullMap() {
     if (!mapMarkers.length) return;
     navigation.navigate("MapFull", {
-      title: title || statusTitle || destination || "????",
+      title: title || statusTitle || destination || "地图",
       markers: mapMarkers,
       polyline: categoryActive ? [] : polyline,
     });
@@ -384,7 +384,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   if (!amapKey) {
     return (
       <View style={[rootStyle, styles.mapLoading]}>
-        <Text style={styles.mapHint}>?????</Text>
+        <Text style={styles.mapHint}>未配置地图 Key</Text>
       </View>
     );
   }
@@ -472,22 +472,8 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
                 />
               </View>
             </NativeViewGestureHandler>
-            <View style={styles.mapControls} pointerEvents="box-none">
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomIn && window.zoomIn()")}
-              >
-                <Text style={styles.mapCtrlText}>{"?"}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomOut && window.zoomOut()")}
-              >
-                <Text style={styles.mapCtrlText}>{"?"}</Text>
-              </Pressable>
-            </View>
             <Pressable style={styles.mapExpand} onPress={openFullMap}>
-              <Text style={styles.mapTapText}>??</Text>
+              <Text style={styles.mapTapText}>全屏</Text>
             </Pressable>
             {routeLoading || categoryLoading ? (
               <View style={styles.routeLoading}>
@@ -497,7 +483,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
             {categoryActive && activeCategoryMeta ? (
               <View style={styles.categoryHint} pointerEvents="none">
                 <Text style={styles.categoryHintText}>
-                  {`${activeCategoryMeta.icon} ${activeCategoryMeta.label} ? ? ${viewportStats.total || categoryMarkers.length} ? ? ??? ${viewportStats.visible || Math.min(VIEWPORT_MARKER_LIMIT, categoryMarkers.length)} ?${(viewportStats.total || categoryMarkers.length) > VIEWPORT_MARKER_LIMIT ? " ? ??/??????" : ""}`}
+                  {`${activeCategoryMeta.icon} ${activeCategoryMeta.label} · 共 ${viewportStats.total || categoryMarkers.length} 处 · 当前 ${viewportStats.visible || Math.min(VIEWPORT_MARKER_LIMIT, categoryMarkers.length)} 个${(viewportStats.total || categoryMarkers.length) > VIEWPORT_MARKER_LIMIT ? " · 缩放查看更多" : ""}`}
                 </Text>
               </View>
             ) : null}
@@ -507,7 +493,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
         {statusTitle ? (
           <View style={styles.statusBar} pointerEvents="none">
             <View style={styles.statusChip}>
-              <Text style={styles.statusIcon}>?</Text>
+              <Text style={styles.statusIcon}>📍</Text>
               <View style={styles.statusTextWrap}>
                 <Text style={styles.statusTitle} numberOfLines={1}>
                   {statusTitle}
@@ -535,7 +521,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
             : null
         }
         category={sheetCategory}
-        city={destination}
+        city={destination || ""}
         userLocation={null}
         onClose={() => setPoiSheet(null)}
       />

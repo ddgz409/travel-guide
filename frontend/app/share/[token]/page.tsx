@@ -1,14 +1,17 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useState } from "react";
 
 import { tripsApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import type { Day, Item, Trip } from "@/lib/types";
 import { TripMap } from "@/components/map/trip-map";
 import { ExternalRefsPanel } from "@/components/external-refs";
 import { HotelCandidatesPanel } from "@/components/hotel-candidates";
+import { ItemCard } from "@/components/item-card";
 
 const SLOT_LABEL: Record<string, string> = {
   morning: "上午", afternoon: "下午", evening: "晚上",
@@ -28,14 +31,40 @@ function formatDuration(min: number | null): string {
 
 export default function SharePage() {
   const params = useParams();
+  const router = useRouter();
+  const qc = useQueryClient();
   const token = params.token as string;
+  const user = useAuthStore((s) => s.user);
+  const authLoading = useAuthStore((s) => s.loading);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const { data: trip, isLoading, error } = useQuery<Trip>({
     queryKey: ["share", token],
     queryFn: () => tripsApi.getShared(token),
+    refetchInterval: (q) =>
+      q.state.data?.share_mode === "collab" ? 4000 : false,
   });
 
-  if (isLoading) {
+  const join = useMutation({
+    mutationFn: () => tripsApi.joinShare(token),
+    onSuccess: (t) => {
+      qc.setQueryData(["share", token], t);
+      if (t.can_edit) {
+        router.push(`/trips/${t.id}`);
+      }
+    },
+    onError: (err) => {
+      setJoinError(err instanceof Error ? err.message : "加入失败");
+    },
+  });
+
+  const toggleItem = useMutation({
+    mutationFn: ({ itemId, selected }: { itemId: string; selected: boolean }) =>
+      tripsApi.toggleItem(trip!.id, itemId, selected),
+    onSuccess: (t) => qc.setQueryData(["share", token], t),
+  });
+
+  if (isLoading || authLoading) {
     return <div className="flex-1 flex items-center justify-center text-gray-400">加载中...</div>;
   }
 
@@ -44,7 +73,7 @@ export default function SharePage() {
       <div className="flex-1 flex flex-col items-center justify-center py-20 text-gray-500">
         <div className="text-5xl mb-4">🔍</div>
         <p>分享链接无效或攻略不存在</p>
-        <Link href="/" className="mt-4 text-#ff8a00 hover:underline">返回首页</Link>
+        <Link href="/" className="mt-4 text-[var(--brand)] hover:underline">返回首页</Link>
       </div>
     );
   }
@@ -54,18 +83,59 @@ export default function SharePage() {
     (sum, d) => sum + d.items.reduce((s, it) => s + (it.cost || 0), 0),
     0,
   );
+  const collab = trip.share_mode === "collab";
+  const collaborators = trip.collaborators || [];
+  const loginHref = `/login?next=${encodeURIComponent(`/share/${token}`)}`;
 
   return (
     <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
       <div className="mb-6">
         <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
-          📤 分享的攻略
+          {collab ? "共同编辑邀请" : "分享的攻略"}
         </span>
         <h1 className="text-2xl font-bold mt-2">{trip.title}</h1>
         <p className="text-gray-500 text-sm mt-1">
           {trip.destination} · {trip.start_date} 至 {trip.end_date} · {trip.travelers} 人
         </p>
       </div>
+
+      {collaborators.length > 0 && (
+        <div className="mb-4 bg-white rounded-2xl border border-gray-200 p-4 text-sm">
+          <div className="font-semibold text-[var(--ink)] mb-1">协作者</div>
+          <p className="text-[var(--muted)]">
+            {collaborators
+              .map((c) => (c.role === "owner" ? `${c.username}（创建者）` : c.username))
+              .join("、")}
+          </p>
+        </div>
+      )}
+
+      {collab && (
+        <div className="mb-5">
+          {!user ? (
+            <Link
+              href={loginHref}
+              className="inline-flex rounded-full bg-[var(--brand)] px-5 py-2.5 text-sm font-semibold text-white"
+            >
+              登录后加入共同编辑
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => join.mutate()}
+              disabled={join.isPending}
+              className="rounded-full bg-[var(--brand)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {join.isPending
+                ? "加入中…"
+                : trip.can_edit
+                  ? "进入完整编辑页"
+                  : "加入共同编辑"}
+            </button>
+          )}
+          {joinError && <p className="mt-2 text-sm text-red-600">{joinError}</p>}
+        </div>
+      )}
 
       <HotelCandidatesPanel
         status={trip.hotel_fetch_status}
@@ -74,7 +144,9 @@ export default function SharePage() {
       <ExternalRefsPanel refs={trip.external_refs} />
 
       <div className="space-y-6">
-        {days.map((day: Day) => (
+        {days.map((day: Day) => {
+          const dayItems = day.items || [];
+          return (
           <div key={day.id} className="bg-white rounded-3xl border border-gray-200 p-5">
             <h2 className="font-semibold mb-1">
               Day {day.day_index} <span className="text-gray-400 text-sm font-normal">· {day.date.slice(5)}</span>
@@ -85,15 +157,49 @@ export default function SharePage() {
               </p>
             )}
             <TripMap
-              items={day.items.filter((it) => it.selected)}
+              items={dayItems.filter((it) => it.selected)}
               tripId={trip.id}
               dayId={day.id}
               height="300px"
             />
             <div className="space-y-2 mt-3">
-              {day.items.map((it: Item, idx: number) => (
+              {trip.can_edit
+                ? dayItems.map((it, idx) => {
+                    const hasNextRoute = dayItems
+                      .slice(idx + 1)
+                      .some(
+                        (n) =>
+                          n.selected &&
+                          n.location?.lng != null &&
+                          n.location?.lat != null,
+                      );
+                    return (
+                      <ItemCard
+                        key={it.id}
+                        item={it}
+                        index={idx}
+                        tripId={trip.id}
+                        city={trip.destination}
+                        hasNextRoute={hasNextRoute}
+                        onToggle={(selected) =>
+                          toggleItem.mutate({ itemId: it.id, selected })
+                        }
+                        onSwap={() => {}}
+                        onReplace={() => {}}
+                        onTransportChange={() =>
+                          qc.invalidateQueries({ queryKey: ["share", token] })
+                        }
+                        onDragStart={() => {}}
+                        onDragOver={() => {}}
+                        onDrop={() => {}}
+                        dragging={false}
+                        dragOver={false}
+                      />
+                    );
+                  })
+                : dayItems.map((it: Item, idx: number) => (
                 <div key={it.id} className="flex gap-3 text-sm">
-                  <span className="w-6 h-6 rounded-full bg-orange-50 text-#ff8a00 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-orange-50 text-[var(--brand)] flex items-center justify-center text-xs font-bold flex-shrink-0">
                     {idx + 1}
                   </span>
                   <div className="flex-1">
@@ -118,7 +224,8 @@ export default function SharePage() {
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-6 bg-white rounded-3xl border border-gray-200 p-5 text-center">
@@ -129,7 +236,7 @@ export default function SharePage() {
       </div>
 
       <div className="text-center mt-8 pb-8">
-        <Link href="/" className="text-#ff8a00 hover:underline text-sm">
+        <Link href="/" className="text-[var(--brand)] hover:underline text-sm">
           我也要生成旅行攻略 →
         </Link>
       </div>

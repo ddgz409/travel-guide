@@ -235,10 +235,16 @@ export const tripsApi = {
       method: "POST",
     }),
 
-  createShare: (tripId: string) =>
-    request<Trip>(`/trips/${tripId}/share`, { method: "POST" }),
+  createShare: (tripId: string, mode: "read" | "collab" = "read") =>
+    request<Trip>(`/trips/${tripId}/share`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 
   getShared: (token: string) => request<Trip>(`/trips/share/${token}`),
+
+  joinShare: (token: string) =>
+    request<Trip>(`/trips/share/${token}/join`, { method: "POST" }),
 
   remove: (tripId: string) =>
     request<void>(`/trips/${tripId}`, { method: "DELETE" }),

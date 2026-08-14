@@ -199,9 +199,19 @@ export interface Trip {
   status: TripStatus;
   error_msg: string | null;
   share_token: string | null;
+  share_mode?: "read" | "collab";
+  can_edit?: boolean;
+  collaborators?: Collaborator[];
   created_at: string;
   updated_at: string;
   days: Day[];
+}
+
+export interface Collaborator {
+  user_id: string;
+  username: string;
+  role: "owner" | "collaborator";
+  joined_at?: string | null;
 }
 
 export interface TripListItem {

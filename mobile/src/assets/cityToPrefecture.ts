@@ -757,3 +757,26 @@ export function resolvePrefectureId(city: string): string | null {
   }
   return null;
 }
+
+/** 从地址/城市拼串里解析地级市（取最长匹配） */
+export function resolvePrefectureFromText(
+  text: string,
+): { id: string; city: string } | null {
+  const raw = (text || "").trim();
+  if (!raw) return null;
+  const direct = resolvePrefectureId(raw);
+  if (direct) {
+    const name = raw.replace(STRIP_SUFFIX, "") || raw;
+    return { id: direct, city: name };
+  }
+  let best: { name: string; id: string } | null = null;
+  for (const [name, id] of Object.entries(CITY_TO_PREFECTURE)) {
+    if (!raw.includes(name)) continue;
+    if (!best || name.length > best.name.length) best = { name, id };
+  }
+  if (!best) return null;
+  return {
+    id: best.id,
+    city: best.name.replace(STRIP_SUFFIX, "") || best.name,
+  };
+}

@@ -1,7 +1,10 @@
 /** 城市/景点打卡记录（本地 AsyncStorage，离线可用） */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { resolvePrefectureId } from "../assets/cityToPrefecture";
+import {
+  resolvePrefectureFromText,
+  resolvePrefectureId,
+} from "../assets/cityToPrefecture";
 import type { ExploreCategory } from "../screens/CityDetail/helpers";
 
 const KEY = "travel_guide_checkins:v2";
@@ -70,8 +73,22 @@ async function migrateLegacyIfNeeded(): Promise<void> {
   }
 }
 
+const listeners = new Set<() => void>();
+
+export function subscribeCheckIns(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function emitCheckIns() {
+  listeners.forEach((fn) => fn());
+}
+
 async function writeStore(store: Store): Promise<void> {
   await AsyncStorage.setItem(KEY, JSON.stringify(store));
+  emitCheckIns();
 }
 
 export async function listCheckIns(): Promise<CheckInRecord[]> {
@@ -104,11 +121,20 @@ export type AddCheckInInput = {
 };
 
 export async function addCheckIn(input: AddCheckInInput): Promise<CheckInRecord> {
-  const city = input.city.trim();
   const name = input.name.trim();
-  const prefectureId = resolvePrefectureId(city);
+  let city = input.city.trim();
+  let prefectureId = resolvePrefectureId(city);
   if (!prefectureId) {
-    throw new Error(`无法识别「${city}」所属地级市，暂无法打卡`);
+    const hit = resolvePrefectureFromText(
+      `${city} ${input.address || ""} ${name}`,
+    );
+    if (hit) {
+      prefectureId = hit.id;
+      city = hit.city;
+    }
+  }
+  if (!prefectureId) {
+    throw new Error(`无法识别「${city || name}」所属地级市，暂无法打卡`);
   }
 
   const record: CheckInRecord = {

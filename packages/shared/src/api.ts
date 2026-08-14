@@ -70,11 +70,20 @@ export function createApiClient(opts: CreateApiClientOptions) {
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const { timeoutMs = defaultTimeoutMs, ...fetchOpts } = options;
-    const res = await fetch(`${apiBase}${path}`, {
-      ...fetchOpts,
-      headers,
-      signal: fetchOpts.signal ?? makeTimeoutSignal(timeoutMs),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase}${path}`, {
+        ...fetchOpts,
+        headers,
+        signal: fetchOpts.signal ?? makeTimeoutSignal(timeoutMs),
+      });
+    } catch (e) {
+      const name = e instanceof Error ? e.name : "";
+      if (name === "TimeoutError" || name === "AbortError") {
+        throw new ApiError("请求超时，请稍后重试", 408);
+      }
+      throw new ApiError("无法连接服务器，请确认后端已启动", 0);
+    }
 
     if (res.status === 401 && token) {
       await tokenStore.setToken(null);
@@ -127,10 +136,19 @@ export function createApiClient(opts: CreateApiClientOptions) {
         }),
     },
     trips: {
-      searchPois: (q: string, city = "", limit = 8, broad = false) =>
-        request<PoiSearchResult[]>(
-          `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}${broad ? "&broad=1" : ""}`,
-        ),
+      searchPois: (
+        q: string,
+        city = "",
+        limit = 8,
+        broad = false,
+        coords?: { lng: number; lat: number } | null,
+      ) => {
+        let url = `/trips/pois/search?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&limit=${limit}${broad ? "&broad=1" : ""}`;
+        if (coords?.lng != null && coords?.lat != null) {
+          url += `&lng=${coords.lng}&lat=${coords.lat}`;
+        }
+        return request<PoiSearchResult[]>(url);
+      },
       suggestLandmarks: (city: string) =>
         request<{ city: string; landmarks: string[] }>(
           `/trips/pois/suggest?city=${encodeURIComponent(city)}`,
@@ -255,10 +273,15 @@ export function createApiClient(opts: CreateApiClientOptions) {
           `/trips/${tripId}/select-route/${encodeURIComponent(routeId)}`,
           { method: "POST" },
         ),
-      createShare: (tripId: string) =>
-        request<Trip>(`/trips/${tripId}/share`, { method: "POST" }),
+      createShare: (tripId: string, mode: "read" | "collab" = "read") =>
+        request<Trip>(`/trips/${tripId}/share`, {
+          method: "POST",
+          body: JSON.stringify({ mode }),
+        }),
       getShared: (token: string) =>
         request<Trip>(`/trips/share/${token}`),
+      joinShare: (token: string) =>
+        request<Trip>(`/trips/share/${token}/join`, { method: "POST" }),
       remove: (tripId: string) =>
         request<void>(`/trips/${tripId}`, { method: "DELETE" }),
       exportPdf: async (tripId: string): Promise<ArrayBuffer> => {

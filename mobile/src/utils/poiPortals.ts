@@ -51,34 +51,48 @@ export function qunarAppUrl(webUrl: string): string {
   return `${scheme}://hy?url=${encodeURIComponent(webUrl)}`;
 }
 
-async function openWeb(url: string): Promise<void> {
-  try {
-    await Linking.openURL(url);
-  } catch {
-    await WebBrowser.openBrowserAsync(url);
-  }
-}
-
-/**
- * 优先打开已验证的 HTTPS 页（系统/App Links 会拉起已安装 App）；
- * 再试 App 深链；最后内置浏览器兜底。
- */
-async function openPortal(webUrl: string, appUrl: string): Promise<void> {
-  try {
-    await Linking.openURL(webUrl);
-    return;
-  } catch {
-    /* 继续尝试 App 深链 */
-  }
-
+/** 优先 App 深链，失败再开 H5 */
+export async function openPortalDeepLink(
+  webUrl: string,
+  appUrl: string,
+): Promise<void> {
   try {
     await Linking.openURL(appUrl);
     return;
   } catch {
-    /* 浏览器兜底 */
+    /* App 未安装或无法唤起，继续 H5 */
   }
 
-  await WebBrowser.openBrowserAsync(webUrl);
+  try {
+    await Linking.openURL(webUrl);
+  } catch {
+    await WebBrowser.openBrowserAsync(webUrl);
+  }
+}
+
+export function xhsWebUrl(keyword: string): string {
+  return `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}`;
+}
+
+export function poiShareText(opts: {
+  city: string;
+  name: string;
+  kind?: PoiPortalKind;
+}): { title: string; url: string; message: string } {
+  const kind = opts.kind || "attraction";
+  const keyword = poiKeyword(opts.city, opts.name);
+  const url = xhsWebUrl(xhsKeyword(opts.city, opts.name, kind));
+  const title = `${opts.city} · ${opts.name}`;
+  const message = `${title}\n小红书 ${url}\n携程 ${ctripWebUrl(keyword, kind)}`;
+  return { title, url, message };
+}
+
+export async function openCtripUrl(webUrl: string): Promise<void> {
+  await openPortalDeepLink(webUrl, ctripAppUrl(webUrl));
+}
+
+export async function openQunarUrl(webUrl: string): Promise<void> {
+  await openPortalDeepLink(webUrl, qunarAppUrl(webUrl));
 }
 
 export async function openCtripPoi(opts: {
@@ -89,7 +103,7 @@ export async function openCtripPoi(opts: {
   const keyword = poiKeyword(opts.city, opts.name);
   const kind = opts.kind || "attraction";
   const web = ctripWebUrl(keyword, kind);
-  await openPortal(web, ctripAppUrl(web));
+  await openCtripUrl(web);
 }
 
 export async function openQunarPoi(opts: {
@@ -100,7 +114,7 @@ export async function openQunarPoi(opts: {
   const keyword = poiKeyword(opts.city, opts.name);
   const kind = opts.kind || "attraction";
   const web = qunarWebUrl(keyword, kind);
-  await openPortal(web, qunarAppUrl(web));
+  await openQunarUrl(web);
 }
 
 export async function openXhsPoi(opts: {

@@ -16,7 +16,7 @@ import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Register">;
 
-export function RegisterScreen({ navigation }: Props) {
+export function RegisterScreen({ navigation, route }: Props) {
   const { register } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +32,12 @@ export function RegisterScreen({ navigation }: Props) {
     setError(null);
     try {
       await register(username.trim(), password);
-      navigation.popToTop();
+      const next = route.params?.next;
+      if (next?.screen === "Share") {
+        navigation.replace("Share", { token: next.token });
+      } else {
+        navigation.popToTop();
+      }
     } catch (e) {
       setError(formatAuthError(e));
     } finally {

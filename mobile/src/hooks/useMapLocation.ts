@@ -5,15 +5,11 @@
 
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
-import * as Location from "expo-location";
 import {
   describeLocationError,
-  getDeviceLocation,
+  ensureLocationAccess,
+  getFreshDeviceLocation,
 } from "../utils/location";
-import {
-  loadLocationConsent,
-  saveLocationConsent,
-} from "../utils/locationPrefs";
 
 type InjectFn = (js: string) => void;
 type MapReadyRef = { current: boolean };
@@ -28,9 +24,8 @@ export function useMapLocation(
   const requestAndShowLocation = useCallback(async () => {
     setLocating(true);
     try {
-      let consent = await loadLocationConsent();
-      if (consent === null) {
-        const choice = await new Promise<"granted" | "denied">((resolve) => {
+      const ok = await ensureLocationAccess(async () =>
+        new Promise<"granted" | "denied">((resolve) => {
           Alert.alert(
             "定位权限",
             `是否允许旅迹获取你的位置，用于在${scopeLabel}上显示当前位置？可稍后在设置中修改。`,
@@ -43,30 +38,23 @@ export function useMapLocation(
               { text: "允许", onPress: () => resolve("granted") },
             ],
           );
-        });
-        await saveLocationConsent(choice);
-        consent = choice;
-      }
-      if (consent !== "granted") {
+        }),
+      );
+      if (!ok) {
         Alert.alert("未开启定位", "可在「设置」中打开定位权限后再试。");
         return;
       }
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        await saveLocationConsent("denied");
-        Alert.alert(
-          "系统未授权",
-          "请在系统设置里允许「旅迹」使用位置信息。",
-        );
-        return;
-      }
-      await saveLocationConsent("granted");
-      const { lng, lat } = await getDeviceLocation();
+      const { lng, lat } = await getFreshDeviceLocation();
       if (!mapReadyRef.current) {
         await new Promise((r) => setTimeout(r, 600));
       }
       inject(
-        `window.setUserLocation && window.setUserLocation(${lng},${lat},true)`,
+        `(function(){
+          if(!window.__map)return;
+          var p=[${lng},${lat}];
+          if(window.setUserLocation)window.setUserLocation(${lng},${lat},false);
+          window.__map.setZoomAndCenter(15,p);
+        })();true;`,
       );
     } catch (e) {
       Alert.alert("定位失败", describeLocationError(e));

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { tripsApi } from "@/lib/api";
 import { heroForDestination } from "@/lib/cover";
 import type { Day, Trip, PoiSearchResult, RouteOption } from "@/lib/types";
+import { useAuthStore } from "@/stores/auth";
 import { TripMap } from "@/components/map/trip-map";
 import { ItemCard } from "@/components/item-card";
 import { ExternalRefsPanel } from "@/components/external-refs";
@@ -25,6 +26,7 @@ export default function TripDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const tripId = params.id as string;
+  const user = useAuthStore((s) => s.user);
   const [activeDay, setActiveDay] = useState(0);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -33,7 +35,12 @@ export default function TripDetailPage() {
   const { data: trip, isLoading } = useQuery<Trip>({
     queryKey: ["trip", tripId],
     queryFn: () => tripsApi.get(tripId),
-    refetchInterval: (q) => (q.state.data?.status === "generating" ? 2000 : false),
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (d?.status === "generating") return 2000;
+      if (d?.share_mode === "collab") return 4000;
+      return false;
+    },
   });
 
   const exportPdf = useMutation({
@@ -49,7 +56,7 @@ export default function TripDetailPage() {
   });
 
   const share = useMutation({
-    mutationFn: () => tripsApi.createShare(tripId),
+    mutationFn: (mode: "read" | "collab") => tripsApi.createShare(tripId, mode),
     onSuccess: (t) => {
       const url = `${window.location.origin}/share/${t.share_token}`;
       setShareUrl(url);
@@ -189,6 +196,9 @@ export default function TripDetailPage() {
   const selectedRouteId =
     (trip.preferences?.selected_route_id as string | undefined) ||
     routeOptions[0]?.id;
+  const canEdit = Boolean(trip.can_edit);
+  const ownerId = (trip.collaborators || []).find((c) => c.role === "owner")?.user_id;
+  const isOwner = user ? user.id === ownerId : canEdit;
 
   return (
     <div className="flex-1 pb-16">
@@ -217,13 +227,24 @@ export default function TripDetailPage() {
             >
               {exportPdf.isPending ? "导出中…" : "导出 PDF"}
             </button>
-            <button
-              onClick={() => share.mutate()}
-              disabled={share.isPending}
-              className="rounded-full bg-[var(--brand)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--brand-hot)] disabled:opacity-50"
-            >
-              分享攻略
-            </button>
+            {isOwner && (
+              <>
+                <button
+                  onClick={() => share.mutate("read")}
+                  disabled={share.isPending}
+                  className="rounded-full bg-white/15 backdrop-blur px-4 py-2 text-[13px] font-semibold hover:bg-white/25 disabled:opacity-50"
+                >
+                  {share.isPending ? "生成中…" : "只读分享"}
+                </button>
+                <button
+                  onClick={() => share.mutate("collab")}
+                  disabled={share.isPending}
+                  className="rounded-full bg-[var(--brand)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--brand-hot)] disabled:opacity-50"
+                >
+                  邀请共同编辑
+                </button>
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -238,12 +259,24 @@ export default function TripDetailPage() {
           </div>
         )}
 
+        {(trip.collaborators || []).length > 0 && (
+          <div className="mb-4 bg-white border border-gray-200 rounded-2xl p-3 text-sm text-[var(--muted)]">
+            <span className="font-semibold text-[var(--ink)]">协作者：</span>
+            {(trip.collaborators || [])
+              .map((c) => (c.role === "owner" ? `${c.username}（创建者）` : c.username))
+              .join("、")}
+          </div>
+        )}
+
         <RouteOptionsPanel
           destination={trip.destination}
           options={routeOptions}
           selectedId={selectedRouteId}
           switching={selectRoute.isPending}
-          onSelect={(id) => selectRoute.mutate(id)}
+          onSelect={(id) => {
+            if (!canEdit) return;
+            selectRoute.mutate(id);
+          }}
         />
 
         {canceledCount > 0 && (
@@ -275,7 +308,7 @@ export default function TripDetailPage() {
                   </button>
                 ))}
               </div>
-              {currentDay && (
+              {currentDay && canEdit && (
                 <button
                   onClick={() => regenDay.mutate(currentDay.day_index)}
                   disabled={regenDay.isPending}

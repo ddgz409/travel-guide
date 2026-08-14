@@ -16,8 +16,9 @@ import type { PoiSearchResult } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { PlaceGallery } from "../../components/PlaceImage";
 import { PoiPortalLinks } from "../../components/PoiPortalLinks";
+import { CheckInButton } from "../../components/CheckInButton";
 import type { AppStackParamList } from "../../navigation/types";
-import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
+import { addCheckIn, isCheckedIn, removeCheckIn } from "../../utils/checkInStore";
 import { distanceLabel, type LatLng } from "../../utils/geo";
 import {
   openAmapPoiLookup,
@@ -51,6 +52,7 @@ type Props = {
   userLocation: LatLng | null;
   checked?: boolean;
   onCheckIn?: (item: Item) => void;
+  onUncheck?: (item: Item) => void;
   onClose: () => void;
 };
 
@@ -87,6 +89,7 @@ export function PoiDetailSheet({
   userLocation,
   checked: checkedProp,
   onCheckIn,
+  onUncheck,
   onClose,
 }: Props) {
   const navigation =
@@ -177,26 +180,28 @@ export function PoiDetailSheet({
     if (!mergedItem || checkInBusy) return;
     setCheckInBusy(true);
     try {
-      await addCheckIn({
-        city,
-        name: mergedItem.name,
-        category,
-        lng: mergedItem.lng,
-        lat: mergedItem.lat,
-        address: mergedItem.address,
-      });
-      setCheckedLocal(true);
-      onCheckIn?.(mergedItem);
-      Alert.alert(
-        "打卡成功",
-        `「${mergedItem.name}」已记录，可在「我的行程」顶部查看打卡地图。`,
-      );
+      if (checked) {
+        await removeCheckIn(city, mergedItem.name);
+        setCheckedLocal(false);
+        onUncheck?.(mergedItem);
+      } else {
+        await addCheckIn({
+          city,
+          name: mergedItem.name,
+          category,
+          lng: mergedItem.lng,
+          lat: mergedItem.lat,
+          address: mergedItem.address,
+        });
+        setCheckedLocal(true);
+        onCheckIn?.(mergedItem);
+      }
     } catch (e) {
       Alert.alert("打卡失败", e instanceof Error ? e.message : "请稍后重试");
     } finally {
       setCheckInBusy(false);
     }
-  }, [mergedItem, checkInBusy, city, category, onCheckIn]);
+  }, [mergedItem, checkInBusy, city, category, checked, onCheckIn, onUncheck]);
 
   const handleAdd = useCallback(() => {
     if (!mergedItem) return;
@@ -286,6 +291,10 @@ export function PoiDetailSheet({
               </Pressable>
             </View>
 
+            <View style={[styles.detailSection, { paddingTop: 0 }]}>
+              <PoiPortalLinks city={city} name={mergedItem.name} kind={portalKind} />
+            </View>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -335,10 +344,9 @@ export function PoiDetailSheet({
                 </>
               ) : (
                 <Text style={styles.detailDesc}>
-                  暂无评价，可点击下方平台查看真实攻略。
+                  暂无评价，可点击上方攻略链接查看真实攻略。
                 </Text>
               )}
-              <PoiPortalLinks city={city} name={mergedItem.name} kind={portalKind} />
             </View>
 
             <View style={styles.infoList}>
@@ -396,20 +404,11 @@ export function PoiDetailSheet({
             <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
               <Text style={styles.detailActionText}>+ 添加至</Text>
             </Pressable>
-            <Pressable
-              style={[styles.detailActionBtn, checked && styles.detailActionChecked]}
+            <CheckInButton
+              checked={checked}
+              busy={checkInBusy}
               onPress={() => void handleCheckIn()}
-              disabled={checkInBusy}
-            >
-              <Text
-                style={[
-                  styles.detailActionText,
-                  checked && styles.detailActionTextChecked,
-                ]}
-              >
-                {checked ? "✓ 已打卡" : "◎ 打卡"}
-              </Text>
-            </Pressable>
+            />
             <Pressable
               style={[styles.detailActionBtn, styles.detailActionPrimary]}
               onPress={handleNavigate}

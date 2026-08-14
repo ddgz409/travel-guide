@@ -9,17 +9,19 @@ from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_optional_user
-from app.models import Day, Item, Trip, User
+from app.models import Day, Item, Trip, TripCollaborator, User
 from app.schemas import (
+    CollaboratorOut,
     ItemUpdate,
     QuickRecommendRequest,
     QuickRecommendResponse,
     ReorderRequest,
+    ShareCreateRequest,
     TripGenerateRequest,
     TripListItem,
     TripOut,
@@ -41,6 +43,9 @@ from app.services.trip_cache import (
 
 router = APIRouter(prefix="/trips", tags=["攻略"])
 
+# 游客攻略挂在这个虚拟用户下
+GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
+
 
 def _require_valid_destination(destination: str) -> None:
     """无效地名直接 400，避免创建 generating 行程后再失败。"""
@@ -55,6 +60,124 @@ def _trip_or_404(trip_id: str, db: Session, user_id: str | None = None) -> Trip:
     if trip is None or (user_id is not None and trip.user_id != user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="攻略不存在")
     return trip
+
+
+def _is_collaborator(trip_id: str, user_id: str, db: Session) -> bool:
+    return (
+        db.scalar(
+            select(TripCollaborator.id).where(
+                TripCollaborator.trip_id == trip_id,
+                TripCollaborator.user_id == user_id,
+            )
+        )
+        is not None
+    )
+
+
+def _can_edit_trip(trip: Trip, user: User | None, db: Session) -> bool:
+    if user is None:
+        return trip.user_id == GUEST_USER_ID
+    if trip.user_id == user.id:
+        return True
+    return _is_collaborator(trip.id, user.id, db)
+
+
+def _trip_for_viewer(trip_id: str, db: Session, user: User | None) -> Trip:
+    """按 trip_id 访问：匿名（游客轮询）、主人或协作者可看；其他人 404。"""
+    trip = db.get(Trip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="攻略不存在")
+    if user is None:
+        return trip
+    if trip.user_id == user.id or _is_collaborator(trip.id, user.id, db):
+        return trip
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="攻略不存在")
+
+
+def _require_edit(trip_id: str, db: Session, user: User | None) -> Trip:
+    trip = _trip_for_viewer(trip_id, db, user)
+    if not _can_edit_trip(trip, user, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有编辑权限")
+    return trip
+
+
+def _collaborators_payload(trip: Trip, db: Session) -> list[dict]:
+    owner = db.get(User, trip.user_id)
+    rows: list[dict] = []
+    if owner:
+        rows.append(
+            {
+                "user_id": owner.id,
+                "username": owner.username,
+                "role": "owner",
+                "joined_at": trip.created_at,
+            }
+        )
+    collabs = db.scalars(
+        select(TripCollaborator)
+        .where(TripCollaborator.trip_id == trip.id)
+        .order_by(TripCollaborator.joined_at)
+    ).all()
+    for c in collabs:
+        if c.user_id == trip.user_id:
+            continue
+        u = db.get(User, c.user_id)
+        if not u:
+            continue
+        rows.append(
+            {
+                "user_id": u.id,
+                "username": u.username,
+                "role": "collaborator",
+                "joined_at": c.joined_at,
+            }
+        )
+    return rows
+
+
+def _trip_out(trip: Trip, db: Session, user: User | None) -> TripOut:
+    data = TripOut.model_validate(trip)
+    data.share_mode = trip.share_mode or "read"
+    data.can_edit = _can_edit_trip(trip, user, db)
+    data.collaborators = [CollaboratorOut(**row) for row in _collaborators_payload(trip, db)]
+    return data
+
+
+def _shared_trip_or_404(token: str, db: Session) -> Trip:
+    trip = db.scalar(select(Trip).where(Trip.share_token == token))
+    if trip is None:
+        raise HTTPException(status_code=404, detail="分享链接无效")
+    return trip
+
+
+@router.get("/share/{token}", response_model=TripOut)
+def get_shared_trip(
+    token: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """访问分享攻略。只读链接可匿名；协作链接需登录后 join 才能编辑。"""
+    trip = _shared_trip_or_404(token, db)
+    return _trip_out(trip, db, current)
+
+
+@router.post("/share/{token}/join", response_model=TripOut)
+def join_shared_trip(
+    token: str,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """登录用户加入协作。只读分享加入后仍不能编辑。"""
+    trip = _shared_trip_or_404(token, db)
+    if (
+        trip.share_mode == "collab"
+        and trip.user_id != current.id
+        and not _is_collaborator(trip.id, current.id, db)
+    ):
+        db.add(TripCollaborator(trip_id=trip.id, user_id=current.id))
+        db.commit()
+        db.refresh(trip)
+    return _trip_out(trip, db, current)
 
 
 @router.post("/generate", response_model=TripOut, status_code=status.HTTP_201_CREATED)
@@ -110,7 +233,7 @@ def generate(
             title=title,
         )
         if cached is not None:
-            return cached
+            return _trip_out(cached, db, current)
 
     trip = Trip(
         user_id=current.id,
@@ -129,7 +252,7 @@ def generate(
     # 后台异步生成（注意：BackgroundTasks 在响应返回后执行）
     generator = get_generator()
     background_tasks.add_task(_run_generate, trip.id, generator)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 def _llm_for_trip(db: Session, trip: Trip):
@@ -176,10 +299,6 @@ def _run_generate(trip_id: str, generator) -> None:
             save_trip_to_cache(db, trip, key)
     finally:
         db.close()
-
-
-# 游客用户 ID 固定值，所有游客攻略挂在这个虚拟用户下
-GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 
 def _ensure_guest_user(db: Session) -> User:
@@ -246,7 +365,7 @@ def guest_generate(
             title=title,
         )
         if cached is not None:
-            return cached
+            return _trip_out(cached, db, None)
 
     trip = Trip(
         user_id=guest.id,
@@ -264,7 +383,7 @@ def guest_generate(
 
     generator = get_generator()
     background_tasks.add_task(_run_generate, trip.id, generator)
-    return trip
+    return _trip_out(trip, db, None)
 
 
 @router.post("/quick-recommend", response_model=QuickRecommendResponse)
@@ -291,47 +410,115 @@ def search_pois(
     city: str = "",
     limit: int = 10,
     broad: bool = False,
+    lng: float | None = None,
+    lat: float | None = None,
     db: Session = Depends(get_db),
 ):
-    """搜索景点（供前端搜索框使用）。强制按城市限定，避免串到故宫/长城。"""
+    """搜索景点（供前端搜索框使用）。有坐标时优先按当前城市/周边搜索。"""
     if not q.strip():
         return []
     amap = get_amap_client()
-    city_s = city.strip()
+    city_s = city.strip().replace("市", "")
     keyword = q.strip()
     try:
+        adcode = ""
+        has_coords = lng is not None and lat is not None
+        location = f"{lng},{lat}" if has_coords else ""
+
+        # 有坐标时以坐标逆地理为准，避免前端缓存的旧城市（如北京）串城
+        if has_coords:
+            try:
+                geo = amap.regeo(lng, lat)
+                raw = (geo.get("city") or geo.get("province") or "").strip()
+                if raw:
+                    city_s = raw.replace("市", "")
+                adcode = str(geo.get("adcode") or "")[:6]
+            except Exception:
+                pass
+
         cap = min(max(limit, 1), 100 if broad else 20)
+        chip_types = {
+            "美食": POI_TYPES["meal"],
+            "酒店": POI_TYPES["hotel"],
+            "景点": POI_TYPES["attraction"],
+        }
 
         if broad:
             merged: list = []
             seen_ids: set[str] = set()
-            per_page = 25
-            max_pages = min(4, max(1, (cap + per_page - 1) // per_page))
-            for page in range(1, max_pages + 1):
-                batch = amap.search_poi_by_keyword(
-                    keyword=keyword,
-                    city=city_s or None,
-                    limit=per_page,
-                    page=page,
-                    city_limit=bool(city_s),
-                )
-                if not batch and page == 1 and city_s:
-                    batch = amap.search_poi_by_keyword(
-                        keyword=keyword,
-                        city=city_s,
-                        limit=per_page,
-                        page=page,
-                        city_limit=True,
-                    )
+
+            def _append(batch: list) -> None:
                 for p in batch:
                     if p.id in seen_ids:
                         continue
                     seen_ids.add(p.id)
                     merged.append(p)
-                    if len(merged) >= cap:
+
+            if has_coords:
+                try:
+                    _append(
+                        amap.search_poi_around(
+                            location=location,
+                            keywords=keyword,
+                            radius=50000,
+                            limit=cap,
+                            sortrule="distance",
+                        )
+                    )
+                except Exception:
+                    pass
+
+                poi_type = chip_types.get(keyword)
+                if poi_type and len(merged) < cap:
+                    try:
+                        _append(
+                            amap.search_poi_around(
+                                location=location,
+                                poi_type=poi_type,
+                                radius=30000,
+                                limit=cap - len(merged),
+                                sortrule="distance",
+                            )
+                        )
+                    except Exception:
+                        pass
+
+            city_key = adcode or city_s
+            if len(merged) < cap and city_key:
+                per_page = 25
+                for page in range(1, 3):
+                    try:
+                        batch = amap.search_poi_by_keyword(
+                            keyword=keyword,
+                            city=city_key,
+                            limit=per_page,
+                            page=page,
+                            city_limit=True,
+                            location_center=location if has_coords else None,
+                        )
+                    except Exception:
+                        batch = []
+                    before = len(merged)
+                    _append(batch)
+                    if len(merged) >= cap or len(batch) < per_page or len(merged) == before:
                         break
-                if len(merged) >= cap or len(batch) < per_page:
-                    break
+
+            if len(merged) < cap and not has_coords:
+                per_page = 25
+                max_pages = min(4, max(1, (cap + per_page - 1) // per_page))
+                for page in range(1, max_pages + 1):
+                    batch = amap.search_poi_by_keyword(
+                        keyword=keyword,
+                        city=city_s or None,
+                        limit=per_page,
+                        page=page,
+                        city_limit=bool(city_s),
+                    )
+                    before = len(merged)
+                    _append(batch)
+                    if len(merged) >= cap or len(batch) < per_page or len(merged) == before:
+                        break
+
             final = merged[:cap]
         else:
             fetch_n = min(max(limit * 3, 15), 25)
@@ -414,10 +601,13 @@ def suggest_pois(city: str = ""):
 
 @router.get("", response_model=list[TripListItem])
 def list_trips(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """列出我的攻略。"""
+    """列出我创建的以及我作为协作者的攻略。"""
+    collab_ids = select(TripCollaborator.trip_id).where(
+        TripCollaborator.user_id == current.id
+    )
     stmt = (
         select(Trip)
-        .where(Trip.user_id == current.id)
+        .where(or_(Trip.user_id == current.id, Trip.id.in_(collab_ids)))
         .order_by(Trip.created_at.desc())
     )
     return list(db.scalars(stmt))
@@ -430,7 +620,7 @@ def trip_generate_stream(
     db: Session = Depends(get_db),
 ):
     """SSE 推送行程生成进度与 LLM 流式预览。"""
-    _trip_or_404(trip_id, db, current.id if current else None)
+    _trip_for_viewer(trip_id, db, current)
 
     def event_stream():
         last_sig = ""
@@ -470,7 +660,7 @@ def trip_generate_progress(
     db: Session = Depends(get_db),
 ):
     """轮询行程生成进度（React Native SSE 降级用）。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _trip_for_viewer(trip_id, db, current)
     prog = get_progress(trip_id)
     return {
         "status": trip.status,
@@ -489,8 +679,9 @@ def get_trip(
     current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    """获取攻略详情（含 days/items）。"""
-    return _trip_or_404(trip_id, db, current.id if current else None)
+    """获取攻略详情（含 days/items）。主人或协作者可访问。"""
+    trip = _trip_for_viewer(trip_id, db, current)
+    return _trip_out(trip, db, current)
 
 
 @router.put("/{trip_id}", response_model=TripOut)
@@ -501,14 +692,14 @@ def update_trip(
     db: Session = Depends(get_db),
 ):
     """编辑攻略元信息。"""
-    trip = _trip_or_404(trip_id, db, current.id)
+    trip = _require_edit(trip_id, db, current)
     if payload.title is not None:
         trip.title = payload.title
     if payload.preferences is not None:
         trip.preferences = payload.preferences
     db.commit()
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 @router.put("/{trip_id}/items/{item_id}", response_model=TripOut)
@@ -520,7 +711,7 @@ def update_item(
     db: Session = Depends(get_db),
 ):
     """编辑单个行程条目。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -536,7 +727,7 @@ def update_item(
         item.selected = payload.selected
     db.commit()
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 def _has_coords(loc: dict | None) -> bool:
@@ -634,7 +825,7 @@ def get_item_route(
     db: Session = Depends(get_db),
 ):
     """获取条目到下一站的详细路线（换乘方案+时间）。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _trip_for_viewer(trip_id, db, current)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -690,7 +881,7 @@ def update_item_route(
     db: Session = Depends(get_db),
 ):
     """修改交通方式或选用某套公交方案。payload: {mode, scheme_index?}"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -734,7 +925,7 @@ def get_day_routes(
 
     优先复用条目上已缓存的 transport_to_next；其余段并行请求高德，降低卡顿。
     """
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _trip_for_viewer(trip_id, db, current)
     day = db.get(Day, day_id)
     if day is None or day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="日程不存在")
@@ -923,7 +1114,7 @@ def swap_item_alternative(
 
     原 POI 放回备选列表末尾，被选中的备选提升为当前条目。
     """
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     item = db.get(Item, item_id)
     if item is None or item.day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -953,7 +1144,7 @@ def swap_item_alternative(
     item.alternatives = alts
     db.commit()
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 @router.put("/{trip_id}/days/{day_id}/reorder", response_model=TripOut)
@@ -965,7 +1156,7 @@ def reorder_items(
     db: Session = Depends(get_db),
 ):
     """批量重排序某天的条目（拖拽排序）。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     day = db.get(Day, day_id)
     if day is None or day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="行程天数不存在")
@@ -977,7 +1168,7 @@ def reorder_items(
         item.seq = entry.new_seq
     db.commit()
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 @router.post("/{trip_id}/select-route/{route_id}", response_model=TripOut)
@@ -988,7 +1179,7 @@ def select_route(
     db: Session = Depends(get_db),
 ):
     """切换到已生成的某条路线方案（经典/人文/美食等）。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     if trip.status != "ready":
         raise HTTPException(status_code=400, detail="攻略尚未生成完成")
     generator = get_generator()
@@ -997,7 +1188,7 @@ def select_route(
     except GeneratorError as e:
         raise HTTPException(status_code=400, detail=str(e))
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 @router.post("/{trip_id}/regenerate-day/{day_index}", response_model=TripOut)
@@ -1009,7 +1200,7 @@ def regenerate_day(
     db: Session = Depends(get_db),
 ):
     """重新生成指定某一天。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _require_edit(trip_id, db, current)
     total_days = (trip.end_date - trip.start_date).days + 1
     if day_index < 1 or day_index > total_days:
         raise HTTPException(status_code=400, detail="天数超出范围")
@@ -1017,7 +1208,7 @@ def regenerate_day(
     generator = get_generator()
     background_tasks.add_task(_run_regen_day, trip.id, day_index, generator)
     db.refresh(trip)
-    return trip
+    return _trip_out(trip, db, current)
 
 
 def _run_regen_day(trip_id: str, day_index: int, generator) -> None:
@@ -1051,25 +1242,21 @@ def _run_regen_day(trip_id: str, day_index: int, generator) -> None:
 @router.post("/{trip_id}/share", response_model=TripOut)
 def create_share_link(
     trip_id: str,
+    payload: ShareCreateRequest | None = None,
     current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
-    """生成分享 token（开启匿名只读访问）。"""
+    """生成分享 token。mode=collab 时好友登录后可共同编辑。"""
     trip = _trip_or_404(trip_id, db, current.id if current else None)
+    mode = (payload.mode if payload else "read") or "read"
+    if mode not in ("read", "collab"):
+        raise HTTPException(status_code=400, detail="无效的分享模式")
     if not trip.share_token:
         trip.share_token = secrets.token_urlsafe(16)
+    trip.share_mode = mode
     db.commit()
     db.refresh(trip)
-    return trip
-
-
-@router.get("/share/{token}", response_model=TripOut)
-def get_shared_trip(token: str, db: Session = Depends(get_db)):
-    """匿名访问分享的攻略（只读）。"""
-    trip = db.scalar(select(Trip).where(Trip.share_token == token))
-    if trip is None:
-        raise HTTPException(status_code=404, detail="分享链接无效")
-    return trip
+    return _trip_out(trip, db, current)
 
 
 @router.get("/{trip_id}/export")
@@ -1079,7 +1266,7 @@ def export_trip(
     db: Session = Depends(get_db),
 ):
     """导出攻略为 PDF。"""
-    trip = _trip_or_404(trip_id, db, current.id if current else None)
+    trip = _trip_for_viewer(trip_id, db, current)
     if trip.status != "ready":
         raise HTTPException(status_code=400, detail="攻略尚未生成完成，无法导出")
     pdf_bytes = export_trip_pdf(trip)
