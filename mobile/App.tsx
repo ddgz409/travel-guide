@@ -231,7 +231,7 @@ function Root() {
 
   if (splash) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+      <View style={{ flex: 1, backgroundColor: "#D7EBFC" }}>
         <SplashOverlay ready={!loading} onFinished={() => setSplash(false)} />
       </View>
     );

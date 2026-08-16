@@ -6,6 +6,7 @@ import {
   type ImageStyle,
   type StyleProp,
   View,
+  type ViewStyle,
 } from "react-native";
 import { colors } from "../theme";
 import {
@@ -23,9 +24,11 @@ type PlaceImageProps = {
   category?: PlaceCategory;
   image?: string;
   images?: string[];
+  poiId?: string;
   style?: StyleProp<ImageStyle>;
   resizeMode?: "cover" | "contain" | "stretch" | "center";
   fallbackSource?: ImageSourcePropType;
+  fallback?: React.ReactNode;
 };
 
 function RemoteImage({
@@ -70,8 +73,10 @@ export function PlaceImage({
   image,
   images,
   style,
+  poiId,
   resizeMode = "cover",
   fallbackSource,
+  fallback,
 }: PlaceImageProps) {
   const preset = image || images?.[0] || null;
   const [uri, setUri] = useState<string | null>(preset);
@@ -86,7 +91,7 @@ export function PlaceImage({
 
     let cancelled = false;
     setLoading(true);
-    void fetchPlaceImage(city, name, category).then((url) => {
+    void fetchPlaceImage(city, name, category, undefined, poiId).then((url) => {
       if (cancelled) return;
       setUri(url);
       setLoading(false);
@@ -94,44 +99,29 @@ export function PlaceImage({
     return () => {
       cancelled = true;
     };
-  }, [city, name, category, image, images]);
+  }, [city, name, category, image, images, poiId]);
 
-  if (loading && !uri) {
-    return (
-      <View
-        style={[
-          style,
-          {
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: colors.brandSoft,
-          },
-        ]}
-      >
-        <ActivityIndicator color={colors.brand} size="small" />
-      </View>
-    );
-  }
+  const placeholder = fallbackSource ? (
+    <Image source={fallbackSource} style={style} resizeMode={resizeMode} />
+  ) : fallback ? (
+    fallback
+  ) : (
+    <View
+      style={[
+        style as StyleProp<ViewStyle>,
+        {
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.brandSoft,
+        },
+      ]}
+    >
+      {loading ? <ActivityIndicator color={colors.brand} size="small" /> : null}
+    </View>
+  );
 
-  if (!uri) {
-    if (fallbackSource) {
-      return (
-        <Image source={fallbackSource} style={style} resizeMode={resizeMode} />
-      );
-    }
-    return (
-      <View
-        style={[
-          style,
-          {
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: colors.brandSoft,
-          },
-        ]}
-      />
-    );
-  }
+  if (loading && !uri) return placeholder;
+  if (!uri) return placeholder;
 
   return (
     <RemoteImage

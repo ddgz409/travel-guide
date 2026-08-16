@@ -25,8 +25,14 @@ export function resolveImageUrl(url: string): string {
   return u;
 }
 
-function cacheKey(city: string, name: string, limit: number, category?: PlaceCategory) {
-  return `${city.trim()}|${name.trim()}|${limit}|${category || ""}`;
+function cacheKey(
+  city: string,
+  name: string,
+  limit: number,
+  category?: PlaceCategory,
+  poiId?: string,
+) {
+  return `${city.trim()}|${name.trim()}|${limit}|${category || ""}|${poiId || ""}`;
 }
 
 async function loadDiskCache(key: string): Promise<string[] | null> {
@@ -77,13 +83,14 @@ export async function fetchPlaceImages(
   limit = 3,
   category?: PlaceCategory,
   provided?: { image?: string; images?: string[] },
+  poiId?: string,
 ): Promise<string[]> {
   const providedUrls = fromProvided(provided?.image, provided?.images, limit);
   if (providedUrls && providedUrls.length >= limit) {
     return finalizeUrls(providedUrls.slice(0, limit));
   }
 
-  const key = cacheKey(city, name, limit, category);
+  const key = cacheKey(city, name, limit, category, poiId);
   if (memCache.has(key)) return memCache.get(key)!;
 
   const disk = await loadDiskCache(key);
@@ -106,6 +113,7 @@ export async function fetchPlaceImages(
       name,
       category || "",
       limit,
+      poiId || "",
     );
     const raw = (result.images || [])
       .map((u) => normalizeImageUrl(String(u || "")))
@@ -128,10 +136,11 @@ export async function fetchPlaceImage(
   name: string,
   category?: PlaceCategory,
   provided?: { image?: string; images?: string[] },
+  poiId?: string,
 ): Promise<string | null> {
   const providedOne = fromProvided(provided?.image, provided?.images, 1);
   if (providedOne?.[0]) return resolveImageUrl(providedOne[0]);
 
-  const imgs = await fetchPlaceImages(city, name, 1, category, provided);
+  const imgs = await fetchPlaceImages(city, name, 1, category, provided, poiId);
   return imgs[0] ?? null;
 }

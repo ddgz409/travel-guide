@@ -1,7 +1,7 @@
 {
-  "versionCode": 17,
-  "versionName": "2.2.2",
+  "versionCode": 18,
+  "versionName": "2.2.3",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.2：旅行地图省份填色、我的收藏、足迹概览、头像与 Me 页体验优化",
+  "notes": "2.2.3：应用更名知径、开屏与图标、足迹天气卡、规划页高德实景图",
   "force": false
 }
