@@ -370,7 +370,7 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-[var(--ink)]/65" />
           <div className="relative z-10 px-8 py-10 sm:px-12 text-white max-w-xl">
             <h2 className="font-display text-[28px] font-semibold mb-2">
-              旅游之前，先上旅迹
+              旅游之前，先上知径
             </h2>
             <p className="text-white/80 text-[14px] mb-5 leading-relaxed">
               选好目的地，AI 帮你排日程、算路线、估预算——生成后还能继续改。

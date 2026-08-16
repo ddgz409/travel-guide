@@ -148,7 +148,7 @@ export function AddFootprintScreen({ navigation }: Props) {
           interactive
             ? async () =>
                 new Promise<"granted" | "denied">((resolve) => {
-                  Alert.alert("定位权限", "允许旅迹获取位置，便于搜索附近地点？", [
+                  Alert.alert("定位权限", "允许知径获取位置，便于搜索附近地点？", [
                     { text: "不允许", style: "cancel", onPress: () => resolve("denied") },
                     { text: "允许", onPress: () => resolve("granted") },
                   ]);

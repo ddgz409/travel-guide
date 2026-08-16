@@ -36,7 +36,7 @@ function LoginForm() {
         <div className="font-display text-[26px] font-semibold text-[var(--ink)] mb-1">
           欢迎回来
         </div>
-        <p className="text-[var(--muted)] mb-6 text-sm">登录旅迹，管理你的攻略</p>
+        <p className="text-[var(--muted)] mb-6 text-sm">登录知径，管理你的攻略</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

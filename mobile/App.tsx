@@ -13,6 +13,10 @@ import { RegisterScreen } from "./src/screens/Register/RegisterScreen";
 import { TripsScreen } from "./src/screens/Trips/TripsScreen";
 import { ExploreScreen } from "./src/screens/Explore/ExploreScreen";
 import { MeScreen } from "./src/screens/Me/MeScreen";
+import { FootprintOverviewScreen } from "./src/screens/Me/FootprintOverviewScreen";
+import { FootprintListScreen } from "./src/screens/Me/FootprintListScreen";
+import { AddFootprintScreen } from "./src/screens/Me/AddFootprintScreen";
+import { FavoritesScreen } from "./src/screens/Me/FavoritesScreen";
 import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
 import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
@@ -23,6 +27,17 @@ import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
 import { CustomTabBar } from "./src/components/CustomTabBar";
 import { MainTabContext, type MainTab } from "./src/navigation/MainTabContext";
 import { colors } from "./src/theme";
+import { SplashOverlay } from "./src/components/SplashOverlay";
+import {
+  fadeCover,
+  pushFlow,
+  pushNative,
+  pushNested,
+  pushPage,
+  pushSettings,
+  riseSlow,
+  riseSoft,
+} from "./src/navigation/transitions";
 
 /** 推迟加载带地图的页面 */
 const TripDetailScreen = lazy(() =>
@@ -46,21 +61,6 @@ const CityDetailScreen = lazy(() =>
 const CheckInMapFullScreen = lazy(() =>
   import("./src/screens/CheckInMap/CheckInMapFullScreen").then((m) => ({
     default: m.CheckInMapFullScreen,
-  })),
-);
-const FootprintOverviewScreen = lazy(() =>
-  import("./src/screens/Me/FootprintOverviewScreen").then((m) => ({
-    default: m.FootprintOverviewScreen,
-  })),
-);
-const AddFootprintScreen = lazy(() =>
-  import("./src/screens/Me/AddFootprintScreen").then((m) => ({
-    default: m.AddFootprintScreen,
-  })),
-);
-const FavoritesScreen = lazy(() =>
-  import("./src/screens/Me/FavoritesScreen").then((m) => ({
-    default: m.FavoritesScreen,
   })),
 );
 
@@ -110,7 +110,7 @@ function RootNavigator() {
         headerStyle: { backgroundColor: colors.card },
         headerTintColor: colors.ink,
         contentStyle: { backgroundColor: colors.bg },
-        animationDuration: 400,
+        animationDuration: 480,
         gestureEnabled: true,
         fullScreenGestureEnabled: true,
       }}
@@ -122,93 +122,96 @@ function RootNavigator() {
         options={{ headerShown: false }}
       />
 
-      {/* 辅助功能页：底部滑入 */}
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...riseSoft }}
       />
       <Stack.Screen
         name="Login"
         component={LoginScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...riseSoft }}
       />
       <Stack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{ title: "注册", animation: "slide_from_bottom" }}
+        options={{ title: "注册", ...riseSlow }}
       />
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: "设置", animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...pushSettings }}
       />
       <Stack.Screen
         name="MapFull"
         component={MapFullScreen}
-        options={{ title: "地图", animation: "slide_from_bottom" }}
+        options={{ title: "地图", ...fadeCover }}
       />
       <Stack.Screen
         name="ModelManage"
         component={ModelManageScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...riseSlow }}
       />
 
-      {/* 浏览流程页：翻页效果 */}
       <Stack.Screen
         name="CheckInMapFull"
         component={CheckInMapFullScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...fadeCover }}
       />
       <Stack.Screen
         name="FootprintOverview"
         component={FootprintOverviewScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{ headerShown: false, ...pushPage }}
+      />
+      <Stack.Screen
+        name="FootprintList"
+        component={FootprintListScreen}
+        options={{ headerShown: false, ...pushNested }}
       />
       <Stack.Screen
         name="AddFootprint"
         component={AddFootprintScreen}
-        options={{ headerShown: false, animation: "slide_from_bottom" }}
+        options={{ headerShown: false, ...riseSoft }}
       />
       <Stack.Screen
         name="Favorites"
         component={FavoritesScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{ headerShown: false, ...pushPage }}
       />
       <Stack.Screen
         name="CityDetail"
         component={CityDetailScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{ headerShown: false, ...pushNative }}
       />
       <Stack.Screen
         name="TripDetail"
         component={TripDetailScreen}
-        options={{ title: "行程详情", headerShown: false, animation: "slide_from_right" }}
+        options={{ title: "行程详情", headerShown: false, ...pushNative }}
       />
       <Stack.Screen
         name="TripItemDetail"
         component={TripItemDetailScreen}
-        options={{ title: "安排详情", animation: "slide_from_right" }}
+        options={{ title: "安排详情", ...pushNested }}
       />
       <Stack.Screen
         name="Generate"
         component={GenerateScreen}
-        options={{ title: "生成攻略", animation: "slide_from_right" }}
+        options={{ title: "生成攻略", ...pushFlow }}
       />
       <Stack.Screen
         name="Share"
         component={ShareScreen}
-        options={{ title: "分享攻略", animation: "slide_from_right" }}
+        options={{ title: "分享攻略", ...pushFlow }}
       />
       <Stack.Screen
         name="TravelSearch"
         component={TravelSearchScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{ headerShown: false, ...pushFlow }}
       />
       <Stack.Screen
         name="PortalSelect"
         component={PortalSelectScreen}
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{ headerShown: false, ...pushNested }}
       />
     </Stack.Navigator>
   );
@@ -216,49 +219,45 @@ function RootNavigator() {
 
 function Root() {
   const { loading } = useAuth();
+  const [splash, setSplash] = useState(true);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || splash) return;
     const t = setTimeout(() => {
       void maybePromptUpdateOnLaunch();
     }, 1200);
     return () => clearTimeout(t);
-  }, [loading]);
+  }, [loading, splash]);
 
-  if (loading) {
+  if (splash) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: colors.bg,
-        }}
-      >
-        <ActivityIndicator color={colors.brand} size="large" />
+      <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+        <SplashOverlay ready={!loading} onFinished={() => setSplash(false)} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      <Suspense
-        fallback={
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              backgroundColor: colors.bg,
-            }}
-          >
-            <ActivityIndicator color={colors.brand} size="large" />
-          </View>
-        }
-      >
-        <RootNavigator />
-      </Suspense>
-    </NavigationContainer>
+    <View style={{ flex: 1, backgroundColor: "#F7FBFF" }}>
+      <NavigationContainer>
+        <Suspense
+          fallback={
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: colors.bg,
+              }}
+            >
+              <ActivityIndicator color={colors.brand} size="large" />
+            </View>
+          }
+        >
+          <RootNavigator />
+        </Suspense>
+      </NavigationContainer>
+    </View>
   );
 }
 

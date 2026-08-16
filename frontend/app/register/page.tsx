@@ -36,7 +36,7 @@ function RegisterForm() {
         <div className="font-display text-[26px] font-semibold text-[var(--ink)] mb-1">
           创建账号
         </div>
-        <p className="text-[var(--muted)] mb-6 text-sm">加入旅迹，开始定制行程</p>
+        <p className="text-[var(--muted)] mb-6 text-sm">加入知径，开始定制行程</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

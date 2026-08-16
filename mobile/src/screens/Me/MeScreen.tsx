@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../auth/AuthContext";
 import { useMainTab } from "../../navigation/MainTabContext";
 import { UserAvatar } from "../../components/UserAvatar";
+import { SettingsGear } from "../../components/SettingsGear";
 import { AvatarCropSheet } from "../../components/AvatarCropSheet";
 import { listCheckIns, subscribeCheckIns, getCheckedPrefectureIds, type CheckInRecord } from "../../utils/checkInStore";
 import { buildFootprintStats } from "../../utils/footprintStats";
@@ -23,6 +24,7 @@ import {
   getFavoriteCounts,
   subscribeFavorites,
 } from "../../utils/favoriteStore";
+import { colors } from "../../theme";
 import { styles } from "./styles";
 
 export function MeScreen() {
@@ -132,9 +134,10 @@ export function MeScreen() {
       />
       <Pressable
         style={[styles.menuBtn, { top: Math.max(insets.top, 10) + 4 }]}
+        accessibilityLabel="设置"
         onPress={() => (navigation as any).navigate("Settings")}
       >
-        <Text style={styles.menuIcon}>☰</Text>
+        <SettingsGear size={20} color={colors.ink} holeColor="#fff" />
       </Pressable>
 
       <ScrollView

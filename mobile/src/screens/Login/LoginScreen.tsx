@@ -71,7 +71,7 @@ export function LoginScreen({ navigation, route }: Props) {
         </PressScale>
       </FadeSlideIn>
       <FadeSlideIn delay={60} style={styles.hero}>
-        <Text style={styles.brand}>旅迹</Text>
+        <Text style={styles.brand}>知径</Text>
         <Text style={styles.tagline}>登录后同步你的行程攻略</Text>
       </FadeSlideIn>
 

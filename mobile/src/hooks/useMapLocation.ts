@@ -32,7 +32,7 @@ export function useMapLocation(
         new Promise<"granted" | "denied">((resolve) => {
           Alert.alert(
             "定位权限",
-            `是否允许旅迹获取你的位置，用于在${scopeLabel}上显示当前位置？可稍后在设置中修改。`,
+            `是否允许知径获取你的位置，用于在${scopeLabel}上显示当前位置？可稍后在设置中修改。`,
             [
               {
                 text: "不允许",

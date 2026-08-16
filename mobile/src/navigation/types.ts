@@ -39,6 +39,7 @@ export type AppStackParamList = {
   };
   CheckInMapFull: undefined;
   FootprintOverview: undefined;
+  FootprintList: { kind: "country" | "city" | "place" };
   AddFootprint: undefined;
   Favorites: undefined;
 };

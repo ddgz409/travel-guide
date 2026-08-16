@@ -5,9 +5,9 @@ export function SiteFooter() {
     <footer className="mt-auto border-t border-[var(--line)] bg-white">
       <div className="site-container py-12 grid sm:grid-cols-3 gap-8 text-[13px] text-[var(--muted)]">
         <div>
-          <div className="font-display text-[20px] text-[var(--ink)] mb-2">旅迹</div>
+          <div className="font-display text-[20px] text-[var(--ink)] mb-2">《知径》</div>
           <p className="leading-relaxed max-w-xs">
-            旅游之前，先上旅迹。AI 生成可编辑行程，地图路线与预算一目了然。
+            旅游之前，先上知径。AI 生成可编辑行程，地图路线与预算一目了然。
           </p>
         </div>
         <div>
@@ -38,7 +38,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-[var(--line)] py-4 text-center text-[12px] text-[var(--muted)]">
-        © {new Date().getFullYear()} 旅迹 · AI 旅行攻略
+        © {new Date().getFullYear()} 知径 · AI 旅行攻略
       </div>
     </footer>
   );

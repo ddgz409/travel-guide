@@ -1,5 +1,6 @@
 import type { CheckInRecord } from "./checkInStore";
 import { cityCenterFor } from "../data/cityCenters";
+import { PROVINCE_LABELS, provinceKeyFromPrefectureId } from "./provinceMap";
 
 export type ContinentId = "NA" | "SA" | "EU" | "AF" | "AS" | "OC" | "AN";
 
@@ -84,11 +85,76 @@ function seasonOf(iso: string) {
   return "冬";
 }
 
+export type FootprintListKind = "country" | "city" | "place";
+
+export type FootprintListEntry = {
+  key: string;
+  title: string;
+  sub?: string;
+  province?: string;
+  time?: string;
+};
+
+function cityLabel(city: string): string {
+  const raw = city.trim();
+  if (!raw) return "";
+  if (/(市|州|盟|地区|特别行政区)$/u.test(raw)) return raw;
+  return `${raw}市`;
+}
+
+function provinceOf(item: CheckInRecord): string {
+  const key = provinceKeyFromPrefectureId(item.prefectureId || "");
+  return PROVINCE_LABELS[key] || "";
+}
+
+export function listFootprintEntries(
+  items: CheckInRecord[],
+  kind: FootprintListKind,
+): FootprintListEntry[] {
+  if (items.length === 0) return [];
+
+  if (kind === "country") {
+    return [{ key: "CN", title: "中国", sub: "China", time: "亚洲" }];
+  }
+
+  if (kind === "city") {
+    const latest = new Map<string, CheckInRecord>();
+    for (const it of items) {
+      const city = it.city.trim();
+      if (!city) continue;
+      const prev = latest.get(city);
+      if (!prev || it.checkedAt > prev.checkedAt) latest.set(city, it);
+    }
+    return [...latest.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "zh"))
+      .map(([city, it]) => ({
+        key: city,
+        title: cityLabel(city),
+        province: provinceOf(it),
+        time: formatCheckDate(it.checkedAt),
+      }));
+  }
+
+  return items.map((it) => ({
+    key: it.id,
+    title: it.name,
+    sub: cityLabel(it.city),
+    time: formatCheckTime(it.checkedAt),
+  }));
+}
+
 export function formatCheckDate(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+}
+
+export function formatCheckTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 export function buildFootprintStats(items: CheckInRecord[]): FootprintStats {

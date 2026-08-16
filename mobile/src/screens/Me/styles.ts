@@ -1,5 +1,5 @@
 import { StyleSheet } from "react-native";
-import { colors, cardShadow } from "../../theme";
+import { colors, cardShadow, radii } from "../../theme";
 
 export const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F4F5F7" },
@@ -38,8 +38,7 @@ export const styles = StyleSheet.create({
   miniCard: {
     flex: 1,
     backgroundColor: "#fff",
-    borderRadius: 28,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 16,
     minHeight: 148,
     ...cardShadow,
@@ -51,8 +50,7 @@ export const styles = StyleSheet.create({
     marginHorizontal: 18,
     marginTop: 12,
     backgroundColor: "#EEF3FF",
-    borderRadius: 28,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 18,
     minHeight: 132,
     overflow: "hidden",
@@ -119,8 +117,7 @@ export const styles = StyleSheet.create({
     width: "48%",
     flexGrow: 1,
     backgroundColor: "#fff",
-    borderRadius: 24,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 16,
     minHeight: 100,
     ...cardShadow,
@@ -130,22 +127,19 @@ export const styles = StyleSheet.create({
   statLabel: { marginTop: 6, fontSize: 13, color: colors.muted },
   cardBlue: {
     backgroundColor: "#DCEBFF",
-    borderRadius: 24,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 18,
     ...cardShadow,
   },
   cardBrown: {
     backgroundColor: "#5C4033",
-    borderRadius: 24,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 18,
     ...cardShadow,
   },
   poleWrap: {
     backgroundColor: "#5C4033",
-    borderRadius: 24,
-    borderCurve: "continuous",
+    ...radii.xl,
     overflow: "hidden",
     ...cardShadow,
   },
@@ -177,8 +171,7 @@ export const styles = StyleSheet.create({
   },
   cardMint: {
     backgroundColor: "#D8F0E2",
-    borderRadius: 22,
-    borderCurve: "continuous",
+    ...radii.xl,
     paddingTop: 12,
     paddingBottom: 12,
     paddingHorizontal: 12,
@@ -189,8 +182,7 @@ export const styles = StyleSheet.create({
   },
   cardGold: {
     backgroundColor: "#F0D48A",
-    borderRadius: 24,
-    borderCurve: "continuous",
+    ...radii.xl,
     padding: 18,
     ...cardShadow,
   },
@@ -260,7 +252,7 @@ export const styles = StyleSheet.create({
   goldNum: { fontSize: 28, fontWeight: "800", color: "#fff" },
   overviewEmptyWrap: {
     paddingTop: 12,
-    alignItems: "flex-start",
+    alignItems: "center",
     paddingHorizontal: 0,
     paddingBottom: 88,
   },
@@ -277,12 +269,10 @@ export const styles = StyleSheet.create({
   },
   mapLinkText: { fontSize: 14, fontWeight: "700", color: colors.brandHot },
   addBubble: {
-    alignSelf: "flex-start",
-    marginLeft: 18,
+    alignSelf: "center",
     marginBottom: 12,
     backgroundColor: "#fff",
-    borderRadius: 22,
-    borderCurve: "continuous",
+    ...radii.xl,
     paddingHorizontal: 20,
     paddingVertical: 11,
     borderWidth: 1,
@@ -293,5 +283,26 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: colors.brandHot,
+  },
+  listScroll: { paddingHorizontal: 16, paddingTop: 4, gap: 12 },
+  listSection: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+    marginBottom: 2,
+  },
+  listCard: {
+    backgroundColor: "#fff",
+    ...radii.xl,
+    padding: 18,
+    ...cardShadow,
+  },
+  listTitle: { fontSize: 18, fontWeight: "800", color: colors.ink },
+  listSub: { marginTop: 8, fontSize: 13, color: colors.muted },
+  listEmpty: {
+    marginTop: 48,
+    textAlign: "center",
+    fontSize: 15,
+    color: colors.muted,
   },
 });

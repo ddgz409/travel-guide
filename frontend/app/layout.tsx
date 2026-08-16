@@ -23,7 +23,7 @@ const display = Noto_Serif_SC({
 });
 
 export const metadata: Metadata = {
-  title: "旅迹 · AI 旅行攻略",
+  title: "《知径》 · AI 旅行攻略",
   description: "像马蜂窝一样逛目的地，用 AI 一键生成可落地的旅行攻略",
 };
 

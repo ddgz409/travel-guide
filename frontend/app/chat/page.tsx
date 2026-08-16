@@ -5,7 +5,7 @@ import { chatApi, type ChatMessage } from "@/lib/api";
 
 const STORAGE_KEY = "travel_guide_chat";
 
-const WELCOME_BLOCK = `你好！我是「旅迹」的 AI 旅行助手 🌍
+const WELCOME_BLOCK = `你好！我是「知径」的 AI 旅行助手 🌍
 
 我可以帮你：
 - 🗺️ 推荐目的地、景点、美食、住宿

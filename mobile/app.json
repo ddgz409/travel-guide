@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "旅迹",
+    "name": "知径",
     "slug": "travel-guide",
     "owner": "ddgz409",
     "version": "2.2.2",
@@ -52,13 +52,13 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "旅迹需要在你同意后显示当前位置，便于对照行程地图。"
+          "locationWhenInUsePermission": "知径需要在你同意后显示当前位置，便于对照行程地图。"
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "旅迹需要访问相册，以便从相册选择头像。"
+          "photosPermission": "知径需要访问相册，以便从相册选择头像。"
         }
       ]
     ]

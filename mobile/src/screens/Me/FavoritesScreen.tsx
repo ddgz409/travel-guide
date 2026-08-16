@@ -8,6 +8,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -18,15 +19,11 @@ import type { PoiSearchResult } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { api } from "../../api/client";
 import { colors } from "../../theme";
+import { buildCheckInMapHtml } from "../../utils/checkInMapHtml";
 import {
-  buildCheckInMapHtml,
-  type ProvincePhotoData,
-} from "../../utils/checkInMapHtml";
-import {
-  buildProvincePhotoDataUris,
-  getAllProvincePhotos,
-  subscribeMapPhotos,
-} from "../../utils/mapPhotoStore";
+  getCheckedPrefectureIds,
+  subscribeCheckIns,
+} from "../../utils/checkInStore";
 import {
   ensureLocationAccess,
   getDeviceLocation,
@@ -58,6 +55,7 @@ function cityOfPoi(poi: PoiSearchResult, fallback: string): string {
 
 export function FavoritesScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [folders, setFolders] = useState<FavoriteFolder[]>([]);
@@ -69,8 +67,7 @@ export function FavoritesScreen({ navigation }: Props) {
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<PoiSearchResult[]>([]);
-  const [provincePhotos, setProvincePhotos] = useState<ProvincePhotoData>({});
-  const [mapLoading, setMapLoading] = useState(true);
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [locCity, setLocCity] = useState(
     () => peekCachedCity()?.replace(/市$/, "") || "",
   );
@@ -79,12 +76,14 @@ export function FavoritesScreen({ navigation }: Props) {
   locCityRef.current = locCity;
 
   const load = useCallback(async () => {
-    const [nextFolders, nextPlaces] = await Promise.all([
+    const [nextFolders, nextPlaces, ids] = await Promise.all([
       listFavoriteFolders(),
       listFavoritePlaces(),
+      getCheckedPrefectureIds(),
     ]);
     setFolders(nextFolders);
     setPlaces(nextPlaces);
+    setCheckedIds(ids);
   }, []);
 
   useFocusEffect(
@@ -94,36 +93,15 @@ export function FavoritesScreen({ navigation }: Props) {
   );
 
   useEffect(() => subscribeFavorites(() => void load()), [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const refreshMap = async () => {
-      setMapLoading(true);
-      try {
-        const store = await getAllProvincePhotos();
-        const data = await buildProvincePhotoDataUris(store);
-        if (!cancelled) setProvincePhotos(data);
-      } finally {
-        if (!cancelled) setMapLoading(false);
-      }
-    };
-    void refreshMap();
-    const unsub = subscribeMapPhotos(() => {
-      void refreshMap();
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, []);
+  useEffect(() => subscribeCheckIns(() => void load()), [load]);
 
   const mapHtml = useMemo(
     () =>
-      buildCheckInMapHtml([], {
-        provincePhotos,
+      buildCheckInMapHtml(checkedIds, {
+        highlightChecked: true,
         interactive: true,
       }),
-    [provincePhotos],
+    [checkedIds],
   );
 
   const visiblePlaces = openFolderId
@@ -228,25 +206,20 @@ export function FavoritesScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={styles.mapBox} collapsable={false}>
-        {mapLoading ? (
-          <View style={styles.mapFallback}>
-            <ActivityIndicator color="#9B8EC4" />
-          </View>
-        ) : (
-          <WebView
-            originWhitelist={["*"]}
-            source={{ html: mapHtml, baseUrl: "about:blank" }}
-            style={styles.map}
-            scrollEnabled={false}
-            bounces={false}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            javaScriptEnabled
-            domStorageEnabled={false}
-            androidLayerType="hardware"
-          />
-        )}
+      <View style={[styles.mapBox, { width: winW, height: winH }]} collapsable={false}>
+        <WebView
+          originWhitelist={["*"]}
+          source={{ html: mapHtml }}
+          style={[styles.map, { width: winW, height: winH }]}
+          scrollEnabled={false}
+          bounces={false}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          javaScriptEnabled
+          domStorageEnabled={false}
+          androidLayerType="hardware"
+          setSupportMultipleWindows={false}
+        />
       </View>
 
       <Pressable

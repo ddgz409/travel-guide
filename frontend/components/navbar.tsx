@@ -31,7 +31,7 @@ export function Navbar() {
             迹
           </span>
           <span className="font-display text-[22px] font-semibold text-[var(--ink)] tracking-wide">
-            旅迹
+            《知径》
           </span>
         </Link>
 

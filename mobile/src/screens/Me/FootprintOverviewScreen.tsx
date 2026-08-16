@@ -151,18 +151,27 @@ export function FootprintOverviewScreen({ navigation }: Props) {
           </Pressable>
 
           <View style={styles.statGrid}>
-            <View style={styles.statCard}>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => navigation.navigate("FootprintList", { kind: "country" })}
+            >
               <Text style={styles.statNum}>{stats.countryCount} 国家</Text>
               <Text style={styles.statLabel}>🌍 到过的国家/地区</Text>
-            </View>
-            <View style={styles.statCard}>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => navigation.navigate("FootprintList", { kind: "city" })}
+            >
               <Text style={styles.statNum}>{stats.cityCount} 城市</Text>
               <Text style={styles.statLabel}>🏙 打卡过的城市</Text>
-            </View>
-            <View style={styles.statCard}>
+            </Pressable>
+            <Pressable
+              style={styles.statCard}
+              onPress={() => navigation.navigate("FootprintList", { kind: "place" })}
+            >
               <Text style={styles.statNum}>{stats.placeCount} 地点</Text>
               <Text style={styles.statLabel}>📍 打卡地点</Text>
-            </View>
+            </Pressable>
             <View style={[styles.statCard, styles.statSeason]}>
               <Text style={styles.statNum}>{stats.topSeason || "—"}</Text>
               <Text style={styles.statLabel}>出行最多的季节</Text>

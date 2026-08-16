@@ -183,7 +183,7 @@ export function describeLocationError(e: unknown): string {
     return "系统定位服务未开启，请打开手机的「位置信息 / GPS」。";
   }
   if (/permission|denied|授权|权限/.test(lower)) {
-    return "没有定位权限，请在系统设置中允许旅迹（或 Expo Go）使用位置。";
+    return "没有定位权限，请在系统设置中允许知径（或 Expo Go）使用位置。";
   }
   if (/unavailable|unable|无法/.test(lower)) {
     return "当前无法定位。请检查网络与定位开关后重试。";

@@ -5,6 +5,7 @@ import { getProvinceRegions } from "./provinceMap";
 
 const PAGE_BG = "#FFFFFF";
 const PROVINCE_FILL = "#D2C2EA";
+const HIGHLIGHT_FILL = "#6E4EC4";
 const STICKER = "#C4B3E4";
 const STROKE = "#FFFFFF";
 const LABEL_FILL = "#FFFFFF";
@@ -17,6 +18,8 @@ export type ProvincePhotoData = Record<string, string>;
 export type CheckInMapHtmlOptions = {
   interactive?: boolean;
   provincePhotos?: ProvincePhotoData;
+  /** 按打卡地级市高亮所属省份，不加载照片/外网字体 */
+  highlightChecked?: boolean;
 };
 
 function escapeXml(text: string): string {
@@ -53,12 +56,18 @@ function labelSize(bw: number, bh: number, label: string): number {
 }
 
 export function buildCheckInMapHtml(
-  _checkedPrefectureIds: string[],
+  checkedPrefectureIds: string[],
   options: CheckInMapHtmlOptions = {},
 ): string {
   const regions = getProvinceRegions();
-  const photos = options.provincePhotos ?? {};
+  const photos = options.highlightChecked ? {} : (options.provincePhotos ?? {});
+  const highlightKeys = new Set(
+    options.highlightChecked
+      ? checkedPrefectureIds.map((id) => id.slice(0, 2))
+      : [],
+  );
   const interactive = options.interactive ?? false;
+  const offline = Boolean(options.highlightChecked);
   const { w: VW, h: VH } = TRAVEL_MAP_VIEW;
 
   const defs: string[] = [];
@@ -68,20 +77,26 @@ export function buildCheckInMapHtml(
   const borderLayer: string[] = [];
   const labels: string[] = [];
   const hitLayers: string[] = [];
+  const slim = offline;
 
   for (const region of regions) {
     const hasPhoto = Boolean(photos[region.key]);
+    const highlighted = highlightKeys.has(region.key);
     const d = region.path;
 
-    defs.push(`<clipPath id="clip-${region.key}"><path d="${d}"/></clipPath>`);
-
-    stickerLayer.push(
-      `<path d="${d}" fill="${PROVINCE_FILL}" stroke="${STICKER}" stroke-width="42" ` +
-        `stroke-linejoin="round" stroke-linecap="round"/>`,
-    );
+    if (!slim) {
+      defs.push(`<clipPath id="clip-${region.key}"><path d="${d}"/></clipPath>`);
+      stickerLayer.push(
+        `<path d="${d}" fill="${PROVINCE_FILL}" stroke="${STICKER}" stroke-width="42" ` +
+          `stroke-linejoin="round" stroke-linecap="round"/>`,
+      );
+    }
 
     fillLayer.push(
-      `<path d="${d}" fill="${hasPhoto ? "#FFFFFF" : PROVINCE_FILL}" stroke="none"/>`,
+      `<path d="${d}" fill="${
+        hasPhoto ? "#FFFFFF" : highlighted ? HIGHLIGHT_FILL : PROVINCE_FILL
+      }" stroke="${slim ? STICKER : "none"}" stroke-width="${slim ? "3" : "0"}" ` +
+        `stroke-linejoin="round"/>`,
     );
 
     if (hasPhoto) {
@@ -109,13 +124,13 @@ export function buildCheckInMapHtml(
       labels.push(
         `<text x="${region.cx.toFixed(1)}" y="${region.cy.toFixed(1)}" ` +
           `fill="${LABEL_FILL}" font-size="${fs.toFixed(1)}" font-weight="400" ` +
-          `font-family="Ma Shan Zheng, KaiTi, STKaiti, cursive, sans-serif" ` +
+          `font-family="${offline ? "KaiTi, STKaiti, sans-serif" : "Ma Shan Zheng, KaiTi, STKaiti, cursive, sans-serif"}" ` +
           `text-anchor="middle" dominant-baseline="central" pointer-events="none">` +
           `${escapeXml(region.label)}</text>`,
       );
     }
 
-    if (interactive) {
+    if (interactive && !slim) {
       hitLayers.push(
         `<path d="${d}" fill="transparent" stroke="none" ` +
           `data-prov="${region.key}" data-label="${escapeXml(region.label)}" ` +
@@ -223,17 +238,17 @@ export function buildCheckInMapHtml(
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=${viewportMaxScale}, user-scalable=${scalable}"/>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap"/>
+${offline ? "" : '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap"/>'}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; background: ${PAGE_BG}; overflow: hidden; touch-action: none; }
-  svg { width: 100%; height: 100%; display: block; }
+  html, body { width: 100%; height: 100%; background: ${offline ? "#EFE8F8" : PAGE_BG}; overflow: hidden; touch-action: none; }
+  svg { width: 100%; height: ${offline ? "58%" : "100%"}; display: block; }
 </style>
 </head>
 <body>
   <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
     <defs>${defs.join("")}</defs>
-    <rect width="${VW}" height="${VH}" fill="${PAGE_BG}"/>
+    <rect width="${VW}" height="${VH}" fill="${offline ? "#EFE8F8" : PAGE_BG}"/>
     <g id="map" transform="translate(0,0) scale(1)">
       <g id="sticker">${stickerLayer.join("\n")}</g>
       <g id="fills">${fillLayer.join("\n")}</g>

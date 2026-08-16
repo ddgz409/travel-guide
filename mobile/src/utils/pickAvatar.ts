@@ -11,7 +11,7 @@ import type { AvatarCropRect } from "./avatarImage";
 export async function pickAvatarSourceUri(): Promise<string | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert("无法访问相册", "请在系统设置中允许旅迹访问照片。");
+    Alert.alert("无法访问相册", "请在系统设置中允许知径访问照片。");
     return null;
   }
 

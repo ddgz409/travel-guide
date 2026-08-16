@@ -316,8 +316,8 @@ export function TripDetailScreen({ route, navigation }: Props) {
       setShareMsg(url);
       const prefix =
         mode === "collab"
-          ? `邀请你一起编辑旅迹攻略「${t.title}」（需登录）`
-          : `旅迹攻略：${t.title}`;
+          ? `邀请你一起编辑知径攻略「${t.title}」（需登录）`
+          : `知径攻略：${t.title}`;
       setSharePayload({
         url,
         title: t.title,

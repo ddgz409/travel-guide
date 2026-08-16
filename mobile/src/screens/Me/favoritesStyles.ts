@@ -2,9 +2,9 @@ import { StyleSheet } from "react-native";
 import { colors, cardShadow } from "../../theme";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#FFFFFF" },
-  mapBox: { ...StyleSheet.absoluteFillObject },
-  map: { flex: 1, backgroundColor: "#FFFFFF" },
+  root: { flex: 1, backgroundColor: "#EFE8F8" },
+  mapBox: { ...StyleSheet.absoluteFillObject, backgroundColor: "#EFE8F8" },
+  map: { flex: 1, backgroundColor: "#EFE8F8" },
   mapFallback: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

@@ -25,6 +25,7 @@ import {
   enterFade,
 } from "../../utils/motion";
 import { colors } from "../../theme";
+import { SettingsGear } from "../../components/SettingsGear";
 import type { AppStackParamList } from "../../navigation/types";
 import { styles } from "./styles";
 import {
@@ -146,13 +147,13 @@ export function HomeScreen({ navigation }: Props) {
         entering={enterFade(0)}
         style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <Text style={styles.logo}>旅迹</Text>
+        <Text style={styles.logo}>知径</Text>
         <View style={styles.topActions}>
           <PressScale
             style={styles.topActionItem}
             onPress={() => navigation.navigate("Settings")}
           >
-            <Text style={styles.topCta}>设置</Text>
+            <SettingsGear size={22} color={colors.ink} holeColor={colors.card} />
           </PressScale>
           {user || isGuest ? (
             <PressScale

@@ -28,6 +28,7 @@ import { buildAmapHtml } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import { CityCoverImage } from "../../components/PlaceImage";
 import { HeaderAvatarButton } from "../../components/HeaderAvatarButton";
+import { SettingsGear } from "../../components/SettingsGear";
 import { resolveImageUrl } from "../../utils/placeImage";
 import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation, peekCachedAccuracy } from "../../utils/location";
 import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
@@ -106,7 +107,7 @@ export function ExploreScreen() {
               new Promise<"granted" | "denied">((resolve) => {
                 Alert.alert(
                   "定位权限",
-                  "是否允许旅迹获取你的位置，用于显示所在城市？",
+                  "是否允许知径获取你的位置，用于显示所在城市？",
                   [
                     { text: "不允许", style: "cancel", onPress: () => resolve("denied") },
                     { text: "允许", onPress: () => resolve("granted") },
@@ -231,7 +232,7 @@ export function ExploreScreen() {
             style={styles.topActionItem}
             onPress={() => (navigation as any).navigate("Settings")}
           >
-            <Text style={styles.topCta}>设置</Text>
+            <SettingsGear size={22} color={colors.ink} holeColor={colors.card} />
           </PressScale>
         </View>
       </View>
