@@ -1,22 +1,25 @@
-/** 离线打卡地图 HTML（地级市填色 + 灰色虚线边界，可选缩放） */
+/** 旅行地图 HTML — 白底贴纸中国地图（Albers 比例 + 粗紫描边 + 白省界） */
 
-import { CHINA_PREFECTURE_PATHS } from "../assets/chinaPrefecturePaths";
+import { TRAVEL_MAP_VIEW } from "../assets/chinaProvincePaths";
+import { getProvinceRegions } from "./provinceMap";
 
-const FILL_DEFAULT = "#FFFFFF";
-const FILL_CHECKED = "#D7EAF8";
-const STROKE = "#B8B8B8";
+const PAGE_BG = "#FFFFFF";
+const PROVINCE_FILL = "#D2C2EA";
+const HIGHLIGHT_FILL = "#6E4EC4";
+const STICKER = "#C4B3E4";
+const STROKE = "#FFFFFF";
+const LABEL_FILL = "#FFFFFF";
 
 const MAX_SCALE = 24;
 const MIN_SCALE = 0.5;
-const LABEL_SHOW_SCALE = 1.5;
 
-/** 屏幕中心全亮半径 / 渐隐外圈（viewBox 单位） */
-const CENTER_INNER_R = 95;
-const CENTER_OUTER_R = 185;
-const FADE_MIN_OPACITY = 0.1;
+export type ProvincePhotoData = Record<string, string>;
 
 export type CheckInMapHtmlOptions = {
   interactive?: boolean;
+  provincePhotos?: ProvincePhotoData;
+  /** 按打卡地级市高亮所属省份，不加载照片/外网字体 */
+  highlightChecked?: boolean;
 };
 
 function escapeXml(text: string): string {
@@ -27,139 +30,145 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildLabelText(
-  p: (typeof CHINA_PREFECTURE_PATHS)[number],
-  isChecked: boolean,
+function buildPhotoCover(
+  provinceKey: string,
+  photoHref: string,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
 ): string {
-  const fill = isChecked ? "#0277BD" : "#1a1a1a";
-  const weight = isChecked ? "700" : "600";
+  const w = maxX - minX;
+  const h = maxY - minY;
+  if (w <= 0 || h <= 0 || !photoHref) return "";
   return (
-    `<text x="${p.cx}" y="${p.cy}" visibility="hidden" opacity="0" ` +
-    `data-w="${p.w}" data-h="${p.h}" data-label="${escapeXml(p.label)}" ` +
-    `fill="${fill}" stroke="#ffffff" stroke-width="0.22" ` +
-    `paint-order="stroke fill" font-size="4" font-weight="${weight}" ` +
-    `font-family="PingFang SC, -apple-system, BlinkMacSystemFont, sans-serif" ` +
-    `text-anchor="middle" dominant-baseline="central" ` +
-    `vector-effect="non-scaling-stroke">` +
-    `${escapeXml(p.label)}</text>`
+    `<g clip-path="url(#clip-${provinceKey})">` +
+    `<image href="${photoHref}" x="${minX.toFixed(2)}" y="${minY.toFixed(2)}" ` +
+    `width="${w.toFixed(2)}" height="${h.toFixed(2)}" preserveAspectRatio="xMidYMid slice"/>` +
+    `</g>`
   );
+}
+
+function labelSize(bw: number, bh: number, label: string): number {
+  const base = Math.min(bw, bh) * 0.22;
+  const byLen = (Math.min(bw, bh) * 0.72) / Math.max(label.length, 1);
+  return Math.min(22, Math.max(7, Math.min(base, byLen)));
 }
 
 export function buildCheckInMapHtml(
   checkedPrefectureIds: string[],
   options: CheckInMapHtmlOptions = {},
 ): string {
-  const checked = new Set(checkedPrefectureIds);
-  const paths = CHINA_PREFECTURE_PATHS.map((p) => {
-    const fill = checked.has(p.id) ? FILL_CHECKED : FILL_DEFAULT;
-    return `<path d="${p.path}" fill="${fill}" stroke="${STROKE}" stroke-width="0.55" stroke-dasharray="3,2" vector-effect="non-scaling-stroke"/>`;
-  }).join("\n");
+  const regions = getProvinceRegions();
+  const photos = options.highlightChecked ? {} : (options.provincePhotos ?? {});
+  const highlightKeys = new Set(
+    options.highlightChecked
+      ? checkedPrefectureIds.map((id) => id.slice(0, 2))
+      : [],
+  );
+  const interactive = options.interactive ?? false;
+  const offline = Boolean(options.highlightChecked);
+  const { w: VW, h: VH } = TRAVEL_MAP_VIEW;
 
-  const labels = CHINA_PREFECTURE_PATHS.map((p) =>
-    buildLabelText(p, checked.has(p.id)),
-  ).join("\n");
+  const defs: string[] = [];
+  const stickerLayer: string[] = [];
+  const fillLayer: string[] = [];
+  const photoLayer: string[] = [];
+  const borderLayer: string[] = [];
+  const labels: string[] = [];
+  const hitLayers: string[] = [];
+  const slim = offline;
 
-  const checkedCityCount = checked.size;
-  const scalable = options.interactive ? "yes" : "no";
-  const viewportMaxScale = options.interactive ? String(MAX_SCALE) : "1";
+  for (const region of regions) {
+    const hasPhoto = Boolean(photos[region.key]);
+    const highlighted = highlightKeys.has(region.key);
+    const d = region.path;
 
-  const touchScript = options.interactive
+    if (!slim) {
+      defs.push(`<clipPath id="clip-${region.key}"><path d="${d}"/></clipPath>`);
+      stickerLayer.push(
+        `<path d="${d}" fill="${PROVINCE_FILL}" stroke="${STICKER}" stroke-width="42" ` +
+          `stroke-linejoin="round" stroke-linecap="round"/>`,
+      );
+    }
+
+    fillLayer.push(
+      `<path d="${d}" fill="${
+        hasPhoto ? "#FFFFFF" : highlighted ? HIGHLIGHT_FILL : PROVINCE_FILL
+      }" stroke="${slim ? STICKER : "none"}" stroke-width="${slim ? "3" : "0"}" ` +
+        `stroke-linejoin="round"/>`,
+    );
+
+    if (hasPhoto) {
+      photoLayer.push(
+        buildPhotoCover(
+          region.key,
+          photos[region.key],
+          region.minX,
+          region.minY,
+          region.maxX,
+          region.maxY,
+        ),
+      );
+    }
+
+    borderLayer.push(
+      `<path d="${d}" fill="none" stroke="${STROKE}" stroke-width="2.4" ` +
+        `stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>`,
+    );
+
+    const bw = region.maxX - region.minX;
+    const bh = region.maxY - region.minY;
+    if (bw >= 14 && bh >= 10) {
+      const fs = labelSize(bw, bh, region.label);
+      labels.push(
+        `<text x="${region.cx.toFixed(1)}" y="${region.cy.toFixed(1)}" ` +
+          `fill="${LABEL_FILL}" font-size="${fs.toFixed(1)}" font-weight="400" ` +
+          `font-family="${offline ? "KaiTi, STKaiti, sans-serif" : "Ma Shan Zheng, KaiTi, STKaiti, cursive, sans-serif"}" ` +
+          `text-anchor="middle" dominant-baseline="central" pointer-events="none">` +
+          `${escapeXml(region.label)}</text>`,
+      );
+    }
+
+    if (interactive && !slim) {
+      hitLayers.push(
+        `<path d="${d}" fill="transparent" stroke="none" ` +
+          `data-prov="${region.key}" data-label="${escapeXml(region.label)}" ` +
+          `class="prov-hit" style="cursor:pointer"/>`,
+      );
+    }
+  }
+
+  const touchScript = interactive
     ? `
 <script>
 (function () {
   var svg = document.querySelector('svg');
   var g = document.getElementById('map');
-  var labelNodes = document.querySelectorAll('#labels text');
   var scale = 1, tx = 0, ty = 0;
   var lastDist = 0, lastPt = null, mode = '';
   var MAX_SCALE = ${MAX_SCALE};
   var MIN_SCALE = ${MIN_SCALE};
-  var LABEL_SCALE = ${LABEL_SHOW_SCALE};
-  var INNER_R = ${CENTER_INNER_R};
-  var OUTER_R = ${CENTER_OUTER_R};
-  var FADE_MIN = ${FADE_MIN_OPACITY};
+  var dragSq = 0;
+
+  function post(obj) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+    }
+  }
 
   function clientToSvg(x, y) {
     var pt = svg.createSVGPoint();
-    pt.x = x;
-    pt.y = y;
+    pt.x = x; pt.y = y;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
-  }
-
-  function viewCenter() {
-    var rect = svg.getBoundingClientRect();
-    return clientToSvg(rect.left + rect.width / 2, rect.top + rect.height / 2);
-  }
-
-  function clamp(v, lo, hi) {
-    return Math.min(hi, Math.max(lo, v));
-  }
-
-  function labelFontSize(bw, bh, name) {
-    var base = Math.min(bw, bh) * 0.19;
-    base = clamp(base, 2.8, 11);
-    var needW = Math.max(6, name.length * base * 0.58);
-    if (needW > bw * 0.82) {
-      base = (bw * 0.82) / Math.max(1, name.length * 0.58);
-    }
-    return clamp(base, 2.5, 11);
-  }
-
-  function centerOpacity(px, py, cx0, cy0) {
-    var dist = Math.hypot(px - cx0, py - cy0);
-    if (dist <= INNER_R) return 1;
-    if (dist >= OUTER_R) return FADE_MIN;
-    var t = (dist - INNER_R) / (OUTER_R - INNER_R);
-    return 1 - t * (1 - FADE_MIN);
-  }
-
-  function updateLabels() {
-    var labels = document.getElementById('labels');
-    if (!labels) return;
-    if (scale < LABEL_SCALE) {
-      labels.style.display = 'none';
-      return;
-    }
-    labels.style.display = 'block';
-    var cen = viewCenter();
-
-    for (var i = 0; i < labelNodes.length; i++) {
-      var el = labelNodes[i];
-      var lx = parseFloat(el.getAttribute('x'));
-      var ly = parseFloat(el.getAttribute('y'));
-      var bw = parseFloat(el.getAttribute('data-w'));
-      var bh = parseFloat(el.getAttribute('data-h'));
-      var name = el.getAttribute('data-label') || el.textContent || '';
-
-      var px = tx + scale * lx;
-      var py = ty + scale * ly;
-      var sw = bw * scale;
-      var sh = bh * scale;
-
-      if (sw < 8 || sh < 5) {
-        el.setAttribute('visibility', 'hidden');
-        continue;
-      }
-
-      var fs = labelFontSize(bw, bh, name);
-      var op = centerOpacity(px, py, cen.x, cen.y);
-
-      el.setAttribute('font-size', String(fs));
-      el.setAttribute('opacity', String(op));
-      el.setAttribute('visibility', op < 0.06 ? 'hidden' : 'visible');
-    }
   }
 
   function apply() {
     g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-    updateLabels();
   }
 
   function touchMid(t0, t1) {
-    return clientToSvg(
-      (t0.clientX + t1.clientX) / 2,
-      (t0.clientY + t1.clientY) / 2
-    );
+    return clientToSvg((t0.clientX + t1.clientX) / 2, (t0.clientY + t1.clientY) / 2);
   }
 
   function touchDist(t0, t1) {
@@ -168,7 +177,15 @@ export function buildCheckInMapHtml(
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  document.querySelectorAll('.prov-hit').forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (dragSq > 64) return;
+      post({ type: 'province', key: el.getAttribute('data-prov'), label: el.getAttribute('data-label') });
+    });
+  });
+
   document.body.addEventListener('touchstart', function (e) {
+    dragSq = 0;
     if (e.touches.length === 1) {
       mode = 'pan';
       lastPt = clientToSvg(e.touches[0].clientX, e.touches[0].clientY);
@@ -182,14 +199,17 @@ export function buildCheckInMapHtml(
     e.preventDefault();
     if (mode === 'pan' && e.touches.length === 1) {
       var p = clientToSvg(e.touches[0].clientX, e.touches[0].clientY);
-      tx += p.x - lastPt.x;
-      ty += p.y - lastPt.y;
+      var dx = p.x - lastPt.x;
+      var dy = p.y - lastPt.y;
+      dragSq += dx * dx + dy * dy;
+      tx += dx;
+      ty += dy;
       lastPt = p;
       apply();
     } else if (mode === 'pinch' && e.touches.length === 2) {
       var mid = touchMid(e.touches[0], e.touches[1]);
       var d = touchDist(e.touches[0], e.touches[1]);
-      var newScale = clamp(scale * (d / lastDist), MIN_SCALE, MAX_SCALE);
+      var newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (d / lastDist)));
       var ratio = newScale / scale;
       tx = mid.x - ratio * (mid.x - tx);
       ty = mid.y - ratio * (mid.y - ty);
@@ -200,56 +220,44 @@ export function buildCheckInMapHtml(
   }, { passive: false });
 
   document.body.addEventListener('touchend', function (e) {
-    if (e.touches.length === 0) {
-      mode = '';
-    } else if (e.touches.length === 1 && mode === 'pinch') {
+    if (e.touches.length === 0) mode = '';
+    else if (e.touches.length === 1 && mode === 'pinch') {
       mode = 'pan';
       lastPt = clientToSvg(e.touches[0].clientX, e.touches[0].clientY);
     }
   });
-
-  updateLabels();
 })();
 </script>`
     : "";
 
-  const labelsLayer = options.interactive
-    ? `<g id="labels">${labels}</g>`
-    : "";
+  const scalable = interactive ? "yes" : "no";
+  const viewportMaxScale = interactive ? String(MAX_SCALE) : "1";
 
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=${viewportMaxScale}, user-scalable=${scalable}"/>
+${offline ? "" : '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap"/>'}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; background: #fafafa; overflow: hidden; touch-action: none; }
-  svg { width: 100%; height: 100%; display: block; }
-  .badge {
-    position: absolute; left: 10px; bottom: 8px;
-    font: 600 11px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-    color: #757575; background: rgba(255,255,255,0.92);
-    padding: 4px 10px; border-radius: 10px;
-    pointer-events: none;
-  }
-  .hint {
-    position: absolute; right: 10px; bottom: 8px;
-    font: 500 10px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-    color: #9e9e9e; pointer-events: none;
-  }
+  html, body { width: 100%; height: 100%; background: ${offline ? "#EFE8F8" : PAGE_BG}; overflow: hidden; touch-action: none; }
+  svg { width: 100%; height: ${offline ? "58%" : "100%"}; display: block; }
 </style>
 </head>
 <body>
-  <svg viewBox="0 0 800 640" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-    <rect width="800" height="640" fill="#FAFAFA"/>
+  <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    <defs>${defs.join("")}</defs>
+    <rect width="${VW}" height="${VH}" fill="${offline ? "#EFE8F8" : PAGE_BG}"/>
     <g id="map" transform="translate(0,0) scale(1)">
-      ${paths}
-      ${labelsLayer}
+      <g id="sticker">${stickerLayer.join("\n")}</g>
+      <g id="fills">${fillLayer.join("\n")}</g>
+      <g id="photos">${photoLayer.join("\n")}</g>
+      <g id="borders">${borderLayer.join("\n")}</g>
+      <g id="labels">${labels.join("\n")}</g>
+      ${hitLayers.join("\n")}
     </g>
   </svg>
-  <div class="badge">已打卡 ${checkedCityCount} 个地级市</div>
-  ${options.interactive ? '<div class="hint">双指缩放 · 中心区域显示城市名</div>' : ""}
   ${touchScript}
 </body>
 </html>`;

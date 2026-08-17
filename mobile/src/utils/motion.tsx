@@ -4,6 +4,7 @@ import Animated, {
   Easing,
   FadeIn,
   FadeInDown,
+  FadeInRight,
   FadeInUp,
   FadeOut,
   interpolate,
@@ -26,6 +27,12 @@ export const enterDown = (delay = 0) =>
 
 export const enterFade = (delay = 0) =>
   FadeIn.delay(delay).duration(420).easing(EASE_OUT);
+
+export const enterRight = (delay = 0, distance = 18) =>
+  FadeInRight.delay(delay)
+    .duration(500)
+    .easing(EASE_OUT)
+    .withInitialValues({ opacity: 0, transform: [{ translateX: distance }] });
 
 export const exitFade = FadeOut.duration(180);
 
@@ -73,11 +80,25 @@ type FadeSlideProps = {
   children: React.ReactNode;
   delay?: number;
   style?: StyleProp<ViewStyle>;
+  from?: "up" | "right" | "fade" | "down";
 };
 
-export function FadeSlideIn({ children, delay = 0, style }: FadeSlideProps) {
+export function FadeSlideIn({
+  children,
+  delay = 0,
+  style,
+  from = "up",
+}: FadeSlideProps) {
+  const entering =
+    from === "right"
+      ? enterRight(delay)
+      : from === "fade"
+        ? enterFade(delay)
+        : from === "down"
+          ? enterDown(delay)
+          : enterUp(delay);
   return (
-    <Animated.View entering={enterUp(delay)} style={style}>
+    <Animated.View entering={entering} style={style}>
       {children}
     </Animated.View>
   );

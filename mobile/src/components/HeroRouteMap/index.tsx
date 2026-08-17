@@ -17,9 +17,13 @@ import { getAmapJsKey } from "../../api/config";
 import { cityCenterFor } from "../../data/cityCenters";
 import { landmarksFor } from "../../data/landmarks";
 import type { AppStackParamList } from "../../navigation/types";
-import { PoiDetailSheet } from "../../screens/CityDetail/PoiDetailSheet";
 import type { ExploreCategory } from "../../screens/CityDetail/helpers";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
+import { peekCachedAccuracy, peekCachedLocation } from "../../utils/location";
+import {
+  poiSheetFromMarker,
+  type PoiSheetData,
+} from "../../utils/poiDetailHelpers";
 import { colors } from "../../theme";
 import {
   fetchCategoryMarkers,
@@ -36,9 +40,9 @@ import { styles } from "./styles";
 type Props = {
   tripId?: string;
   dayId?: string;
-  /** ???????? selected ????????? */
+  /** 当日行程点（selected 且有坐标的会画路线） */
   items?: Item[];
-  /** ??????????????? items????????? */
+  /** 分类筛选用的全部行程点，缺省则用 items */
   categoryItems?: Item[];
   destination?: string;
   title?: string;
@@ -49,6 +53,7 @@ type Props = {
   showCategoryChips?: boolean;
   categoryBarTop?: number;
   onMapGestureChange?: (active: boolean) => void;
+  onPoiPress?: (poi: PoiSheetData) => void;
 };
 
 function itemMarkers(items: Item[]): MapMarker[] {
@@ -81,6 +86,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     showCategoryChips = false,
     categoryBarTop,
     onMapGestureChange,
+    onPoiPress,
   },
   ref,
 ) {
@@ -97,11 +103,6 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   const [categoryMarkers, setCategoryMarkers] = useState<MapMarker[]>([]);
   const lastCategoryMarkersRef = useRef<MapMarker[]>([]);
   const [viewportStats, setViewportStats] = useState({ visible: 0, total: 0 });
-  const [poiSheet, setPoiSheet] = useState<{
-    name: string;
-    lng: number;
-    lat: number;
-  } | null>(null);
   const [fallbackMarkers, setFallbackMarkers] = useState<MapMarker[]>(() => {
     const center = cityCenterFor(destination);
     if (center) {
@@ -162,6 +163,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   const sheetCategory = useMemo((): ExploreCategory => {
     if (category === "food" || category === "drink") return "foods";
+    if (category === "hotel") return "hotels";
     return "spots";
   }, [category]);
 
@@ -172,20 +174,15 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
       lat: number;
       itemId?: string | null;
     }) => {
-      if (tripId) {
-        const itemId = resolveTripItemId(poiSourceItems, payload);
-        if (itemId) {
-          navigation.navigate("TripItemDetail", { tripId, itemId });
-          return;
-        }
-      }
-      setPoiSheet({
-        name: payload.name,
-        lng: payload.lng,
-        lat: payload.lat,
-      });
+      const itemId = resolveTripItemId(poiSourceItems, payload);
+      const tripItem = itemId
+        ? poiSourceItems.find((it) => it.id === itemId)
+        : null;
+      onPoiPress?.(
+        poiSheetFromMarker(payload, tripItem, sheetCategory),
+      );
     },
-    [tripId, poiSourceItems, navigation],
+    [poiSourceItems, sheetCategory, onPoiPress],
   );
 
   useEffect(() => {
@@ -328,14 +325,14 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     if (!amapKey) return "";
     const seed = fallbackMarkers.length
       ? fallbackMarkers
-      : [{ lng: 116.4074, lat: 39.9042, name: "??" }];
+      : [{ lng: 116.4074, lat: 39.9042, name: destination || "地图" }];
     return buildAmapHtml({
       key: amapKey,
       markers: seed,
       polyline: [],
       interactive: true,
     });
-  }, [amapKey, fallbackMarkers]);
+  }, [amapKey, fallbackMarkers, destination]);
 
   const inject = useCallback((js: string) => {
     webRef.current?.injectJavaScript(`${js}; true;`);
@@ -368,10 +365,14 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   function openFullMap() {
     if (!mapMarkers.length) return;
+    const cached = peekCachedLocation();
     navigation.navigate("MapFull", {
-      title: title || statusTitle || destination || "????",
+      title: title || statusTitle || destination || "地图",
       markers: mapMarkers,
       polyline: categoryActive ? [] : polyline,
+      userLocation: cached
+        ? { ...cached, accuracy: peekCachedAccuracy() }
+        : undefined,
     });
   }
 
@@ -384,7 +385,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   if (!amapKey) {
     return (
       <View style={[rootStyle, styles.mapLoading]}>
-        <Text style={styles.mapHint}>?????</Text>
+        <Text style={styles.mapHint}>未配置地图 Key</Text>
       </View>
     );
   }
@@ -472,22 +473,8 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
                 />
               </View>
             </NativeViewGestureHandler>
-            <View style={styles.mapControls} pointerEvents="box-none">
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomIn && window.zoomIn()")}
-              >
-                <Text style={styles.mapCtrlText}>{"?"}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.mapCtrlBtn}
-                onPress={() => inject("window.zoomOut && window.zoomOut()")}
-              >
-                <Text style={styles.mapCtrlText}>{"?"}</Text>
-              </Pressable>
-            </View>
             <Pressable style={styles.mapExpand} onPress={openFullMap}>
-              <Text style={styles.mapTapText}>??</Text>
+              <Text style={styles.mapTapText}>全屏</Text>
             </Pressable>
             {routeLoading || categoryLoading ? (
               <View style={styles.routeLoading}>
@@ -497,7 +484,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
             {categoryActive && activeCategoryMeta ? (
               <View style={styles.categoryHint} pointerEvents="none">
                 <Text style={styles.categoryHintText}>
-                  {`${activeCategoryMeta.icon} ${activeCategoryMeta.label} ? ? ${viewportStats.total || categoryMarkers.length} ? ? ??? ${viewportStats.visible || Math.min(VIEWPORT_MARKER_LIMIT, categoryMarkers.length)} ?${(viewportStats.total || categoryMarkers.length) > VIEWPORT_MARKER_LIMIT ? " ? ??/??????" : ""}`}
+                  {`${activeCategoryMeta.icon} ${activeCategoryMeta.label} · 共 ${viewportStats.total || categoryMarkers.length} 处 · 当前 ${viewportStats.visible || Math.min(VIEWPORT_MARKER_LIMIT, categoryMarkers.length)} 个${(viewportStats.total || categoryMarkers.length) > VIEWPORT_MARKER_LIMIT ? " · 缩放查看更多" : ""}`}
                 </Text>
               </View>
             ) : null}
@@ -507,7 +494,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
         {statusTitle ? (
           <View style={styles.statusBar} pointerEvents="none">
             <View style={styles.statusChip}>
-              <Text style={styles.statusIcon}>?</Text>
+              <Text style={styles.statusIcon}>📍</Text>
               <View style={styles.statusTextWrap}>
                 <Text style={styles.statusTitle} numberOfLines={1}>
                   {statusTitle}
@@ -522,23 +509,6 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
           </View>
         ) : null}
       </View>
-      <PoiDetailSheet
-        visible={poiSheet != null}
-        item={
-          poiSheet
-            ? {
-                name: poiSheet.name,
-                desc: "",
-                lng: poiSheet.lng,
-                lat: poiSheet.lat,
-              }
-            : null
-        }
-        category={sheetCategory}
-        city={destination}
-        userLocation={null}
-        onClose={() => setPoiSheet(null)}
-      />
     </View>
   );
 });

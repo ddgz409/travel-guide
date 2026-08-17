@@ -8,15 +8,16 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { WebView } from "react-native-webview";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
-import { getAmapJsKey } from "../../api/config";
+import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import { useMapLocation } from "../../hooks/useMapLocation";
+import { getAmapJsKey } from "../../api/config";
 import type { AppStackParamList } from "../../navigation/types";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "MapFull">;
 
 export function MapFullScreen({ route }: Props) {
-  const { title, markers, polyline } = route.params;
+  const { title, markers, polyline, userLocation } = route.params;
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
   const mapReadyRef = useRef(false);
@@ -29,12 +30,23 @@ export function MapFullScreen({ route }: Props) {
       markers: markers || [],
       polyline: polyline || [],
       interactive: true,
+      userLocation: userLocation ?? null,
+      linkMarkers: false,
     });
-  }, [amapKey, markers, polyline]);
+  }, [amapKey, markers, polyline, userLocation]);
 
   const inject = useCallback((js: string) => {
     webRef.current?.injectJavaScript(`${js}; true;`);
   }, []);
+
+  const showUserOnMap = useCallback(() => {
+    if (!userLocation) return;
+    inject(
+      buildMapUserLocationJs(userLocation.lng, userLocation.lat, {
+        accuracy: userLocation.accuracy ?? undefined,
+      }),
+    );
+  }, [inject, userLocation]);
 
   const { locating, requestAndShowLocation } = useMapLocation(
     inject,
@@ -64,7 +76,10 @@ export function MapFullScreen({ route }: Props) {
         onMessage={(e) => {
           try {
             const msg = JSON.parse(e.nativeEvent.data);
-            if (msg?.type === "ready") mapReadyRef.current = true;
+            if (msg?.type === "ready") {
+              mapReadyRef.current = true;
+              showUserOnMap();
+            }
           } catch {
             /* ignore */
           }
@@ -73,23 +88,12 @@ export function MapFullScreen({ route }: Props) {
           // HTML 载入后稍晚才有 AMap boot；给一点缓冲
           setTimeout(() => {
             mapReadyRef.current = true;
+            showUserOnMap();
           }, 800);
         }}
       />
 
       <View style={styles.controls} pointerEvents="box-none">
-        <Pressable
-          style={styles.ctrlBtn}
-          onPress={() => inject("window.zoomIn && window.zoomIn()")}
-        >
-          <Text style={styles.ctrlText}>＋</Text>
-        </Pressable>
-        <Pressable
-          style={styles.ctrlBtn}
-          onPress={() => inject("window.zoomOut && window.zoomOut()")}
-        >
-          <Text style={styles.ctrlText}>－</Text>
-        </Pressable>
         <Pressable
           style={[styles.ctrlBtn, styles.locateBtn]}
           onPress={() => void requestAndShowLocation()}

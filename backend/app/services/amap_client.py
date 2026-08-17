@@ -4,6 +4,8 @@
 文档: https://lbs.amap.com/api/webservice/guide/api/georegeo
 """
 import logging
+import threading
+import time as _time
 from dataclasses import dataclass
 
 import httpx
@@ -14,6 +16,24 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 AMAP_BASE = "https://restapi.amap.com/v3"
+AMAP_MIN_INTERVAL_S = 0.35
+_amap_throttle_lock = threading.Lock()
+_amap_last_call = 0.0
+
+
+def _amap_throttle() -> None:
+    global _amap_last_call
+    with _amap_throttle_lock:
+        now = _time.time()
+        gap = AMAP_MIN_INTERVAL_S - (now - _amap_last_call)
+        if gap > 0:
+            _time.sleep(gap)
+        _amap_last_call = _time.time()
+
+
+def _is_qps_error(exc: Exception) -> bool:
+    msg = str(exc).upper()
+    return "CUQPS" in msg or "10021" in msg or "EXCEEDED" in msg
 
 # POI 类型码（高德开放平台）
 # 详见 https://lbs.amap.com/api/webservice/guide/api/search
@@ -37,6 +57,34 @@ class GeoResult:
     level: str | None = None
 
 
+def _normalize_photo_url(url: str) -> str | None:
+    u = (url or "").strip()
+    if not u:
+        return None
+    if u.startswith("//"):
+        u = "https:" + u
+    if u.startswith("http://"):
+        u = "https://" + u[7:]
+    if not u.startswith("https://"):
+        return None
+    return u
+
+
+def _parse_photos(raw: object, limit: int = 6) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        u = _normalize_photo_url(str(item.get("url") or ""))
+        if u and u not in out:
+            out.append(u)
+        if len(out) >= limit:
+            break
+    return out
+
+
 @dataclass
 class Poi:
     """POI 搜索结果。"""
@@ -51,6 +99,7 @@ class Poi:
     opentime: str = ""
     rating: float | None = None  # 评分（如有）
     note: str = ""  # 额外标注（如携程酒店标签）
+    photos: list[str] | None = None  # extensions=all 时的高德实景图
 
 
 @dataclass
@@ -133,6 +182,31 @@ class AmapClient:
         if status != "1":
             raise AmapError(f"高德 API 错误: {data.get('info')} (infocode={data.get('infocode')})")
 
+    def _get_json(self, url: str, params: dict, *, retries: int = 3) -> dict:
+        """带节流 + QPS 退避的 GET JSON。"""
+        last_err: Exception | None = None
+        for attempt in range(retries):
+            _amap_throttle()
+            try:
+                resp = self._client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                self._check(data)
+                return data
+            except AmapError as e:
+                last_err = e
+                if attempt < retries - 1 and _is_qps_error(e):
+                    _time.sleep(1.0 * (attempt + 1))
+                    continue
+                raise
+            except httpx.HTTPError as e:
+                last_err = e
+                if attempt < retries - 1:
+                    _time.sleep(0.6)
+                    continue
+                raise
+        raise AmapError(str(last_err or "高德请求失败"))
+
     def geocode(self, address: str) -> GeoResult:
         """地理编码：地址 -> 坐标 + 城市。"""
         resp = self._client.get(
@@ -161,31 +235,36 @@ class AmapClient:
     def search_poi_around(
         self,
         location: str,
-        poi_type: str,
+        poi_type: str | None = None,
         radius: int = 20000,
         limit: int = 30,
         city: str | None = None,
+        keywords: str | None = None,
+        *,
+        sortrule: str = "distance",
     ) -> list[Poi]:
         """周边 POI 搜索。
 
-        location: "lng,lat"  poi_type: POI_TYPES 中的值或类型码
+        location: "lng,lat"；keywords 与 poi_type 至少传一个。
         """
+        if not poi_type and not keywords:
+            raise ValueError("search_poi_around requires keywords or poi_type")
         params = {
             "key": self.api_key,
             "location": location,
-            "types": poi_type,
             "radius": radius,
-            "offset": limit,
+            "offset": min(limit, 25),
             "page": 1,
             "extensions": "all",
-            "sortrule": "weight",  # 按权重排序
+            "sortrule": sortrule,
         }
+        if poi_type:
+            params["types"] = poi_type
+        if keywords:
+            params["keywords"] = keywords
         if city:
             params["city"] = city
-        resp = self._client.get(f"{AMAP_BASE}/place/around", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        self._check(data)
+        data = self._get_json(f"{AMAP_BASE}/place/around", params)
         pois: list[Poi] = []
         for p in data.get("pois") or []:
             loc = p.get("location") or ""
@@ -205,6 +284,7 @@ class AmapClient:
                         tel=p.get("tel") or "",
                         opentime=opentime,
                         rating=rating,
+                        photos=_parse_photos(p.get("photos")),
                     )
                 )
             except (ValueError, KeyError):
@@ -220,10 +300,12 @@ class AmapClient:
         page: int = 1,
         city_limit: bool = False,
         poi_type: str | None = None,
+        location_center: str | None = None,
     ) -> list[Poi]:
         """关键词 POI 搜索。
 
         city_limit=True 时结果限制在指定城市（景点搜索框必开）。
+        location_center: "lng,lat"，有则按距离排序（添加足迹等场景）。
         """
         params: dict = {
             "key": self.api_key,
@@ -236,12 +318,12 @@ class AmapClient:
             params["city"] = city
             if city_limit:
                 params["citylimit"] = "true"
+        if location_center:
+            params["location"] = location_center
+            params["sortrule"] = "distance"
         if poi_type:
             params["types"] = poi_type
-        resp = self._client.get(f"{AMAP_BASE}/place/text", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        self._check(data)
+        data = self._get_json(f"{AMAP_BASE}/place/text", params)
         pois: list[Poi] = []
         city_key = (city or "").strip()
         for p in data.get("pois") or []:
@@ -276,11 +358,63 @@ class AmapClient:
                         tel=p.get("tel") or "",
                         opentime=opentime,
                         rating=rating,
+                        photos=_parse_photos(p.get("photos")),
                     )
                 )
             except (ValueError, KeyError):
                 continue
         return pois
+
+    def get_poi_photos(
+        self,
+        *,
+        poi_id: str | None = None,
+        keyword: str | None = None,
+        city: str | None = None,
+        poi_type: str | None = None,
+        limit: int = 3,
+    ) -> list[str]:
+        """按 POI ID 或「城市+名称」拉取高德实景图（extensions=all）。"""
+        limit = max(1, min(limit, 6))
+        pid = (poi_id or "").strip()
+        kw = (keyword or "").strip()
+        cache_key = f"{pid}|{city or ''}|{kw}|{poi_type or ''}|{limit}"
+        cached = _photo_cache.get(cache_key)
+        if cached is not None:
+            return cached[:limit]
+
+        photos: list[str] = []
+        if pid:
+            try:
+                data = self._get_json(
+                    f"{AMAP_BASE}/place/detail",
+                    {"key": self.api_key, "id": pid, "extensions": "all"},
+                )
+                for p in data.get("pois") or []:
+                    photos = _parse_photos(p.get("photos"), limit)
+                    if photos:
+                        break
+            except (AmapError, httpx.HTTPError) as e:
+                logger.warning("poi detail photos failed id=%s: %s", pid, e)
+
+        if not photos and kw:
+            try:
+                pois = self.search_poi_by_keyword(
+                    kw,
+                    city=city,
+                    limit=1,
+                    city_limit=bool(city),
+                    poi_type=poi_type,
+                )
+                if pois and pois[0].photos:
+                    photos = pois[0].photos[:limit]
+                elif pois and pois[0].id and pois[0].id != pid:
+                    photos = self.get_poi_photos(poi_id=pois[0].id, limit=limit)
+            except (AmapError, httpx.HTTPError, ValueError) as e:
+                logger.warning("poi photo search failed kw=%s city=%s: %s", kw, city, e)
+
+        _photo_cache[cache_key] = photos
+        return photos[:limit]
 
     def plan_route(
         self, origin: str, destination: str, mode: str = "walking",
@@ -439,6 +573,7 @@ class AmapClient:
 
 # 模块级单例，供服务层复用
 _client: AmapClient | None = None
+_photo_cache: dict[str, list[str]] = {}
 
 
 def get_amap_client() -> AmapClient:

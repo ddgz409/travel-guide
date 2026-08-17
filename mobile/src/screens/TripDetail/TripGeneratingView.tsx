@@ -118,7 +118,7 @@ export function TripGeneratingView({
           nestedScrollEnabled
         >
           <View style={styles.genStreamBubble}>
-            <Text style={styles.genStreamRole}>旅迹 AI</Text>
+            <Text style={styles.genStreamRole}>知径 AI</Text>
             <Text style={styles.genStreamStatus}>{message || "准备中…"}</Text>
             {readable ? (
               <ScrollView

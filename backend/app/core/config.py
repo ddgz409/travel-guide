@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "旅行攻略生成器"
     API_V1_PREFIX: str = "/api/v1"
     CORS_ORIGINS: str = "http://localhost:3000"
+    # 微信/浏览器打开的分享页公网地址，例如 http://81.71.159.218:3000
+    PUBLIC_SHARE_BASE: str = "http://81.71.159.218:3000"
 
     # 数据库
     DATABASE_URL: str = "sqlite:///./travel_guide.db"

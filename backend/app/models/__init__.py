@@ -5,7 +5,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Date
 
@@ -35,6 +35,9 @@ class User(Base):
     )
 
     trips: Mapped[list["Trip"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    collaborations: Mapped[list["TripCollaborator"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -69,8 +72,10 @@ class Trip(Base):
     # generating / ready / failed
     status: Mapped[str] = mapped_column(String(16), default="generating", nullable=False)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 匿名分享 token，非空时可通过分享链接只读访问
+    # 分享 token：只读或协作
     share_token: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # read = 匿名只读；collab = 登录后可共同编辑
+    share_mode: Mapped[str] = mapped_column(String(16), default="read", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )
@@ -85,6 +90,32 @@ class Trip(Base):
     days: Mapped[list["Day"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="Day.day_index"
     )
+    collaborator_links: Mapped[list["TripCollaborator"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+
+
+class TripCollaborator(Base):
+    """攻略协作者（登录用户加入协作链接后写入）。"""
+
+    __tablename__ = "trip_collaborators"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "user_id", name="uq_trip_collaborator"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+    trip: Mapped["Trip"] = relationship(back_populates="collaborator_links")
+    user: Mapped["User"] = relationship(back_populates="collaborations")
 
 
 class Day(Base):

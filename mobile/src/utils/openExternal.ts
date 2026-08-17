@@ -1,7 +1,8 @@
-/** 打开外链：小红书/携程优先跳 App 深链，失败再打开网页 */
+/** 打开外链：小红书/携程/去哪儿优先跳 App，失败再开网页 */
 
 import { Linking, Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
+import { ctripAppUrl, openCtripUrl, openQunarUrl } from "./poiPortals";
 
 function extractXhsKeyword(url: string, title?: string): string {
   try {
@@ -19,6 +20,10 @@ function isXhsUrl(url: string): boolean {
 
 function isCtripUrl(url: string): boolean {
   return /ctrip:\/\/|^https?:\/\/[^/]*ctrip\.com/i.test(url);
+}
+
+function isQunarUrl(url: string): boolean {
+  return /qunar(iphone|aphone):\/\/|^https?:\/\/[^/]*qunar\.com/i.test(url);
 }
 
 /** 小红书：先试 App 深链，再打开 www 搜索页（系统浏览器，避免内置 WebView 空白） */
@@ -70,14 +75,42 @@ export async function openExternal(
   const u = (url || "").trim();
   if (!u) return;
 
-  // 携程：直接打开 ctrip:// 深链
-  const ctripUrl = meta?.app_url || (isCtripUrl(u) ? u : "");
-  if (ctripUrl && ctripUrl.startsWith("ctrip://")) {
+  // 携程 https：包进 App 深链
+  if (u.startsWith("http") && /ctrip\.com/i.test(u)) {
+    await openCtripUrl(u);
+    return;
+  }
+
+  // 去哪儿 https：包进 App 深链
+  if (u.startsWith("http") && /qunar\.com/i.test(u)) {
+    await openQunarUrl(u);
+    return;
+  }
+
+  // 携程 ctrip:// 深链
+  const ctripUrl = meta?.app_url || (isCtripUrl(u) && u.startsWith("ctrip://") ? u : "");
+  if (ctripUrl) {
     try {
       await Linking.openURL(ctripUrl);
       return;
     } catch {
-      /* App 未安装，静默忽略 */
+      if (u.startsWith("http")) {
+        try {
+          await Linking.openURL(u);
+        } catch {
+          await WebBrowser.openBrowserAsync(u);
+        }
+      }
+      return;
+    }
+  }
+
+  // 去哪儿 scheme
+  if (isQunarUrl(u) && !u.startsWith("http")) {
+    try {
+      await Linking.openURL(u);
+      return;
+    } catch {
       return;
     }
   }

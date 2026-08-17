@@ -10,13 +10,14 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { formatAuthError, useAuth } from "../../auth/AuthContext";
+import { FadeSlideIn } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Register">;
 
-export function RegisterScreen({ navigation }: Props) {
+export function RegisterScreen({ navigation, route }: Props) {
   const { register } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +33,12 @@ export function RegisterScreen({ navigation }: Props) {
     setError(null);
     try {
       await register(username.trim(), password);
-      navigation.popToTop();
+      const next = route.params?.next;
+      if (next?.screen === "Share") {
+        navigation.replace("Share", { token: next.token });
+      } else {
+        navigation.popToTop();
+      }
     } catch (e) {
       setError(formatAuthError(e));
     } finally {
@@ -45,12 +51,12 @@ export function RegisterScreen({ navigation }: Props) {
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.hero}>
+      <FadeSlideIn from="right" delay={40} style={styles.hero}>
         <Text style={styles.brand}>创建账号</Text>
         <Text style={styles.tagline}>注册后即可生成并保存攻略</Text>
-      </View>
+      </FadeSlideIn>
 
-      <View style={styles.form}>
+      <FadeSlideIn from="right" delay={110} style={styles.form}>
         <Text style={styles.label}>用户名</Text>
         <TextInput
           style={styles.input}
@@ -85,7 +91,7 @@ export function RegisterScreen({ navigation }: Props) {
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.link}>已有账号？去登录</Text>
         </Pressable>
-      </View>
+      </FadeSlideIn>
     </KeyboardAvoidingView>
   );
 }

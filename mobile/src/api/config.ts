@@ -14,11 +14,14 @@ function extra(): Extra {
 const DEFAULT_API_BASE = "http://81.71.159.218:8000/api/v1";
 const DEFAULT_AMAP_JS_KEY = "e2d15f867f9e7c13777ca47de260999b";
 
-/** 开发用 localhost / 模拟器地址，禁止打进 Release APK */
+/** 开发/局域网地址，禁止打进 Release APK */
 function isDevOnlyApiBase(url: string): boolean {
-  return /^(https?:\/\/)?(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(
-    url.trim(),
-  );
+  const u = url.trim();
+  if (/^(https?:\/\/)?(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(u)) {
+    return true;
+  }
+  // 局域网 IP（如 192.168.x）不应烘焙进 OTA 包
+  return /^(https?:\/\/)?(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(u);
 }
 
 /** 高德 JS API Key：优先环境变量，其次 app.config extra */

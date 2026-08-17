@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share as RnShare,
   Text,
   View,
 } from "react-native";
@@ -23,16 +22,30 @@ import { ApiError } from "@travel-guide/shared";
 import { api, apiBase, getStoredToken } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
+import { SegmentBubbleBar } from "../../components/SegmentBubbleBar";
 import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
+import { PoiDetailSheet } from "../CityDetail/PoiDetailSheet";
 import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
+import { getDeviceLocation, peekCachedLocation } from "../../utils/location";
+import type { LatLng } from "../../utils/geo";
+import {
+  enrichPoiSheetData,
+  poiSheetFromTripItem,
+  type PoiSheetData,
+} from "../../utils/poiDetailHelpers";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { arrayBufferToBase64 } from "../../utils/base64";
+import { shareUrlForToken } from "../../utils/shareUrl";
+import { ShareChoiceSheet } from "../../components/ShareChoiceSheet";
+import type { ShareChoicePayload } from "../../utils/shareChoice";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { ItemListRow } from "./ItemListRow";
 import { HotelNotesRow } from "./HotelNotesRow";
+import { CollaboratorsRow } from "./CollaboratorsRow";
 import { readGenerateSSE } from "../../utils/sseClient";
 import { TripGeneratingView } from "./TripGeneratingView";
+import { routeOptionLabel } from "./routeLabels";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "TripDetail">;
@@ -54,11 +67,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const { tripId } = route.params;
   const insets = useSafeAreaInsets();
   const { user, isGuest } = useAuth();
-  const canEdit = Boolean(user) || isGuest;
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState(0);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [sharePayload, setSharePayload] = useState<ShareChoicePayload | null>(
+    null,
+  );
   const [actionBusy, setActionBusy] = useState(false);
   const [genMessage, setGenMessage] = useState("正在启动生成…");
   const [genReadable, setGenReadable] = useState("");
@@ -67,12 +82,65 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const [poiSheet, setPoiSheet] = useState<PoiSheetData | null>(null);
+  const [userLocation, setUserLocation] = useState<LatLng | null>(() =>
+    peekCachedLocation(),
+  );
+
+  const openPoiDetail = useCallback(
+    (base: PoiSheetData) => {
+      setPoiSheet(base);
+      const city = trip?.destination?.trim() || "";
+      if (!city) return;
+      void enrichPoiSheetData(base, city).then((enriched) => {
+        setPoiSheet((prev) => {
+          if (!prev || prev.name !== enriched.name) return prev;
+          return {
+            ...enriched,
+            tripItemId: prev.tripItemId,
+            selected: prev.selected,
+            alternatives: prev.alternatives,
+          };
+        });
+      });
+    },
+    [trip?.destination],
+  );
+
+  const syncPoiSheetFromTrip = useCallback((updated: Trip) => {
+    setTrip(updated);
+    setPoiSheet((prev) => {
+      if (!prev?.tripItemId) return prev;
+      for (const day of updated.days || []) {
+        const item = day.items.find((it) => it.id === prev.tripItemId);
+        if (!item) return prev;
+        return {
+          ...prev,
+          name: item.name,
+          desc: item.description?.trim() || prev.desc,
+          lng: item.location?.lng ?? prev.lng,
+          lat: item.location?.lat ?? prev.lat,
+          address: item.location?.address ?? prev.address,
+          category:
+            item.type === "meal"
+              ? "foods"
+              : item.type === "hotel"
+                ? "hotels"
+                : "spots",
+          selected: item.selected,
+          alternatives: item.alternatives,
+        };
+      }
+      return prev;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const data = await api.trips.get(tripId);
       setTrip((prev) => {
         if (
+          data.share_mode === "collab" ||
           data.status === "generating" ||
           !prev ||
           prev.status !== data.status ||
@@ -148,6 +216,12 @@ export function TripDetailScreen({ route, navigation }: Props) {
   }, [applyProgress, load, tripId]);
 
   useEffect(() => {
+    void getDeviceLocation()
+      .then(setUserLocation)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       const data = await load();
@@ -170,6 +244,14 @@ export function TripDetailScreen({ route, navigation }: Props) {
       if (progressPollRef.current) clearInterval(progressPollRef.current);
     };
   }, [load, tripId, subscribeGenerateStream]);
+
+  useEffect(() => {
+    if (!trip || trip.status === "generating" || trip.share_mode !== "collab") {
+      return;
+    }
+    const id = setInterval(() => void load(), 4000);
+    return () => clearInterval(id);
+  }, [trip?.id, trip?.status, trip?.share_mode, load]);
 
   const days = trip?.days || [];
   const currentDay = days[activeDay] || days[0];
@@ -203,6 +285,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const selectedRouteId =
     (trip?.preferences?.selected_route_id as string | undefined) ||
     routeOptions[0]?.id;
+  const canEdit = trip ? Boolean(trip.can_edit) : Boolean(user) || isGuest;
 
   useEffect(() => {
     setActiveDay(0);
@@ -214,19 +297,32 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
   async function onShare() {
     if (!trip || !user) {
-      Alert.alert("提示", "登录后才能创建分享链接");
+      Alert.alert("提示", "登录后才能分享，邀请好友一起编辑");
       return;
     }
+    void createAndShare("collab");
+  }
+
+  async function createAndShare(mode: "read" | "collab") {
+    if (!trip) return;
     setActionBusy(true);
     try {
-      const t = await api.trips.createShare(trip.id);
+      const t = await api.trips.createShare(trip.id, mode);
       setTrip(t);
       const token = t.share_token;
       if (!token) throw new Error("未返回分享令牌");
-      const url = `http://localhost:3000/share/${token}`;
+      const url = shareUrlForToken(token);
       await Clipboard.setStringAsync(url);
       setShareMsg(url);
-      await RnShare.share({ message: `旅迹攻略：${t.title}\n${url}`, url });
+      const prefix =
+        mode === "collab"
+          ? `邀请你一起编辑知径攻略「${t.title}」（需登录）`
+          : `知径攻略：${t.title}`;
+      setSharePayload({
+        url,
+        title: t.title,
+        message: `${prefix}\n${url}`,
+      });
     } catch (e) {
       Alert.alert("分享失败", e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -355,6 +451,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
           showCategoryChips
           categoryBarTop={categoryBarTop}
+          onPoiPress={openPoiDetail}
         />
       </FadeSwitch>
 
@@ -401,88 +498,86 @@ export function TripDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <DraggableBottomSheet bottomInset={Math.max(insets.bottom, 8)}>
-        <View style={styles.actions}>
-          <PressScale
-            style={[styles.actionBtn, styles.actionAi]}
-            onPress={() =>
-              navigation.push("Chat", {
-                tripId: trip.id,
-                prefillMessage: buildTripChatPrompt(trip),
-                chatSessionId: String(Date.now()),
-              })
-            }
-          >
-            <Text style={[styles.actionText, { color: colors.brandHot }]}>
-              问 AI 助手
-            </Text>
-          </PressScale>
-          <PressScale
-            style={[styles.actionBtn, styles.actionPrimary]}
+      <DraggableBottomSheet
+        bottomInset={Math.max(insets.bottom, 8)}
+        footer={
+          (trip.collaborators?.length ?? 0) > 0 ? (
+            <CollaboratorsRow collaborators={trip.collaborators || []} />
+          ) : undefined
+        }
+      >
+        <View style={styles.sheetMain}>
+          <Pressable
+            style={styles.shareBanner}
             onPress={onShare}
             disabled={actionBusy}
           >
-            <Text style={styles.actionPrimaryText}>分享</Text>
-          </PressScale>
-          <PressScale
-            style={styles.actionBtn}
-            onPress={onPdf}
-            disabled={actionBusy}
-          >
-            <Text style={styles.actionText}>导出 PDF</Text>
-          </PressScale>
-          {trip.share_token ? (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareBannerTitle}>分享链接</Text>
+              <Text style={styles.shareBannerSub} numberOfLines={2}>
+                {shareMsg || "邀请好友一起编辑这条行程 · 微信 / QQ / 复制"}
+              </Text>
+            </View>
+            <Text style={styles.shareBannerCta}>
+              {actionBusy ? "…" : "分享"}
+            </Text>
+          </Pressable>
+          <View style={styles.actions}>
             <PressScale
-              style={styles.actionBtn}
+              style={[styles.actionBtn, styles.actionAi]}
               onPress={() =>
-                navigation.navigate("Share", { token: trip.share_token! })
+                navigation.push("Chat", {
+                  tripId: trip.id,
+                  prefillMessage: buildTripChatPrompt(trip),
+                  chatSessionId: String(Date.now()),
+                })
               }
             >
-              <Text style={styles.actionText}>打开分享页</Text>
+              <Text style={[styles.actionText, { color: colors.brandHot }]}>
+                问 AI 助手
+              </Text>
             </PressScale>
-          ) : null}
-        </View>
-        {shareMsg ? (
-          <Text style={styles.shareMsg} selectable>
-            已复制：{shareMsg}
-          </Text>
-        ) : null}
+            <PressScale
+              style={styles.actionBtn}
+              onPress={onPdf}
+              disabled={actionBusy}
+            >
+              <Text style={styles.actionText}>导出 PDF</Text>
+            </PressScale>
+            {trip.share_token ? (
+              <PressScale
+                style={styles.actionBtn}
+                onPress={() =>
+                  navigation.navigate("Share", { token: trip.share_token! })
+                }
+              >
+                <Text style={styles.actionText}>打开分享页</Text>
+              </PressScale>
+            ) : null}
+          </View>
 
-        <ScrollView
-          style={styles.sheetScroll}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.sheetList}
-          nestedScrollEnabled
-        >
-          {routeOptions.length > 0 ? (
-            <View style={styles.section}>
+          <ScrollView
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.sheetList}
+            nestedScrollEnabled
+          >
+            {routeOptions.length > 0 ? (
+            <View style={styles.routeSection}>
               <Text style={styles.sectionTitle}>路线方案</Text>
-              {routeOptions.map((opt) => {
-                const on = opt.id === selectedRouteId;
-                return (
-                  <PressScale
-                    key={opt.id}
-                    disabled={!canEdit || actionBusy}
-                    onPress={() => onSelectRoute(opt.id)}
-                    style={[styles.routeCard, on && styles.routeCardOn]}
-                  >
-                    <Text style={styles.routeTitle}>{opt.title}</Text>
-                    <Text style={styles.routeTheme}>{opt.theme}</Text>
-                    {opt.tagline ? (
-                      <Text style={styles.routeTag}>{opt.tagline}</Text>
-                    ) : null}
-                    {on ? (
-                      <Text style={styles.routeOnHint}>当前方案</Text>
-                    ) : null}
-                  </PressScale>
-                );
-              })}
+              <SegmentBubbleBar
+                options={routeOptions.map((opt) => ({
+                  id: opt.id,
+                  label: routeOptionLabel(opt, trip.destination),
+                }))}
+                selectedId={selectedRouteId || routeOptions[0]?.id || ""}
+                onSelect={onSelectRoute}
+                disabled={!canEdit || actionBusy}
+              />
             </View>
           ) : null}
 
-          <FadeSwitch
-            switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
-          >
+          <View style={styles.daySection}>
             {canEdit && currentDay ? (
               <PressScale
                 style={styles.regen}
@@ -495,31 +590,36 @@ export function TripDetailScreen({ route, navigation }: Props) {
               </PressScale>
             ) : null}
 
-            {currentDay?.summary ? (
-              <FadeSlideIn delay={40} style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>当日亮点</Text>
-                <Text style={styles.summaryText}>{currentDay.summary}</Text>
-              </FadeSlideIn>
-            ) : null}
-
             <Text style={styles.sectionTitle}>
               精选行程 · {selectedItems.length} 个安排
             </Text>
-            {dayItems.map((item, i) => {
-              const hasNextRoute = dayItems
-                .slice(i + 1)
-                .some((n) => n.selected && hasCoords(n.location));
-              return (
-                <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
-                  <ItemListRow
-                    item={item}
-                    tripId={trip.id}
-                    destination={trip.destination}
-                    hasNextRoute={hasNextRoute}
-                  />
-                </FadeSlideIn>
-              );
-            })}
+
+            <FadeSwitch
+              switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+            >
+              {dayItems.map((item, i) => {
+                const hasNextRoute = dayItems
+                  .slice(i + 1)
+                  .some((n) => n.selected && hasCoords(n.location));
+                return (
+                  <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
+                    <ItemListRow
+                      item={item}
+                      tripId={trip.id}
+                      destination={trip.destination}
+                      hasNextRoute={hasNextRoute}
+                      onPoiPress={
+                        item.type === "attraction" ||
+                        item.type === "meal" ||
+                        item.type === "hotel"
+                          ? () => openPoiDetail(poiSheetFromTripItem(item))
+                          : undefined
+                      }
+                    />
+                  </FadeSlideIn>
+                );
+              })}
+            </FadeSwitch>
 
             <View style={styles.budget}>
               <Text style={styles.sectionTitle}>预算估算</Text>
@@ -540,16 +640,48 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 </Text>
               </View>
             </View>
+          </View>
 
-            <HotelNotesRow
-              destination={trip.destination}
-              status={trip.hotel_fetch_status}
-              candidates={trip.hotel_candidates}
-              refs={trip.external_refs}
-            />
-          </FadeSwitch>
+          <HotelNotesRow
+            destination={trip.destination}
+            status={trip.hotel_fetch_status}
+            candidates={trip.hotel_candidates}
+            refs={trip.external_refs}
+          />
         </ScrollView>
+        </View>
       </DraggableBottomSheet>
+      <ShareChoiceSheet
+        visible={sharePayload != null}
+        payload={sharePayload}
+        onClose={() => setSharePayload(null)}
+      />
+      <PoiDetailSheet
+        visible={poiSheet != null}
+        item={
+          poiSheet
+            ? {
+                name: poiSheet.name,
+                desc: poiSheet.desc,
+                lng: poiSheet.lng,
+                lat: poiSheet.lat,
+                address: poiSheet.address,
+                image: poiSheet.image,
+                images: poiSheet.images,
+              }
+            : null
+        }
+        category={poiSheet?.category ?? "spots"}
+        city={trip.destination}
+        userLocation={userLocation}
+        tripId={trip.id}
+        tripItemId={poiSheet?.tripItemId}
+        tripItemSelected={poiSheet?.selected ?? true}
+        tripAlternatives={poiSheet?.alternatives}
+        tripCanEdit={canEdit}
+        onTripUpdated={syncPoiSheetFromTrip}
+        onClose={() => setPoiSheet(null)}
+      />
     </View>
   );
 }

@@ -52,7 +52,7 @@ export const styles = StyleSheet.create({
     marginRight: 10,
   },
   bannerLink: { fontSize: 13, fontWeight: "700", color: colors.brandHot },
-  list: { paddingHorizontal: 16, paddingBottom: 80 },
+  list: { paddingHorizontal: 16, paddingBottom: 120 },
   emptyWrap: { flexGrow: 1, justifyContent: "center", padding: 32 },
   emptyBox: { alignItems: "center" },
   empty: {
@@ -194,36 +194,14 @@ export const styles = StyleSheet.create({
   checkInMapCard: {
     marginHorizontal: 16,
     marginBottom: 16,
-    borderRadius: 34, borderCurve: "continuous",
-    backgroundColor: colors.card,
+    borderRadius: 28,
+    borderCurve: "continuous",
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
-    ...cardShadow,
-  },
-  checkInMapHead: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 8,
-  },
-  checkInMapTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: colors.ink,
-  },
-  checkInMapSub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: colors.muted,
-    lineHeight: 17,
-  },
-  checkInMapTap: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.brandHot,
   },
   checkInMapBody: {
-    height: 220,
-    backgroundColor: "#FAFAFA",
+    aspectRatio: 1000 / 854,
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
   },
   checkInMapWeb: {
@@ -235,28 +213,12 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checkInMapLegend: {
-    flexDirection: "row",
-    gap: 16,
+  checkInMapHint: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  legendSwatch: {
-    width: 14,
-    height: 14,
-    borderRadius: 14, borderCurve: "continuous",
-    borderWidth: 1,
-    borderStyle: "dashed",
-  },
-  legendText: {
+    paddingTop: 4,
+    paddingBottom: 12,
     fontSize: 12,
-    color: colors.muted,
+    color: "#8A7AA8",
+    textAlign: "center",
   },
 });

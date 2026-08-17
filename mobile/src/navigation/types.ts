@@ -24,8 +24,8 @@ export type AppStackParamList = {
         fromSmartPlan?: boolean;
       }
     | undefined;
-  Login: undefined;
-  Register: undefined;
+  Login: { next?: { screen: "Share"; token: string } } | undefined;
+  Register: { next?: { screen: "Share"; token: string } } | undefined;
   Settings: undefined;
   Share: { token: string };
   TravelSearch: undefined;
@@ -35,6 +35,11 @@ export type AppStackParamList = {
     title?: string;
     markers: Array<{ lng: number; lat: number; name: string }>;
     polyline?: number[][];
+    userLocation?: { lng: number; lat: number; accuracy?: number };
   };
   CheckInMapFull: undefined;
+  FootprintOverview: undefined;
+  FootprintList: { kind: "country" | "city" | "place" };
+  AddFootprint: undefined;
+  Favorites: undefined;
 };

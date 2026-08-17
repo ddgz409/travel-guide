@@ -32,7 +32,7 @@ settings = get_settings()
 
 MAX_CONTEXT_MESSAGES = 10
 
-SYSTEM_PROMPT_BASE = """你是「旅迹」AI 旅行助手，专注于旅行领域。
+SYSTEM_PROMPT_BASE = """你是「知径」AI 旅行助手，专注于旅行领域。
 
 你可以帮助用户：
 - 推荐目的地、景点、美食、住宿

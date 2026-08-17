@@ -1,123 +1,194 @@
-/** 自定义底部导航栏：探索 / + / 行程 */
+/** 大白胶囊 + 一颗浅蓝小气泡跟着当前页滑动；右侧加号 */
 
-import React, { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { colors, cardShadow } from "../theme";
 import { PlusMenu } from "./PlusMenu";
-
-type Tab = "Trips" | "Explore";
+import type { MainTab } from "../navigation/MainTabContext";
 
 type Props = {
-  activeTab: Tab;
-  onTabChange: (tab: Tab) => void;
+  activeTab: MainTab;
+  onTabChange: (tab: MainTab) => void;
 };
+
+const TABS: { id: MainTab; label: string }[] = [
+  { id: "Trips", label: "计划" },
+  { id: "Explore", label: "探索" },
+  { id: "Me", label: "我的" },
+];
+
+type TabLayout = { x: number; y: number; width: number; height: number };
+
+/** 底栏主体高度（不含安全区），给页面内容/悬浮按钮留空 */
+export const TAB_BAR_BODY = 72;
 
 export function CustomTabBar({ activeTab, onTabChange }: Props) {
   const insets = useSafeAreaInsets();
   const [plusOpen, setPlusOpen] = useState(false);
+  const layouts = useRef<Partial<Record<MainTab, TabLayout>>>({});
+
+  const blobX = useSharedValue(0);
+  const blobY = useSharedValue(0);
+  const blobW = useSharedValue(0);
+  const blobH = useSharedValue(40);
+  const squash = useSharedValue(1);
+  const stretch = useSharedValue(1);
+  const ready = useSharedValue(0);
+
+  function slideTo(next: TabLayout) {
+    const dist = Math.abs(next.x - blobX.value);
+    const extra = Math.min(0.42, dist / 140);
+    stretch.value = withSequence(
+      withTiming(1 + extra, { duration: 110 }),
+      withSpring(1, { damping: 12, stiffness: 240, mass: 0.45 }),
+    );
+    squash.value = withSequence(
+      withTiming(0.72, { duration: 90 }),
+      withSpring(1, { damping: 9, stiffness: 280, mass: 0.4 }),
+    );
+    blobX.value = withSpring(next.x, { damping: 16, stiffness: 190, mass: 0.55 });
+    blobY.value = withSpring(next.y, { damping: 16, stiffness: 190, mass: 0.55 });
+    blobW.value = withSpring(next.width, { damping: 16, stiffness: 190, mass: 0.55 });
+    blobH.value = withSpring(next.height, { damping: 16, stiffness: 190, mass: 0.55 });
+  }
+
+  useEffect(() => {
+    const L = layouts.current[activeTab];
+    if (!L || ready.value === 0) return;
+    slideTo(L);
+  }, [activeTab]);
+
+  function onTabLayout(id: MainTab, e: LayoutChangeEvent) {
+    const { x, y, width, height } = e.nativeEvent.layout;
+    const next = { x, y, width, height: height || 40 };
+    layouts.current[id] = next;
+    if (id !== activeTab) return;
+    if (ready.value === 0) {
+      blobX.value = x;
+      blobY.value = y;
+      blobW.value = width;
+      blobH.value = next.height;
+      ready.value = 1;
+      return;
+    }
+    slideTo(next);
+  }
+
+  const blobStyle = useAnimatedStyle(() => ({
+    opacity: ready.value,
+    width: blobW.value,
+    height: blobH.value,
+    transform: [
+      { translateX: blobX.value },
+      { translateY: blobY.value },
+      { scaleX: stretch.value },
+      { scaleY: squash.value },
+    ],
+  }));
 
   return (
     <>
-      <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {/* 左：探索 */}
-        <Pressable
-          style={styles.tabItem}
-          onPress={() => onTabChange("Explore")}
-        >
-          <Text style={[styles.tabIcon, activeTab === "Explore" && styles.tabIconActive]}>
-            🗺️
-          </Text>
-          <Text style={[styles.tabLabel, activeTab === "Explore" && styles.tabLabelActive]}>
-            探索
-          </Text>
-        </Pressable>
-
-        {/* 中：+ 按钮 */}
-        <Pressable
-          style={styles.plusBtn}
-          onPress={() => setPlusOpen(true)}
-        >
-          <View style={styles.plusCircle}>
-            <Text style={styles.plusText}>+</Text>
-          </View>
-        </Pressable>
-
-        {/* 右：行程 */}
-        <Pressable
-          style={styles.tabItem}
-          onPress={() => onTabChange("Trips")}
-        >
-          <Text style={[styles.tabIcon, activeTab === "Trips" && styles.tabIconActive]}>
-            📋
-          </Text>
-          <Text style={[styles.tabLabel, activeTab === "Trips" && styles.tabLabelActive]}>
-            行程
-          </Text>
+      <View
+        pointerEvents="box-none"
+        style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+      >
+        <View style={styles.shell}>
+          <Animated.View pointerEvents="none" style={[styles.blob, blobStyle]} />
+          {TABS.map((t) => {
+            const on = activeTab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                style={styles.tabHit}
+                onLayout={(e) => onTabLayout(t.id, e)}
+                onPress={() => onTabChange(t.id)}
+              >
+                <Text style={[styles.label, on && styles.labelOn]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable style={styles.fab} onPress={() => setPlusOpen(true)}>
+          <View style={styles.plusH} />
+          <View style={styles.plusV} />
         </Pressable>
       </View>
-
       <PlusMenu visible={plusOpen} onClose={() => setPlusOpen(false)} />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrap: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-around",
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 8,
+    backgroundColor: "transparent",
+    gap: 10,
   },
-  tabItem: {
-    flex: 1,
+  shell: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 4,
+    gap: 4,
+    padding: 5,
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    borderCurve: "continuous",
+    overflow: "visible",
+    ...cardShadow,
   },
-  tabIcon: {
-    fontSize: 22,
-    opacity: 0.4,
+  blob: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    backgroundColor: "#E8F4FC",
+    borderRadius: 22,
+    borderCurve: "continuous",
   },
-  tabIconActive: {
-    opacity: 1,
+  tabHit: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    zIndex: 1,
   },
-  tabLabel: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 2,
-    fontWeight: "600",
-  },
-  tabLabelActive: {
-    color: colors.brand,
+  label: {
+    fontSize: 15,
     fontWeight: "700",
+    color: colors.ink,
   },
-  plusBtn: {
-    width: 64,
-    alignItems: "center",
-    justifyContent: "flex-end",
+  labelOn: {
+    color: colors.brandHot,
   },
-  plusCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 36, borderCurve: "continuous",
+  fab: {
+    marginLeft: "auto",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: -20,
     ...cardShadow,
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
   },
-  plusText: {
-    fontSize: 30,
-    color: "#fff",
-    fontWeight: "300",
-    marginTop: -2,
+  plusH: {
+    position: "absolute",
+    width: 18,
+    height: 2.5,
+    borderRadius: 2,
+    backgroundColor: "#fff",
+  },
+  plusV: {
+    position: "absolute",
+    width: 2.5,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: "#fff",
   },
 });

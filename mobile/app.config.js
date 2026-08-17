@@ -25,9 +25,11 @@ const DEFAULT_API_BASE = "http://81.71.159.218:8000/api/v1";
 const DEFAULT_AMAP_JS_KEY = "e2d15f867f9e7c13777ca47de260999b";
 
 function isDevOnlyApiBase(url) {
-  return /^(https?:\/\/)?(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(
-    String(url || "").trim(),
-  );
+  const u = String(url || "").trim();
+  if (/^(https?:\/\/)?(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?(\/|$)/i.test(u)) {
+    return true;
+  }
+  return /^(https?:\/\/)?(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(u);
 }
 
 function resolveApiBase() {

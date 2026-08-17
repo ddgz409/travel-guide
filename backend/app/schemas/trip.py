@@ -163,6 +163,21 @@ class TripGenerateRequest(BaseModel):
     })
 
 
+class CollaboratorOut(BaseModel):
+    """协作成员。"""
+
+    user_id: str
+    username: str
+    role: str = "collaborator"
+    joined_at: datetime | None = None
+
+
+class ShareCreateRequest(BaseModel):
+    """创建分享链接。"""
+
+    mode: Literal["read", "collab"] = "read"
+
+
 class TripOut(BaseModel):
     """攻略响应（列表与详情共用，详情含 days）。"""
 
@@ -182,6 +197,9 @@ class TripOut(BaseModel):
     status: TripStatus
     error_msg: str | None = None
     share_token: str | None = None
+    share_mode: str = "read"
+    can_edit: bool = False
+    collaborators: list[CollaboratorOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     days: list[DayOut] = []

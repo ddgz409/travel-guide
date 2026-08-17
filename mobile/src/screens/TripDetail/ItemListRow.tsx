@@ -1,15 +1,23 @@
 import React, { memo, useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { Item, TransportToNext } from "@travel-guide/shared";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { PlaceImage } from "../../components/PlaceImage";
 import { TransportRouteSheet } from "../../components/TransportRouteSheet";
 import { PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
+import type { PlaceCategory } from "../../utils/placeImage";
 import type { AppStackParamList } from "../../navigation/types";
 import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { itemCoverFor } from "./itemCover";
 import { styles } from "./styles";
+
+function placeKind(type: Item["type"]): PlaceCategory | undefined {
+  if (type === "meal") return "foods";
+  if (type === "attraction") return "spots";
+  return undefined;
+}
 
 function hasCoords(loc: Item["location"]): boolean {
   return loc != null && loc.lng != null && loc.lat != null;
@@ -34,11 +42,13 @@ export const ItemListRow = memo(function ItemListRow({
   tripId,
   destination,
   hasNextRoute,
+  onPoiPress,
 }: {
   item: Item;
   tripId: string;
   destination: string;
   hasNextRoute: boolean;
+  onPoiPress?: () => void;
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -55,18 +65,34 @@ export const ItemListRow = memo(function ItemListRow({
   return (
     <View style={[styles.feedCard, !item.selected && styles.itemOff]}>
       <PressScale
-        onPress={() =>
-          navigation.navigate("TripItemDetail", { tripId, itemId: item.id })
-        }
+        onPress={() => {
+          if (onPoiPress) {
+            onPoiPress();
+            return;
+          }
+          navigation.navigate("TripItemDetail", { tripId, itemId: item.id });
+        }}
         style={styles.feedRow}
       >
         <View style={styles.feedThumbWrap}>
-          {cover.source ? (
-            <Image source={cover.source} style={styles.feedThumb} />
-          ) : (
+          {item.type === "transport" ? (
             <View style={[styles.feedThumb, { backgroundColor: cover.bg }]}>
               <Text style={styles.feedThumbEmoji}>{cover.emoji}</Text>
             </View>
+          ) : (
+            <PlaceImage
+              city={destination}
+              name={item.name}
+              category={placeKind(item.type)}
+              poiId={item.poi_id || undefined}
+              style={styles.feedThumb}
+              fallbackSource={cover.source}
+              fallback={
+                <View style={[styles.feedThumb, { backgroundColor: cover.bg }]}>
+                  <Text style={styles.feedThumbEmoji}>{cover.emoji}</Text>
+                </View>
+              }
+            />
           )}
         </View>
 

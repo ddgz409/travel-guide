@@ -12,12 +12,14 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { PoiSearchResult } from "@travel-guide/shared";
+import type { Alternative, PoiSearchResult, Trip } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { PlaceGallery } from "../../components/PlaceImage";
 import { PoiPortalLinks } from "../../components/PoiPortalLinks";
+import { CheckInButton } from "../../components/CheckInButton";
 import type { AppStackParamList } from "../../navigation/types";
-import { addCheckIn, isCheckedIn } from "../../utils/checkInStore";
+import { addCheckIn, isCheckedIn, removeCheckIn } from "../../utils/checkInStore";
 import { distanceLabel, type LatLng } from "../../utils/geo";
 import {
   openAmapPoiLookup,
@@ -51,12 +53,20 @@ type Props = {
   userLocation: LatLng | null;
   checked?: boolean;
   onCheckIn?: (item: Item) => void;
+  onUncheck?: (item: Item) => void;
+  tripId?: string;
+  tripItemId?: string;
+  tripItemSelected?: boolean;
+  tripAlternatives?: Alternative[] | null;
+  tripCanEdit?: boolean;
+  onTripUpdated?: (trip: Trip) => void;
   onClose: () => void;
 };
 
 const CAT_LABEL: Record<ExploreCategory, string> = {
   spots: "景点",
   foods: "美食",
+  hotels: "住宿",
 };
 
 function pickPoiMatch(list: PoiSearchResult[], name: string): PoiSearchResult | null {
@@ -87,6 +97,13 @@ export function PoiDetailSheet({
   userLocation,
   checked: checkedProp,
   onCheckIn,
+  onUncheck,
+  tripId,
+  tripItemId,
+  tripItemSelected = true,
+  tripAlternatives,
+  tripCanEdit = false,
+  onTripUpdated,
   onClose,
 }: Props) {
   const navigation =
@@ -95,6 +112,8 @@ export function PoiDetailSheet({
   const { width: screenW } = useWindowDimensions();
   const [checkedLocal, setCheckedLocal] = useState(false);
   const [checkInBusy, setCheckInBusy] = useState(false);
+  const [tripEditBusy, setTripEditBusy] = useState(false);
+  const [tripSelected, setTripSelected] = useState(tripItemSelected);
   const [poiExtra, setPoiExtra] = useState<PoiSearchResult | null>(null);
 
   const checked = checkedProp ?? checkedLocal;
@@ -112,6 +131,10 @@ export function PoiDetailSheet({
     }
     return undefined;
   }, [visible, item, city, checkedProp]);
+
+  useEffect(() => {
+    setTripSelected(tripItemSelected);
+  }, [tripItemSelected, tripItemId, visible]);
 
   useEffect(() => {
     if (!visible || !item) {
@@ -177,26 +200,64 @@ export function PoiDetailSheet({
     if (!mergedItem || checkInBusy) return;
     setCheckInBusy(true);
     try {
-      await addCheckIn({
-        city,
-        name: mergedItem.name,
-        category,
-        lng: mergedItem.lng,
-        lat: mergedItem.lat,
-        address: mergedItem.address,
-      });
-      setCheckedLocal(true);
-      onCheckIn?.(mergedItem);
-      Alert.alert(
-        "打卡成功",
-        `「${mergedItem.name}」已记录，可在「我的行程」顶部查看打卡地图。`,
-      );
+      if (checked) {
+        await removeCheckIn(city, mergedItem.name);
+        setCheckedLocal(false);
+        onUncheck?.(mergedItem);
+      } else {
+        await addCheckIn({
+          city,
+          name: mergedItem.name,
+          category,
+          lng: mergedItem.lng,
+          lat: mergedItem.lat,
+          address: mergedItem.address,
+        });
+        setCheckedLocal(true);
+        onCheckIn?.(mergedItem);
+      }
     } catch (e) {
       Alert.alert("打卡失败", e instanceof Error ? e.message : "请稍后重试");
     } finally {
       setCheckInBusy(false);
     }
-  }, [mergedItem, checkInBusy, city, category, onCheckIn]);
+  }, [mergedItem, checkInBusy, city, category, checked, onCheckIn, onUncheck]);
+
+  const handleToggleTripItem = useCallback(async () => {
+    if (!tripId || !tripItemId || !tripCanEdit || tripEditBusy) return;
+    setTripEditBusy(true);
+    try {
+      const updated = await api.trips.toggleItem(tripId, tripItemId, !tripSelected);
+      setTripSelected(!tripSelected);
+      onTripUpdated?.(updated);
+    } catch (e) {
+      Alert.alert("失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setTripEditBusy(false);
+    }
+  }, [
+    tripId,
+    tripItemId,
+    tripCanEdit,
+    tripEditBusy,
+    tripSelected,
+    onTripUpdated,
+  ]);
+
+  const handleSwapTripItem = useCallback(
+    async (altIndex: number) => {
+      if (!tripId || !tripItemId || !tripCanEdit || tripEditBusy) return;
+      setTripEditBusy(true);
+      try {
+        onTripUpdated?.(await api.trips.swapItem(tripId, tripItemId, altIndex));
+      } catch (e) {
+        Alert.alert("失败", e instanceof ApiError ? e.message : "换一个失败");
+      } finally {
+        setTripEditBusy(false);
+      }
+    },
+    [tripId, tripItemId, tripCanEdit, tripEditBusy, onTripUpdated],
+  );
 
   const handleAdd = useCallback(() => {
     if (!mergedItem) return;
@@ -252,10 +313,21 @@ export function PoiDetailSheet({
 
   const { positive, neutral } = splitReviewPoints(mergedItem.desc, category);
   const catLabel = CAT_LABEL[category];
-  const portalKind = category === "foods" ? "meal" : "attraction";
+  const portalKind =
+    category === "foods"
+      ? "meal"
+      : category === "hotels"
+        ? "hotel"
+        : "attraction";
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
       <View style={styles.detailRoot}>
         <Pressable style={styles.detailBackdrop} onPress={onClose} />
         <View style={[styles.detailSheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -286,6 +358,10 @@ export function PoiDetailSheet({
               </Pressable>
             </View>
 
+            <View style={[styles.detailSection, { paddingTop: 0 }]}>
+              <PoiPortalLinks city={city} name={mergedItem.name} kind={portalKind} />
+            </View>
+
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -294,7 +370,7 @@ export function PoiDetailSheet({
               <PlaceGallery
                 city={city}
                 name={mergedItem.name}
-                category={category}
+                category={category === "hotels" ? "spots" : category}
                 image={mergedItem.image}
                 images={mergedItem.images}
                 itemWidth={screenW * 0.72}
@@ -335,10 +411,9 @@ export function PoiDetailSheet({
                 </>
               ) : (
                 <Text style={styles.detailDesc}>
-                  暂无评价，可点击下方平台查看真实攻略。
+                  暂无评价，可点击上方攻略链接查看真实攻略。
                 </Text>
               )}
-              <PoiPortalLinks city={city} name={mergedItem.name} kind={portalKind} />
             </View>
 
             <View style={styles.infoList}>
@@ -392,32 +467,85 @@ export function PoiDetailSheet({
             </View>
           </ScrollView>
 
-          <View style={styles.detailActions}>
-            <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
-              <Text style={styles.detailActionText}>+ 添加至</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.detailActionBtn, checked && styles.detailActionChecked]}
+          {(tripItemId && tripCanEdit && (tripAlternatives?.length ?? 0) > 0) ? (
+            <View style={styles.tripEditSection}>
+              <View style={styles.tripEditAlts}>
+                <Text style={styles.tripEditAltsLabel}>换一个：</Text>
+                {tripAlternatives!.slice(0, 3).map((alt, i) => (
+                  <Pressable
+                    key={`${alt.poi_id}-${i}`}
+                    style={styles.tripEditAltChip}
+                    onPress={() => void handleSwapTripItem(i)}
+                    disabled={tripEditBusy}
+                  >
+                    <Text style={styles.tripEditAltText}>{alt.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <View
+            style={[
+              styles.detailActions,
+              tripItemId && tripCanEdit ? styles.detailActionsFour : null,
+            ]}
+          >
+            {tripItemId && tripCanEdit ? (
+              <Pressable style={styles.detailActionBtn} onPress={handleFeedback}>
+                <Text
+                  style={[styles.detailActionText, styles.detailActionTextCompact]}
+                  numberOfLines={1}
+                >
+                  反馈
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable style={styles.detailActionBtn} onPress={handleAdd}>
+                <Text style={styles.detailActionText} numberOfLines={1}>
+                  + 添加至
+                </Text>
+              </Pressable>
+            )}
+            <CheckInButton
+              checked={checked}
+              busy={checkInBusy}
               onPress={() => void handleCheckIn()}
-              disabled={checkInBusy}
-            >
-              <Text
-                style={[
-                  styles.detailActionText,
-                  checked && styles.detailActionTextChecked,
-                ]}
-              >
-                {checked ? "✓ 已打卡" : "◎ 打卡"}
-              </Text>
-            </Pressable>
+              compact={Boolean(tripItemId && tripCanEdit)}
+            />
             <Pressable
               style={[styles.detailActionBtn, styles.detailActionPrimary]}
               onPress={handleNavigate}
             >
-              <Text style={[styles.detailActionText, styles.detailActionTextPrimary]}>
-                ➤ 导航
+              <Text
+                style={[
+                  styles.detailActionText,
+                  styles.detailActionTextPrimary,
+                  tripItemId && tripCanEdit ? styles.detailActionTextCompact : null,
+                ]}
+                numberOfLines={1}
+              >
+                导航
               </Text>
             </Pressable>
+            {tripItemId && tripCanEdit ? (
+              <Pressable
+                style={[styles.detailActionBtn, styles.detailActionRemove]}
+                onPress={() => void handleToggleTripItem()}
+                disabled={tripEditBusy}
+              >
+                <Text
+                  style={[styles.detailActionText, styles.detailActionRemoveText]}
+                  numberOfLines={2}
+                >
+                  {tripEditBusy
+                    ? "…"
+                    : tripSelected
+                      ? "从行程中移除"
+                      : "恢复此项"}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>

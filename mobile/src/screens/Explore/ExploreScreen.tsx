@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  InteractionManager,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -16,20 +18,19 @@ import {
 } from "react-native-gesture-handler";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated from "react-native-reanimated";
 import { WebView } from "react-native-webview";
-import * as Location from "expo-location";
 import { citiesGrouped } from "../../data/cities";
-import { FadeSlideIn, PressScale, enterFade } from "../../utils/motion";
+import { PressScale } from "../../utils/motion";
 import { colors, pastels } from "../../theme";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
-import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
-import { getDeviceLocation, describeLocationError } from "../../utils/location";
-import {
-  loadLocationConsent,
-  saveLocationConsent,
-} from "../../utils/locationPrefs";
+import { buildAmapHtml } from "../../utils/amapHtml";
+import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
+import { CityCoverImage } from "../../components/PlaceImage";
+import { HeaderAvatarButton } from "../../components/HeaderAvatarButton";
+import { SettingsGear } from "../../components/SettingsGear";
+import { resolveImageUrl } from "../../utils/placeImage";
+import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation, peekCachedAccuracy } from "../../utils/location";
 import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
 
@@ -52,6 +53,7 @@ export function ExploreScreen() {
   const mapGestureRef = useRef<NativeViewGestureHandler>(null);
   const mapReadyRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapMounted, setMapMounted] = useState(false);
   const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
 
   // 定位城市状态
@@ -63,6 +65,7 @@ export function ExploreScreen() {
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
+  const [cityCovers, setCityCovers] = useState<Record<string, string>>({});
 
   // 组件卸载时清除 onBlur 残留定时器
   useEffect(() => {
@@ -71,51 +74,67 @@ export function ExploreScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    // 先用北京单城验证图片链路，避免 8 城并发触发高德 QPS 限制
+    void api.destinations
+      .placeImages("北京", "故宫博物院", "spots", 1)
+      .then((res) => {
+        if (res.image) {
+          setCityCovers((prev) => ({ ...prev, 北京: resolveImageUrl(res.image!) }));
+        }
+      })
+      .catch(() => {
+        /* 失败时 CityCoverImage 显示本地 fallback */
+      });
+  }, []);
+
   // 获取定位城市：先请求系统权限，再定位 + regeo
   const fetchLocation = useCallback(async (silent: boolean) => {
     if (silent) setLocLoading(true);
     else setLocBtnLoading(true);
     setLocError(null);
+
+    const cached = peekCachedLocation();
+    if (cached) {
+      setLocCoord(cached);
+    }
+
     try {
-      // 1. 检查 app 内 consent
-      let consent = await loadLocationConsent();
-      if (consent === null) {
-        // 首次静默时不弹窗，直接尝试请求系统权限
-        // 如果系统权限已授予，consent 设为 granted
-      }
-      if (consent === "denied") {
-        if (!silent) {
-          setLocError("定位权限已关闭，可在设置中开启");
-        }
+      const ok = await ensureLocationAccess(
+        silent
+          ? undefined
+          : async () =>
+              new Promise<"granted" | "denied">((resolve) => {
+                Alert.alert(
+                  "定位权限",
+                  "是否允许知径获取你的位置，用于显示所在城市？",
+                  [
+                    { text: "不允许", style: "cancel", onPress: () => resolve("denied") },
+                    { text: "允许", onPress: () => resolve("granted") },
+                  ],
+                );
+              }),
+      );
+      if (!ok) {
+        if (!silent) setLocError("定位权限已关闭，可在设置中开启");
         return;
       }
 
-      // 2. 请求系统定位权限
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        await saveLocationConsent("denied");
-        if (!silent) {
-          setLocError("系统未授权定位，请在设置中允许");
-        }
-        return;
-      }
-      await saveLocationConsent("granted");
-
-      // 3. 获取 GPS 坐标
-      const { lng, lat } = await getDeviceLocation();
+      const { lng, lat } = silent
+        ? await getDeviceLocation()
+        : await getFreshDeviceLocation();
       setLocCoord({ lng, lat });
 
-      // 4. 逆地理编码获取城市名
       const result = await api.destinations.regeo(lng, lat);
       if (result.city) {
         setLocCity(result.city);
+        rememberLocation({ lng, lat }, result.city);
+      } else {
+        rememberLocation({ lng, lat });
       }
     } catch (e) {
       const msg = describeLocationError(e);
-      setLocError(msg);
-      if (!silent) {
-        // 非静默模式下（点按钮触发）显示错误
-      }
+      if (!cached) setLocError(msg);
     } finally {
       setLocLoading(false);
       setLocBtnLoading(false);
@@ -153,28 +172,34 @@ export function ExploreScreen() {
   // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
-  // 地图标记：用户当前所在城市（有坐标时显示），否则空
-  const cityMarkers: MapMarker[] = useMemo(() => {
-    if (locCoord && locCity) {
-      return [{ lng: locCoord.lng, lat: locCoord.lat, name: locCity }];
-    }
-    return [];
-  }, [locCoord, locCity]);
-
   const mapHtml = useMemo(() => {
     if (!amapKey) return "";
-    mapReadyRef.current = false;
     return buildAmapHtml({
       key: amapKey,
-      markers: cityMarkers,
+      markers: [],
       interactive: true,
-      userLocation: locCoord,
+      userLocation: null,
+      linkMarkers: false,
     });
-  }, [amapKey, cityMarkers, locCoord]);
+  }, [amapKey]);
 
-  const inject = useCallback((js: string) => {
-    webRef.current?.injectJavaScript(`${js}; true;`);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setMapMounted(true);
+    });
+    return () => task.cancel();
   }, []);
+
+  useEffect(() => {
+    if (!mapLoaded || !locCoord) return;
+    webRef.current?.injectJavaScript(
+      buildMapUserLocationJs(locCoord.lng, locCoord.lat, {
+        center: true,
+        zoom: 15,
+        clearMarkers: true,
+      }),
+    );
+  }, [mapLoaded, locCoord, locCity]);
 
   // 定位城市卡片用的描述（从 DESTINATIONS 找，找不到用默认）
   const locDesc = useMemo(() => {
@@ -185,30 +210,32 @@ export function ExploreScreen() {
     return d ? d.desc : "点击查看详情";
   }, [locCity]);
 
-  // 地图点击放大 -> 跳转 MapFull
+  // 地图点击放大 -> 跳转 MapFull（官方圆点定位，不用倒水滴 marker）
   function openFullMap() {
     (navigation as any).navigate("MapFull", {
       title: locCity || "我的位置",
-      markers: cityMarkers,
+      markers: [],
+      userLocation: locCoord
+        ? { ...locCoord, accuracy: peekCachedAccuracy() }
+        : undefined,
     });
   }
 
   return (
     <View style={styles.root}>
-      <Animated.View
-        entering={enterFade(0)}
+      <View
         style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <Text style={styles.logo}>旅迹</Text>
+        <HeaderAvatarButton />
         <View style={styles.topActions}>
           <PressScale
             style={styles.topActionItem}
             onPress={() => (navigation as any).navigate("Settings")}
           >
-            <Text style={styles.topCta}>设置</Text>
+            <SettingsGear size={22} color={colors.ink} holeColor={colors.card} />
           </PressScale>
         </View>
-      </Animated.View>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -216,11 +243,11 @@ export function ExploreScreen() {
         nestedScrollEnabled
         scrollEnabled={pageScrollEnabled}
         waitFor={mapGestureRef}
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={styles.hero}>
           <View style={styles.heroMapBox}>
-            {amapKey && mapHtml ? (
+            {amapKey && mapHtml && mapMounted ? (
               <>
                 {!mapLoaded ? (
                   <View style={styles.mapLoading}>
@@ -245,7 +272,10 @@ export function ExploreScreen() {
                       onMessage={(e) => {
                         try {
                           const msg = JSON.parse(e.nativeEvent.data);
-                          if (msg?.type === "ready") mapReadyRef.current = true;
+                          if (msg?.type === "ready") {
+                            mapReadyRef.current = true;
+                            setMapLoaded(true);
+                          }
                           if (msg?.type === "mapGesture") {
                             setPageScrollEnabled(!msg.payload?.active);
                           }
@@ -254,10 +284,10 @@ export function ExploreScreen() {
                         }
                       }}
                       onLoadEnd={() => {
-                        setMapLoaded(true);
                         setTimeout(() => {
                           mapReadyRef.current = true;
-                        }, 800);
+                          setMapLoaded(true);
+                        }, 600);
                       }}
                     />
                   </View>
@@ -297,18 +327,6 @@ export function ExploreScreen() {
                 </View>
                 <View style={styles.heroMapControls} pointerEvents="box-none">
                   <Pressable
-                    style={styles.mapCtrlBtn}
-                    onPress={() => inject("window.zoomIn && window.zoomIn()")}
-                  >
-                    <Text style={styles.mapCtrlText}>＋</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.mapCtrlBtn}
-                    onPress={() => inject("window.zoomOut && window.zoomOut()")}
-                  >
-                    <Text style={styles.mapCtrlText}>－</Text>
-                  </Pressable>
-                  <Pressable
                     style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
                     onPress={() => void fetchLocation(false)}
                     disabled={locBtnLoading}
@@ -326,19 +344,23 @@ export function ExploreScreen() {
               </>
             ) : (
               <View style={styles.mapLoading}>
-                <Text style={{ fontSize: 15, color: colors.muted }}>
-                  {locLoading
-                    ? "正在获取位置…"
-                    : locError
-                      ? locError
-                      : "地图未配置，请检查高德 Key"}
-                </Text>
+                {amapKey && mapHtml ? (
+                  <ActivityIndicator color={colors.brand} />
+                ) : (
+                  <Text style={{ fontSize: 15, color: colors.muted }}>
+                    {locLoading
+                      ? "正在获取位置…"
+                      : locError
+                        ? locError
+                        : "地图未配置，请检查高德 Key"}
+                  </Text>
+                )}
               </View>
             )}
           </View>
         </View>
 
-        <FadeSlideIn delay={80} style={styles.searchWrap}>
+        <View style={styles.searchWrap}>
           <View style={styles.searchBox}>
             <TextInput
               style={styles.searchInput}
@@ -416,9 +438,9 @@ export function ExploreScreen() {
               </ScrollView>
             </View>
           ) : null}
-        </FadeSlideIn>
+        </View>
 
-        <FadeSlideIn delay={140} style={styles.shortcuts}>
+        <View style={styles.shortcuts}>
           {[
             {
               title: "AI 助手",
@@ -446,9 +468,9 @@ export function ExploreScreen() {
               <Text style={styles.shortcutDesc}>{x.desc}</Text>
             </PressScale>
           ))}
-        </FadeSlideIn>
+        </View>
 
-        <FadeSlideIn delay={200} style={styles.section}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>按兴趣出发</Text>
           <View style={styles.chips}>
             {INTERESTS.map((it) => (
@@ -461,9 +483,9 @@ export function ExploreScreen() {
               </PressScale>
             ))}
           </View>
-        </FadeSlideIn>
+        </View>
 
-        <FadeSlideIn delay={260} style={styles.section}>
+        <View style={styles.section}>
           <View style={styles.sectionRow}>
             <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
               热门目的地
@@ -498,8 +520,11 @@ export function ExploreScreen() {
                   </View>
                   <View style={styles.destCoverWrap} pointerEvents="none">
                     <View style={styles.destCoverInner}>
-                      <Image
-                        source={d.img}
+                      <CityCoverImage
+                        city={d.name}
+                        landmark={d.landmark}
+                        uri={cityCovers[d.name]}
+                        fallback={d.img}
                         style={styles.destCover}
                         resizeMode="cover"
                       />
@@ -509,7 +534,7 @@ export function ExploreScreen() {
               </PressScale>
             ))}
           </View>
-        </FadeSlideIn>
+        </View>
       </ScrollView>
     </View>
   );

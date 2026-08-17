@@ -57,7 +57,7 @@ const SLOT_LABEL: Record<string, string> = {
 
 async function loadTrip(id: string): Promise<Trip | null> {
   const base =
-    process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/v1";
+    process.env.NEXT_PUBLIC_API_BASE || "http://81.71.159.218:8000/api/v1";
   try {
     const res = await fetch(`${base}/trips/${id}`, {
       cache: "no-store",

@@ -8,8 +8,10 @@ export type MapMarker = {
   itemId?: string;
   /** 自定义 pin 背景色 */
   color?: string;
-  /** pin 内显示的 emoji 或单字符 */
+  /** pin 内显示：emoji，或 1–2 位序号（行程路线） */
   icon?: string;
+  /** 与 icon 相同，纯倒水滴时可省略 */
+  label?: string;
 };
 
 export function buildAmapHtml(opts: {
@@ -53,22 +55,55 @@ export function buildAmapHtml(opts: {
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#f3f4f6;overflow:hidden}
-    .pin{
-      width:32px;height:32px;border-radius:11px;
-      background:#ff6d00;color:#fff;
-      font:700 13px/32px -apple-system,BlinkMacSystemFont,sans-serif;
-      text-align:center;
+    .pin-drop{
+      position:relative;
+      width:32px;
+      height:42px;
+    }
+    .pin-drop-shape{
+      position:absolute;
+      top:5px;
+      left:3px;
+      width:26px;
+      height:26px;
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      background:var(--pin,#1a66ff);
       border:2.5px solid #fff;
       box-shadow:0 2px 8px rgba(0,0,0,.28);
-      display:flex;align-items:center;justify-content:center;
+      display:flex;
+      align-items:center;
+      justify-content:center;
     }
-    .pin-emoji{font-size:15px;line-height:1}
+    .pin-drop-label{
+      transform:rotate(45deg);
+      color:#fff;
+      font:700 11px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+      font-variant-numeric:tabular-nums;
+      letter-spacing:-0.02em;
+      margin-top:-2px;
+      margin-left:1px;
+      pointer-events:none;
+    }
+    .pin-drop-label-wide{
+      font-size:9px;
+      letter-spacing:-0.04em;
+    }
+    .pin-emoji{
+      position:absolute;
+      top:5px;
+      left:3px;
+      width:26px;
+      height:26px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:13px;
+      line-height:1;
+      z-index:1;
+      pointer-events:none;
+    }
     .pin-marker{transition:opacity .25s ease,transform .25s ease,filter .25s ease;cursor:pointer}
-    .user-dot{
-      width:16px;height:16px;border-radius:50%;
-      background:#1a66ff;border:3px solid #fff;
-      box-shadow:0 0 0 6px rgba(26,102,255,.22),0 2px 6px rgba(0,0,0,.2);
-    }
     .amap-logo,
     .amap-copyright,
     .amap-mcode {
@@ -81,7 +116,7 @@ export function buildAmapHtml(opts: {
       display: none !important;
     }
   </style>
-  <script src="https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}"></script>
+  <script src="https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Geolocation"></script>
 </head>
 <body>
   <div id="map"></div>
@@ -92,7 +127,9 @@ export function buildAmapHtml(opts: {
       var polyline = data.polyline || [];
       var interactive = !!data.interactive;
       window.__map = null;
-      window.__userMarker = null;
+      window.__userLocDot = null;
+      window.__userLocAcc = null;
+      window.__userLocPos = null;
       window.__allMarkers = markers.slice();
       window.__polyline = polyline.slice();
 
@@ -227,14 +264,28 @@ export function buildAmapHtml(opts: {
           markers.forEach(function (m, i) {
             var pos = [m.lng, m.lat];
             points.push(pos);
-            var bg = m.color || '#ff6d00';
-            var inner = m.icon
-              ? '<span class="pin-emoji">' + m.icon + '</span>'
-              : String(i + 1);
+            var bg = m.color || '#1a66ff';
+            var label = m.icon ? String(m.icon) : (m.label ? String(m.label) : '');
+            var isEmoji = label && !/^[0-9]{1,2}$/.test(label);
             var div = document.createElement('div');
-            div.className = 'pin' + (data.focusCenter ? ' pin-marker' : '');
-            div.style.background = bg;
-            div.innerHTML = inner;
+            div.className = 'pin-drop' + (data.focusCenter ? ' pin-marker' : '');
+            div.style.setProperty('--pin', bg);
+            if (label && isEmoji) {
+              div.innerHTML =
+                '<div class="pin-drop-shape"></div><span class="pin-emoji">' +
+                label +
+                '</span>';
+            } else if (label) {
+              var wide = label.length > 1 ? ' pin-drop-label-wide' : '';
+              div.innerHTML =
+                '<div class="pin-drop-shape"><span class="pin-drop-label' +
+                wide +
+                '">' +
+                label +
+                '</span></div>';
+            } else {
+              div.innerHTML = '<div class="pin-drop-shape"></div>';
+            }
             if (!data.focusCenter) div.style.opacity = '1';
             var lastMarkerTap = 0;
             function emitMarkerTap(m) {
@@ -252,7 +303,7 @@ export function buildAmapHtml(opts: {
               map: map,
               position: pos,
               title: m.name,
-              offset: new AMap.Pixel(-16, -16),
+              offset: new AMap.Pixel(-16, -40),
               content: div,
               zIndex: data.focusCenter ? 10 : 100 + i
             });
@@ -309,7 +360,10 @@ export function buildAmapHtml(opts: {
         if (!window.__focusBound) {
           window.__focusBound = true;
           map.on('moveend', function () { window.__onMapIdle(); });
-          map.on('zoomend', function () { window.__onMapIdle(); });
+          map.on('zoomend', function () {
+            window.__onMapIdle();
+            if (window.__ensureUserLocVisible) window.__ensureUserLocVisible();
+          });
           map.on('zoomchange', function () {
             if (!window.__viewportMode) return;
             clearTimeout(window.__viewportTimer);
@@ -342,6 +396,7 @@ export function buildAmapHtml(opts: {
         window.__map.zoomIn();
         setTimeout(function () {
           if (window.__onMapIdle) window.__onMapIdle();
+          if (window.__ensureUserLocVisible) window.__ensureUserLocVisible();
         }, 220);
       };
       window.zoomOut = function () {
@@ -349,23 +404,68 @@ export function buildAmapHtml(opts: {
         window.__map.zoomOut();
         setTimeout(function () {
           if (window.__onMapIdle) window.__onMapIdle();
+          if (window.__ensureUserLocVisible) window.__ensureUserLocVisible();
         }, 220);
       };
-      window.setUserLocation = function (lng, lat, center) {
+      window.setUserLocation = function (lng, lat, center, accuracy) {
         if (!window.__map || !window.AMap) return;
         var pos = [lng, lat];
-        if (window.__userMarker) {
-          window.__userMarker.setPosition(pos);
-        } else {
-          window.__userMarker = new AMap.Marker({
-            map: window.__map,
-            position: pos,
-            offset: new AMap.Pixel(-8, -8),
-            content: '<div class="user-dot"></div>',
-            zIndex: 120
+        window.__userLocPos = pos;
+        var acc = typeof accuracy === 'number' && accuracy > 0 ? accuracy : 65;
+        if (!window.__userLocDot) {
+          window.__userLocDot = new AMap.CircleMarker({
+            center: pos,
+            radius: 9,
+            strokeColor: '#ffffff',
+            strokeWeight: 3,
+            strokeOpacity: 1,
+            fillColor: '#1a66ff',
+            fillOpacity: 1,
+            zIndex: 200,
+            bubble: true,
           });
+          window.__userLocAcc = new AMap.Circle({
+            center: pos,
+            radius: acc,
+            strokeColor: '#0093FF',
+            strokeOpacity: 0.45,
+            strokeWeight: 1,
+            fillColor: '#02B0FF',
+            fillOpacity: 0.22,
+            zIndex: 199,
+            bubble: true,
+          });
+          window.__map.add(window.__userLocAcc);
+          window.__map.add(window.__userLocDot);
+        } else {
+          window.__userLocDot.setCenter(pos);
+          window.__userLocAcc.setCenter(pos);
+          window.__userLocAcc.setRadius(Math.max(15, Math.min(acc, 250)));
+          if (!window.__userLocDot.getMap()) {
+            window.__map.add(window.__userLocAcc);
+            window.__map.add(window.__userLocDot);
+          }
         }
         if (center) window.__map.setZoomAndCenter(15, pos);
+      };
+      window.__ensureUserLocVisible = function () {
+        if (!window.__userLocPos || !window.__map || !window.AMap) return;
+        var p = window.__userLocPos;
+        if (!window.__userLocDot || !window.__userLocDot.getMap()) {
+          window.setUserLocation(p[0], p[1], false);
+          return;
+        }
+        window.__userLocDot.setCenter(p);
+        if (window.__userLocAcc) window.__userLocAcc.setCenter(p);
+      };
+      window.clearUserLocation = function () {
+        window.__userLocPos = null;
+        if (window.__userLocDot) {
+          try { window.__userLocDot.setMap(null); } catch (e) {}
+        }
+        if (window.__userLocAcc) {
+          try { window.__userLocAcc.setMap(null); } catch (e) {}
+        }
       };
 
       window.updateMapData = function (nextMarkers, nextPolyline, linkMarkers, focusCenter, viewportLimit) {

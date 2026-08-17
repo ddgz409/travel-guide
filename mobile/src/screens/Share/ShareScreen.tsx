@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,39 +7,80 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import type { Trip } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { DayMap } from "../../components/DayMap/DayMap";
 import { colors } from "../../theme";
+import { PressScale } from "../../utils/motion";
 import type { AppStackParamList } from "../../navigation/types";
 import { SLOT_LABEL, TYPE_LABEL } from "../TripDetail/constants";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Share">;
 
-export function ShareScreen({ route }: Props) {
+export function ShareScreen({ navigation, route }: Props) {
   const { token } = route.params;
+  const { user, loading: authLoading } = useAuth();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dayIdx, setDayIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const t = await api.trips.getShared(token);
+      setTrip(t);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "分享链接无效");
+    }
+  }, [token]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const t = await api.trips.getShared(token);
-        if (!cancelled) setTrip(t);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof ApiError ? e.message : "分享链接无效");
-        }
+    void load();
+  }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  useEffect(() => {
+    if (!trip || trip.share_mode !== "collab") return;
+    const id = setInterval(() => void load(), 4000);
+    return () => clearInterval(id);
+  }, [trip?.share_mode, load]);
+
+  async function onJoin() {
+    if (!user) {
+      navigation.navigate("Login", { next: { screen: "Share", token } });
+      return;
+    }
+    setBusy(true);
+    try {
+      const t = await api.trips.joinShare(token);
+      setTrip(t);
+      if (t.can_edit) {
+        navigation.replace("TripDetail", { tripId: t.id });
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "加入失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.brand} />
+      </View>
+    );
+  }
 
   if (error) {
     return (
@@ -58,15 +99,50 @@ export function ShareScreen({ route }: Props) {
 
   const day = trip.days[dayIdx] || trip.days[0];
   const items = (day?.items || []).filter((i) => i.selected);
+  const collab = trip.share_mode === "collab";
+  const collaborators = trip.collaborators || [];
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.badge}>分享攻略</Text>
+      <Text style={styles.badge}>{collab ? "共同编辑邀请" : "分享攻略"}</Text>
       <Text style={styles.title}>{trip.title}</Text>
       <Text style={styles.meta}>
         {trip.destination} · {trip.start_date} → {trip.end_date} ·{" "}
         {trip.travelers} 人
       </Text>
+
+      {collaborators.length > 0 ? (
+        <View style={styles.collabBox}>
+          <Text style={styles.collabTitle}>协作者</Text>
+          <Text style={styles.collabList}>
+            {collaborators
+              .map((c) =>
+                c.role === "owner" ? `${c.username}（创建者）` : c.username,
+              )
+              .join("、")}
+          </Text>
+        </View>
+      ) : null}
+
+      {collab ? (
+        <PressScale
+          style={[styles.joinBtn, busy && { opacity: 0.6 }]}
+          onPress={() => void onJoin()}
+          disabled={busy}
+        >
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.joinBtnText}>
+              {user
+                ? trip.can_edit
+                  ? "进入编辑"
+                  : "登录已确认，加入共同编辑"
+                : "登录后加入共同编辑"}
+            </Text>
+          )}
+        </PressScale>
+      ) : null}
 
       <ScrollView
         horizontal

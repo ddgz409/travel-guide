@@ -13,7 +13,7 @@ import type {
   User,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://81.71.159.218:8000/api/v1";
 
 const TOKEN_KEY = "travel_guide_token";
 
@@ -235,10 +235,16 @@ export const tripsApi = {
       method: "POST",
     }),
 
-  createShare: (tripId: string) =>
-    request<Trip>(`/trips/${tripId}/share`, { method: "POST" }),
+  createShare: (tripId: string, mode: "read" | "collab" = "read") =>
+    request<Trip>(`/trips/${tripId}/share`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 
   getShared: (token: string) => request<Trip>(`/trips/share/${token}`),
+
+  joinShare: (token: string) =>
+    request<Trip>(`/trips/share/${token}/join`, { method: "POST" }),
 
   remove: (tripId: string) =>
     request<void>(`/trips/${tripId}`, { method: "DELETE" }),

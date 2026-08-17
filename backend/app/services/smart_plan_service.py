@@ -6,7 +6,7 @@ from typing import Any
 
 from app.services.llm_client import LLMClient, LLMError
 
-OPTIMIZE_SYSTEM = """你是「旅迹」旅行规划助手。用户输入简短、口语化的出行想法，你需要改写成一条完整、清晰、可直接用于 AI 生成行程的规划描述。
+OPTIMIZE_SYSTEM = """你是「知径」旅行规划助手。用户输入简短、口语化的出行想法，你需要改写成一条完整、清晰、可直接用于 AI 生成行程的规划描述。
 
 改写规则：
 1. 以「帮我规划」开头（用户已写「帮我/请帮我」则保留）

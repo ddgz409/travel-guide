@@ -20,13 +20,7 @@ import { colors } from "../../theme";
 import { parseDate } from "../../utils/date";
 import { tripToListItem } from "./helpers";
 import { TripCard } from "./TripCard";
-import { CheckInMapCard } from "./CheckInMapCard";
 import { styles } from "./styles";
-import {
-  getCheckedPrefectureIds,
-  listCheckIns,
-  type CheckInRecord,
-} from "../../utils/checkInStore";
 
 export function TripsScreen() {
   const insets = useSafeAreaInsets();
@@ -36,23 +30,6 @@ export function TripsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
-  const [checkedPrefectures, setCheckedPrefectures] = useState<string[]>([]);
-  const [checkInsLoading, setCheckInsLoading] = useState(true);
-
-  const loadCheckIns = useCallback(async () => {
-    setCheckInsLoading(true);
-    try {
-      const [items, prefectures] = await Promise.all([
-        listCheckIns(),
-        getCheckedPrefectureIds(),
-      ]);
-      setCheckIns(items);
-      setCheckedPrefectures(prefectures);
-    } finally {
-      setCheckInsLoading(false);
-    }
-  }, []);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -91,8 +68,7 @@ export function TripsScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-      void loadCheckIns();
-    }, [load, loadCheckIns]),
+    }, [load]),
   );
 
   const sorted = useMemo(() => {
@@ -156,16 +132,6 @@ export function TripsScreen() {
             sorted.length === 0 ? styles.emptyWrap : styles.list
           }
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            user || isGuest ? (
-              <CheckInMapCard
-                checkedPrefectureIds={checkedPrefectures}
-                checkInCount={checkIns.length}
-                loading={checkInsLoading}
-                onPress={() => (navigation as any).navigate("CheckInMapFull")}
-              />
-            ) : null
-          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -177,8 +143,8 @@ export function TripsScreen() {
             <View style={styles.emptyBox}>
               <Text style={styles.empty}>
                 {isGuest
-                  ? "还没有行程，点中间 + 号开始"
-                  : "还没有行程，点中间 + 号开始"}
+                  ? "还没有行程，点右下角 ··· 开始"
+                  : "还没有行程，点右下角 ··· 开始"}
               </Text>
             </View>
           }

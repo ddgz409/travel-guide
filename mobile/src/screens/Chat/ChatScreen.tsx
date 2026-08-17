@@ -37,7 +37,7 @@ type Msg = {
 
 type PlanAction = PlanNavigateAction;
 
-const WELCOME = `你好！我是「旅迹」AI 旅行助手 🌍
+const WELCOME = `你好！我是「知径」AI 旅行助手 🌍
 
 我可以帮你推荐目的地、景点美食、规划行程、回答签证天气等旅行问题。
 

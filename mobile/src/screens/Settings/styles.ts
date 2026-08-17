@@ -3,7 +3,21 @@ import { colors } from "../../theme";
 
 export const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, paddingBottom: 40 },
+  head: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  back: { fontSize: 16, color: colors.ink, fontWeight: "700", width: 48 },
+  headTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.ink,
+  },
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 24, fontWeight: "800", color: colors.ink },
   sub: { marginTop: 8, fontSize: 14, color: colors.muted, lineHeight: 20 },
