@@ -4,15 +4,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
   withSpring,
   withTiming,
+  runOnJS,
 } from "react-native-reanimated";
 import { colors, cardShadow } from "../theme";
 import { PlusMenu } from "./PlusMenu";
-import type { MainTab } from "../navigation/MainTabContext";
+import { useMainTab, type MainTab } from "../navigation/MainTabContext";
 
 type Props = {
   activeTab: MainTab;
@@ -27,12 +29,19 @@ const TABS: { id: MainTab; label: string }[] = [
 
 type TabLayout = { x: number; y: number; width: number; height: number };
 
-/** 底栏主体高度（不含安全区），给页面内容/悬浮按钮留空 */
-export const TAB_BAR_BODY = 72;
+/** 底栏一行高度（胶囊 / 加号按钮） */
+export const TAB_BAR_BODY = 52;
+
+/** 底栏总高度（含上下内边距与安全区），供抽屉/悬浮控件避让 */
+export function tabBarTotalHeight(bottomInset: number): number {
+  return 8 + TAB_BAR_BODY + Math.max(bottomInset, 12);
+}
 
 export function CustomTabBar({ activeTab, onTabChange }: Props) {
   const insets = useSafeAreaInsets();
+  const { tabBarReveal } = useMainTab();
   const [plusOpen, setPlusOpen] = useState(false);
+  const [interactive, setInteractive] = useState(true);
   const layouts = useRef<Partial<Record<MainTab, TabLayout>>>({});
 
   const blobX = useSharedValue(0);
@@ -94,11 +103,26 @@ export function CustomTabBar({ activeTab, onTabChange }: Props) {
     ],
   }));
 
+  useAnimatedReaction(
+    () => tabBarReveal?.value ?? 1,
+    (v) => {
+      runOnJS(setInteractive)(v > 0.2);
+    },
+  );
+
+  const hideStyle = useAnimatedStyle(() => {
+    const shown = tabBarReveal?.value ?? 1;
+    return {
+      opacity: shown,
+      transform: [{ translateY: (1 - shown) * 96 }],
+    };
+  });
+
   return (
     <>
-      <View
-        pointerEvents="box-none"
-        style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+      <Animated.View
+        pointerEvents={interactive ? "box-none" : "none"}
+        style={[styles.wrap, hideStyle, { paddingBottom: Math.max(insets.bottom, 12) }]}
       >
         <View style={styles.shell}>
           <Animated.View pointerEvents="none" style={[styles.blob, blobStyle]} />
@@ -120,7 +144,7 @@ export function CustomTabBar({ activeTab, onTabChange }: Props) {
           <View style={styles.plusH} />
           <View style={styles.plusV} />
         </Pressable>
-      </View>
+      </Animated.View>
       <PlusMenu visible={plusOpen} onClose={() => setPlusOpen(false)} />
     </>
   );

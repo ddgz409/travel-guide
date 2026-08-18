@@ -5,6 +5,7 @@ import { NavigationContainer, useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useSharedValue, withSpring } from "react-native-reanimated";
 import { AuthProvider, useAuth } from "./src/auth/AuthContext";
 import { maybePromptUpdateOnLaunch } from "./src/utils/appUpdate";
 import type { AppStackParamList } from "./src/navigation/types";
@@ -27,7 +28,7 @@ import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
 import { CustomTabBar } from "./src/components/CustomTabBar";
 import { MainTabContext, type MainTab } from "./src/navigation/MainTabContext";
 import { colors } from "./src/theme";
-import { SplashOverlay } from "./src/components/SplashOverlay";
+import { SplashOverlay, SPLASH_BG } from "./src/components/SplashOverlay";
 import {
   fadeCover,
   pushFlow,
@@ -70,14 +71,18 @@ const Stack = createNativeStackNavigator<AppStackParamList>();
 function MainScreen() {
   const [tab, setTab] = useState<MainTab>("Explore");
   const [exploreMounted, setExploreMounted] = useState(true);
+  const tabBarReveal = useSharedValue(1);
 
   function onTabChange(next: MainTab) {
     if (next === "Explore") setExploreMounted(true);
+    if (next !== "Explore") {
+      tabBarReveal.value = withSpring(1, { damping: 20, stiffness: 240 });
+    }
     setTab(next);
   }
 
   return (
-    <MainTabContext.Provider value={{ tab, setTab: onTabChange }}>
+    <MainTabContext.Provider value={{ tab, setTab: onTabChange, tabBarReveal }}>
       <View style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
           {tab === "Trips" ? <TripsScreen /> : null}
@@ -93,7 +98,14 @@ function MainScreen() {
         </View>
         <View
           pointerEvents="box-none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 100,
+            elevation: 100,
+          }}
         >
           <CustomTabBar activeTab={tab} onTabChange={onTabChange} />
         </View>
@@ -231,7 +243,7 @@ function Root() {
 
   if (splash) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#D7EBFC" }}>
+      <View style={{ flex: 1, backgroundColor: SPLASH_BG }}>
         <SplashOverlay ready={!loading} onFinished={() => setSplash(false)} />
       </View>
     );

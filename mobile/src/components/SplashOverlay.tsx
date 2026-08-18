@@ -9,7 +9,9 @@ import Animated, {
 
 const HOLD_MS = 2400;
 const FADE_MS = 480;
-const ART = require("../../assets/splash-screen.png");
+/** 与 splash-screen2 天空色一致，cover 裁切瞬间若露边也不显白 */
+export const SPLASH_BG = "#4D90BB";
+const ART = require("../../assets/splash-screen2.png");
 
 type Props = {
   ready: boolean;
@@ -53,7 +55,6 @@ export function SplashOverlay({ ready, onFinished }: Props) {
 
   const artStyle = useAnimatedStyle(() => ({
     opacity: shown.value,
-    transform: [{ scale: 1.02 + shown.value * 0.04 }],
   }));
 
   return (
@@ -70,16 +71,20 @@ export function SplashOverlay({ ready, onFinished }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#D7EBFC",
+    backgroundColor: SPLASH_BG,
+    overflow: "hidden",
   },
   stage: {
-    flex: 1,
-    backgroundColor: "#D7EBFC",
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: SPLASH_BG,
+    overflow: "hidden",
   },
   artWrap: {
     ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
   },
   art: {
+    ...StyleSheet.absoluteFillObject,
     width: "100%",
     height: "100%",
   },

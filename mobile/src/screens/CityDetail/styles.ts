@@ -100,14 +100,23 @@ export const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 30,
-    elevation: 30,
+    elevation: 24,
+    justifyContent: "flex-end",
   },
   bottomSheet: {
-    backgroundColor: "#fff",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 34, borderCurve: "continuous",
     borderTopRightRadius: 34, borderCurve: "continuous",
     overflow: "hidden",
-    ...cardShadow,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 6,
+  },
+  /** 与「我的」页同色，底栏胶囊浮在浅灰页面上 */
+  bottomSheetPage: {
+    backgroundColor: "#F4F5F7",
   },
   sheetDragZone: {
     paddingTop: 14,

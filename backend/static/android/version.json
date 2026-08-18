@@ -1,7 +1,7 @@
 {
-  "versionCode": 18,
-  "versionName": "2.2.3",
+  "versionCode": 19,
+  "versionName": "2.2.4",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.3：应用更名知径、开屏与图标、足迹天气卡、规划页高德实景图",
+  "notes": "2.2.4：探索页全屏地图抽屉、GPS定位纠偏、开屏与Tab悬浮、地图控件图标",
   "force": false
 }

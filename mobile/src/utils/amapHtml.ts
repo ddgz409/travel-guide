@@ -303,7 +303,7 @@ export function buildAmapHtml(opts: {
               map: map,
               position: pos,
               title: m.name,
-              offset: new AMap.Pixel(-16, -40),
+              anchor: 'bottom-center',
               content: div,
               zIndex: data.focusCenter ? 10 : 100 + i
             });

@@ -226,7 +226,7 @@ export function MeScreen() {
                 Platform.OS === "android" ? { fontFamily: "serif" } : null,
               ]}
             >
-              《还没有打卡过哦》
+              这里空空如也~
             </Text>
           )}
         </Pressable>
