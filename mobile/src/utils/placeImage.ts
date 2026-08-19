@@ -20,8 +20,10 @@ export function normalizeImageUrl(url: string): string {
 export function resolveImageUrl(url: string): string {
   const u = normalizeImageUrl(url);
   if (u.startsWith("/static/")) {
+    // 后端 /static 挂在根路径（无 /api/v1 前缀），需剥离 apiBase 的版本前缀
+    const origin = apiBase.replace(/\/api\/v\d+\/?$/, "");
     const encoded = encodeURI(u);
-    return `${apiBase}${encoded}`;
+    return `${origin}${encoded}`;
   }
   if (/autonavi\.com|\.amap\.com/i.test(u) && !u.includes("/destinations/img")) {
     return `${apiBase}/destinations/img?url=${encodeURIComponent(u)}`;

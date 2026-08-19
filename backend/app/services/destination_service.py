@@ -321,6 +321,17 @@ def get_place_images(
                 limit=max(limit, 6),
             )
             good_url = pick_best_image(raw)
+            # 未指定类型且未命中时，退一步用景点类型再搜一次，
+            # 否则部分 POI 关键词搜索拿不到照片（收藏夹地点多为景点）
+            if not good_url and poi_type is None:
+                raw = amap.get_poi_photos(
+                    poi_id=poi_id.strip() or None,
+                    keyword=name,
+                    city=city or None,
+                    poi_type=POI_TYPES["attraction"],
+                    limit=max(limit, 6),
+                )
+                good_url = pick_best_image(raw)
             if good_url:
                 source = "amap"
     except Exception:

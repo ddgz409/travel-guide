@@ -33,6 +33,7 @@ export function CollectionCard({ item, onPress }: Props) {
             <PlaceImage
               city={p.city}
               name={p.name}
+              category="spots"
               poiId={p.poi_id || undefined}
               style={styles.photoImg}
             />

@@ -62,8 +62,8 @@ export function SharedCollectionsScreen({ navigation }: Props) {
           <Text style={styles.back}>‹ 返回</Text>
         </Pressable>
         <Text style={styles.title}>大家的收藏夹</Text>
-        <Pressable onPress={openPublish} hitSlop={8}>
-          <Text style={styles.publishLink}>发布</Text>
+        <Pressable onPress={openPublish} hitSlop={8} style={styles.publishLink}>
+          <Text style={styles.publishLinkText}>＋ 发布</Text>
         </Pressable>
       </View>
 

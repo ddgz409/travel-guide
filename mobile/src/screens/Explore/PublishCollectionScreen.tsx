@@ -41,7 +41,6 @@ import {
   listFavoriteFolders,
   listFavoritePlaces,
 } from "../../utils/favoriteStore";
-import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { styles } from "./publishCollectionStyles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "PublishCollection">;
@@ -468,22 +467,12 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
         )}
       </Pressable>
 
-      <DraggableBottomSheet
-        bottomInset={sheetInset}
-        footer={
-          <Pressable
-            style={[styles.publishBtn, saving && styles.publishBtnDisabled]}
-            onPress={() => void publish()}
-            disabled={saving}
-          >
-            <Text style={styles.publishText}>
-              {saving ? "保存中…" : editId ? "保存修改" : "发布到探索页"}
-            </Text>
-          </Pressable>
-        }
-      >
+      <View style={[styles.staticSheet, { paddingBottom: sheetInset }]}>
+        <View style={styles.staticSheetHandle}>
+          <View style={styles.staticSheetHandleBar} />
+        </View>
         <KeyboardAvoidingView
-          style={{ flex: 1 }}
+          style={styles.staticSheetBody}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
         >
@@ -575,6 +564,7 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
                     <PlaceImage
                       city={p.city}
                       name={p.name}
+                      category="spots"
                       poiId={p.poi_id || undefined}
                       style={styles.placeThumbImg}
                     />
@@ -608,7 +598,16 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
           ))}
         </ScrollView>
         </KeyboardAvoidingView>
-      </DraggableBottomSheet>
+        <Pressable
+          style={[styles.publishBtn, saving && styles.publishBtnDisabled]}
+          onPress={() => void publish()}
+          disabled={saving}
+        >
+          <Text style={styles.publishText}>
+            {saving ? "保存中…" : editId ? "保存修改" : "发布到探索页"}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

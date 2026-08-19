@@ -138,6 +138,7 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
               <PlaceImage
                 city={p.city}
                 name={p.name}
+                category="spots"
                 poiId={p.poi_id || undefined}
                 style={styles.placeThumbImg}
               />
