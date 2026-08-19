@@ -27,7 +27,7 @@ export type AppStackParamList = {
   Login: { next?: { screen: "Share"; token: string } } | undefined;
   Register: { next?: { screen: "Share"; token: string } } | undefined;
   Settings: undefined;
-  Share: { token: string };
+  Share: { token?: string } | undefined;
   TravelSearch: undefined;
   PortalSelect: { from: string; to: string; mode: string };
   ModelManage: undefined;
@@ -42,4 +42,8 @@ export type AppStackParamList = {
   FootprintList: { kind: "country" | "city" | "place" };
   AddFootprint: undefined;
   Favorites: undefined;
+  CollectionDetail: { collectionId: string };
+  SharedCollections: undefined;
+  PublishCollection: { collectionId?: string } | undefined;
+  MySubscriptions: undefined;
 };

@@ -376,6 +376,7 @@ export function PoiDetailSheet({
                 itemWidth={screenW * 0.72}
                 itemStyle={styles.detailGalleryImg}
                 count={3}
+                saveable
               />
             </ScrollView>
 

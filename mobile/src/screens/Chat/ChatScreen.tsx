@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -18,14 +19,19 @@ import { colors } from "../../theme";
 import { useModelPicker } from "../../components/ModelPicker";
 import { getChatSearchSubtitle } from "../../utils/chatSearch";
 import {
-  detectPlanIntent,
   type PlanNavigateAction,
 } from "../../utils/chatIntent";
 import { submitTripGenerate } from "../../utils/submitTripGenerate";
+import { ChatFollowUpChoices } from "../../components/ChatFollowUpChoices";
+import { ChatDatePickerCard } from "../../components/ChatDatePickerCard";
 import { ApiError } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
 import { styles } from "./styles";
+import {
+  TripListSheet,
+  type AgentTripSummary,
+} from "../../components/TripListSheet";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Chat">;
 
@@ -33,6 +39,17 @@ type Msg = {
   role: "user" | "assistant";
   content: string;
   reasoning?: string;
+  widget?: {
+    kind: "choices";
+    style: "chips" | "select_list";
+    options: { label: string; send: string }[];
+    confirmLabel?: string;
+  } | {
+    kind: "date_picker";
+    destination?: string;
+    suggestDays: number;
+  };
+  widgetUsed?: boolean;
 };
 
 type PlanAction = PlanNavigateAction;
@@ -72,10 +89,63 @@ export function ChatScreen({ navigation, route }: Props) {
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_H);
   const [loading, setLoading] = useState(false);
   const [smartPlanMode, setSmartPlanMode] = useState(false);
+  const [tripListSheet, setTripListSheet] = useState<{
+    trips: AgentTripSummary[];
+    message?: string | null;
+  } | null>(null);
   const smartPlanBackRef = useRef<(() => boolean) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
   const initialSentRef = useRef(false);
+  // Agent 确认弹窗产生的结果消息（删除成功/取消等），流式更新时会被合并保留
+  const agentNoticesRef = useRef<Msg[]>([]);
+
+  const pushAgentNotice = useCallback((content: string) => {
+    const notice: Msg = { role: "assistant", content };
+    agentNoticesRef.current.push(notice);
+    setMsgs((prev) => [...prev, notice]);
+    scrollToBottom();
+  }, []);
+
+  const showTripList = useCallback(
+    (trips: AgentTripSummary[], message?: string | null) => {
+      setTripListSheet({ trips, message });
+    },
+    [],
+  );
+
+  const showDeleteConfirm = useCallback(
+    (p: { trip_id: string; title: string; destination?: string; start_date?: string; end_date?: string }) => {
+      const meta = [p.destination, p.start_date && p.end_date ? `${p.start_date} → ${p.end_date}` : null]
+        .filter(Boolean)
+        .join(" · ");
+      Alert.alert(
+        "确认删除行程",
+        `确定删除「${p.title}」吗？${meta ? `\n${meta}` : ""}\n\n此操作不可恢复。`,
+        [
+          {
+            text: "取消",
+            style: "cancel",
+            onPress: () => pushAgentNotice("🚫 已取消删除。"),
+          },
+          {
+            text: "删除",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await api.trips.remove(p.trip_id);
+                pushAgentNotice(`✅ 已删除行程「${p.title}」。`);
+              } catch (e) {
+                const msg = e instanceof ApiError ? e.message : "删除失败，请重试";
+                pushAgentNotice(`❌ ${msg}`);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [pushAgentNotice],
+  );
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -128,38 +198,23 @@ export function ChatScreen({ navigation, route }: Props) {
     ],
   );
 
-  function handlePlanIntent(content: string, updated: Msg[]): boolean {
-    if (tripId) return false;
-    const action = detectPlanIntent(content);
-    if (!action) return false;
-    setMsgs([
-      ...updated,
-      {
-        role: "assistant",
-        content: `好的，我来帮你规划 **${action.destination}** 的行程，正在生成中…\n\n（${action.start_date} → ${action.end_date}）`,
-      },
-    ]);
-    setLoading(false);
-    void startPlanFromAction(action);
-    return true;
-  }
-
-  async function send(text?: string) {
+  async function send(text?: string, baseMsgs?: Msg[]) {
     const content = (text || input).trim();
     if (!content || loading) return;
 
     setInput("");
     setInputHeight(INPUT_MIN_H);
     const userMsg: Msg = { role: "user", content };
-    const updated = [...msgs, userMsg];
+    const updated = [...(baseMsgs ?? msgs), userMsg];
     setMsgs(updated);
     setLoading(true);
     scrollToBottom();
 
-    if (handlePlanIntent(content, updated)) return;
+    // 规划走服务端逐步追问，不在客户端直接跳转生成页
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    agentNoticesRef.current = [];
 
     try {
       const llmOverride: {
@@ -206,11 +261,74 @@ export function ChatScreen({ navigation, route }: Props) {
           }
           try {
             const parsed = JSON.parse(data);
-            if (parsed.type === "action" && parsed.payload?.action === "navigate_generate") {
-              if (tripId) break;
-              setLoading(false);
-              void startPlanFromAction(parsed.payload as PlanAction);
-              return;
+            if (parsed.type === "action") {
+              const actionPayload = parsed.payload;
+              if (actionPayload?.action === "navigate_generate") {
+                if (tripId) break;
+                setLoading(false);
+                void startPlanFromAction(actionPayload as PlanAction);
+                return;
+              }
+              if (actionPayload?.action === "open_trip") {
+                setLoading(false);
+                navigation.navigate("TripDetail", { tripId: actionPayload.trip_id });
+                return;
+              }
+              if (actionPayload?.action === "open_share" && actionPayload.token) {
+                setLoading(false);
+                navigation.navigate("Share", { token: actionPayload.token });
+                return;
+              }
+              if (actionPayload?.action === "show_trip_list") {
+                showTripList(
+                  (actionPayload.trips as AgentTripSummary[]) || [],
+                  actionPayload.message,
+                );
+                continue;
+              }
+              if (actionPayload?.action === "show_choices") {
+                const last = msgsWithAI[msgsWithAI.length - 1];
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...last,
+                  widget: {
+                    kind: "choices",
+                    style: actionPayload.style === "select_list" ? "select_list" : "chips",
+                    options: actionPayload.options || [],
+                    confirmLabel: actionPayload.confirm_label,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                continue;
+              }
+              if (actionPayload?.action === "show_date_picker") {
+                const last = msgsWithAI[msgsWithAI.length - 1];
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...last,
+                  widget: {
+                    kind: "date_picker",
+                    destination: actionPayload.destination,
+                    suggestDays: actionPayload.suggest_days || 3,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                continue;
+              }
+            } else if (parsed.type === "tool_result" && parsed.tool === "list_trips") {
+              try {
+                const data = JSON.parse(parsed.result);
+                if (Array.isArray(data?.trips)) {
+                  showTripList(data.trips, data.message);
+                }
+              } catch {
+                /* ignore */
+              }
+              continue;
+            } else if (parsed.type === "confirmation_required") {
+              const p = parsed.payload;
+              if (p?.tool === "delete_trip" && p.trip_id) {
+                showDeleteConfirm(p);
+              }
+              continue;
             } else if (parsed.type === "reasoning") {
               aiReasoning += parsed.content;
             } else if (parsed.type === "content") {
@@ -223,7 +341,7 @@ export function ChatScreen({ navigation, route }: Props) {
               content: aiContent,
               reasoning: aiReasoning || undefined,
             };
-            setMsgs([...msgsWithAI]);
+            setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
           } catch {
             /* skip non-JSON */
           }
@@ -243,6 +361,8 @@ export function ChatScreen({ navigation, route }: Props) {
     setInput("");
     setLoading(false);
     initialSentRef.current = false;
+    agentNoticesRef.current = [];
+    setTripListSheet(null);
   }, [route.params?.chatSessionId, route.params?.tripId]);
 
   useEffect(() => {
@@ -287,6 +407,8 @@ export function ChatScreen({ navigation, route }: Props) {
 
   function clear() {
     setMsgs([]);
+    agentNoticesRef.current = [];
+    setTripListSheet(null);
   }
 
   const showWelcome = msgs.length === 0;
@@ -369,8 +491,16 @@ export function ChatScreen({ navigation, route }: Props) {
           style={styles.list}
           contentContainerStyle={{ paddingBottom: 16 }}
           onContentSizeChange={scrollToBottom}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isUser = item.role === "user";
+            const widgetDisabled = loading || !!item.widgetUsed;
+            const markWidgetAndSend = (sendText: string) => {
+              const marked = msgs.map((m, i) =>
+                i === index ? { ...m, widgetUsed: true } : m,
+              );
+              setMsgs(marked);
+              void send(sendText, marked);
+            };
             return (
               <View style={[styles.msgRow, isUser && styles.msgUserRow]}>
                 <View
@@ -392,6 +522,25 @@ export function ChatScreen({ navigation, route }: Props) {
                   <Text style={isUser ? styles.msgUserText : styles.msgAIText}>
                     {item.content}
                   </Text>
+                  {!isUser && item.widget && !item.widgetUsed ? (
+                    item.widget.kind === "choices" ? (
+                      <ChatFollowUpChoices
+                        style={item.widget.style}
+                        options={item.widget.options}
+                        confirmLabel={item.widget.confirmLabel}
+                        disabled={widgetDisabled}
+                        onSelect={markWidgetAndSend}
+                      />
+                    ) : (
+                      <ChatDatePickerCard
+                        destination={item.widget.destination}
+                        suggestDays={item.widget.suggestDays}
+                        disabled={widgetDisabled}
+                        onConfirm={markWidgetAndSend}
+                        onSkip={markWidgetAndSend}
+                      />
+                    )
+                  ) : null}
                 </View>
               </View>
             );
@@ -458,6 +607,14 @@ export function ChatScreen({ navigation, route }: Props) {
       ) : null}
 
       {modelModal}
+
+      <TripListSheet
+        visible={tripListSheet != null}
+        trips={tripListSheet?.trips ?? []}
+        message={tripListSheet?.message}
+        onClose={() => setTripListSheet(null)}
+        onSelect={(tripId) => navigation.navigate("TripDetail", { tripId })}
+      />
     </KeyboardAvoidingView>
   );
 }

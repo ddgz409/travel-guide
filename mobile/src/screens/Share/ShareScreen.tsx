@@ -17,12 +17,13 @@ import { colors } from "../../theme";
 import { PressScale } from "../../utils/motion";
 import type { AppStackParamList } from "../../navigation/types";
 import { SLOT_LABEL, TYPE_LABEL } from "../TripDetail/constants";
+import { ShareLinkInput } from "./ShareLinkInput";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Share">;
 
 export function ShareScreen({ navigation, route }: Props) {
-  const { token } = route.params;
+  const token = route.params?.token;
   const { user, loading: authLoading } = useAuth();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export function ShareScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    if (!token) return;
     try {
       const t = await api.trips.getShared(token);
       setTrip(t);
@@ -40,8 +42,13 @@ export function ShareScreen({ navigation, route }: Props) {
   }, [token]);
 
   useEffect(() => {
+    if (!token) {
+      setTrip(null);
+      setError(null);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [token, load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -82,11 +89,15 @@ export function ShareScreen({ navigation, route }: Props) {
     );
   }
 
+  if (!token) {
+    return (
+      <ShareLinkInput navigation={navigation} />
+    );
+  }
+
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error}</Text>
-      </View>
+      <ShareLinkInput navigation={navigation} error={error} initialValue={token} />
     );
   }
   if (!trip) {

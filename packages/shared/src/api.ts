@@ -23,6 +23,11 @@ import type {
   TripListItem,
   TripPreferences,
   User,
+  CollectionPlace,
+  CollectionSummary,
+  CollectionDetail,
+  CollectionListResponse,
+  CollectionCreatePayload,
 } from "./types";
 
 export class ApiError extends Error {
@@ -389,6 +394,31 @@ export function createApiClient(opts: CreateApiClientOptions) {
             timeoutMs: 20000,
           },
         ),
+    },
+    collections: {
+      list: (limit = 20, offset = 0) =>
+        request<CollectionListResponse>(
+          `/collections?limit=${limit}&offset=${offset}`,
+        ),
+      get: (id: string) => request<CollectionDetail>(`/collections/${id}`),
+      mine: () => request<CollectionListResponse>("/collections/mine"),
+      subscribed: () => request<CollectionListResponse>("/collections/subscribed"),
+      create: (payload: CollectionCreatePayload) =>
+        request<CollectionDetail>("/collections", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      update: (id: string, payload: CollectionCreatePayload) =>
+        request<CollectionDetail>(`/collections/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }),
+      remove: (id: string) =>
+        request<void>(`/collections/${id}`, { method: "DELETE" }),
+      subscribe: (id: string) =>
+        request<void>(`/collections/${id}/subscribe`, { method: "POST" }),
+      unsubscribe: (id: string) =>
+        request<void>(`/collections/${id}/subscribe`, { method: "DELETE" }),
     },
   };
 }

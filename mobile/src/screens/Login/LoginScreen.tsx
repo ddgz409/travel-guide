@@ -13,6 +13,7 @@ import { formatAuthError, useAuth } from "../../auth/AuthContext";
 import { FadeSlideIn, PressScale } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
+import { leaveLoginScreen, resetToMain } from "../../navigation/authNavigation";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Login">;
@@ -38,7 +39,7 @@ export function LoginScreen({ navigation, route }: Props) {
       if (next?.screen === "Share") {
         navigation.replace("Share", { token: next.token });
       } else {
-        navigation.popToTop();
+        resetToMain(navigation);
       }
     } catch (e) {
       setError(formatAuthError(e));
@@ -52,7 +53,7 @@ export function LoginScreen({ navigation, route }: Props) {
     setError(null);
     try {
       await enterGuest();
-      navigation.popToTop();
+      resetToMain(navigation);
     } catch (e) {
       setError(formatAuthError(e));
     } finally {
@@ -66,7 +67,7 @@ export function LoginScreen({ navigation, route }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <FadeSlideIn delay={0}>
-        <PressScale onPress={() => navigation.goBack()} style={styles.back}>
+        <PressScale onPress={() => leaveLoginScreen(navigation)} style={styles.back}>
           <Text style={styles.backText}>← 返回</Text>
         </PressScale>
       </FadeSlideIn>

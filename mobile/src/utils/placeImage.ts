@@ -19,6 +19,10 @@ export function normalizeImageUrl(url: string): string {
 /** 高德 CDN 走自家后端代理，避免 App 直连失败 */
 export function resolveImageUrl(url: string): string {
   const u = normalizeImageUrl(url);
+  if (u.startsWith("/static/")) {
+    const encoded = encodeURI(u);
+    return `${apiBase}${encoded}`;
+  }
   if (/autonavi\.com|\.amap\.com/i.test(u) && !u.includes("/destinations/img")) {
     return `${apiBase}/destinations/img?url=${encodeURIComponent(u)}`;
   }

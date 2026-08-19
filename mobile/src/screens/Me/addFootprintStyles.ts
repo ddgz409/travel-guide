@@ -128,7 +128,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 18,
-    backgroundColor: "#F4F5F7",
+    backgroundColor: colors.bgSurface,
     paddingHorizontal: 12,
     justifyContent: "center",
   },
@@ -148,7 +148,7 @@ export const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   chip: {
-    backgroundColor: "#F4F5F7",
+    backgroundColor: colors.bgSurface,
     borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 8,

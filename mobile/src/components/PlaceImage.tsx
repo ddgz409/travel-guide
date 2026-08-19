@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   type ImageSourcePropType,
   type ImageStyle,
+  Pressable,
+  StyleSheet,
+  Text,
   type StyleProp,
   View,
   type ViewStyle,
 } from "react-native";
+import { saveRemoteImageToLibrary } from "../utils/saveImage";
 import { colors } from "../theme";
 import {
   fetchPlaceImage,
@@ -133,18 +138,16 @@ export function PlaceImage({
   );
 }
 
-/** 探索页热门城市卡片：优先高德代表景点封面，失败回退本地图 */
+/** 探索页热门城市卡片：全部走后端 API 拉取高德实景图，不再用本地 AI 图 */
 export function CityCoverImage({
   city,
   landmark,
-  fallback,
   uri: presetUri,
   style,
   resizeMode = "cover",
 }: {
   city: string;
   landmark: string;
-  fallback: ImageSourcePropType;
   uri?: string | null;
   style?: StyleProp<ImageStyle>;
   resizeMode?: PlaceImageProps["resizeMode"];
@@ -172,17 +175,12 @@ export function CityCoverImage({
 
   return (
     <View style={style}>
-      <Image
-        source={fallback}
-        style={{ width: "100%", height: "100%" }}
-        resizeMode={resizeMode}
-      />
       {uri ? (
         <RemoteImage
           uri={uri}
           style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}
           resizeMode={resizeMode}
-          fallbackSource={fallback}
+          fallbackSource={undefined}
         />
       ) : loading ? (
         <View
@@ -199,7 +197,18 @@ export function CityCoverImage({
         >
           <ActivityIndicator color={colors.brand} size="small" />
         </View>
-      ) : null}
+      ) : (
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.brandSoft,
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -213,7 +222,36 @@ type PlaceGalleryProps = {
   itemWidth: number;
   itemStyle?: StyleProp<ImageStyle>;
   count?: number;
+  /** 每张图右下角显示「保存」按钮 */
+  saveable?: boolean;
 };
+
+function SaveImageButton({ uri }: { uri: string }) {
+  const [busy, setBusy] = useState(false);
+  const onSave = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await saveRemoteImageToLibrary(uri);
+      Alert.alert("已保存", "图片已保存到相册");
+    } catch (e) {
+      Alert.alert("保存失败", e instanceof Error ? e.message : "请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }, [uri, busy]);
+
+  return (
+    <Pressable
+      style={[galleryStyles.saveBtn, busy && galleryStyles.saveBtnDisabled]}
+      onPress={() => void onSave()}
+      disabled={busy}
+      hitSlop={6}
+    >
+      <Text style={galleryStyles.saveBtnText}>{busy ? "…" : "保存"}</Text>
+    </Pressable>
+  );
+}
 
 export function PlaceGallery({
   city,
@@ -224,6 +262,7 @@ export function PlaceGallery({
   itemWidth,
   itemStyle,
   count = 3,
+  saveable = false,
 }: PlaceGalleryProps) {
   const initial = images?.length
     ? images.slice(0, count)
@@ -298,13 +337,34 @@ export function PlaceGallery({
   return (
     <>
       {uris.map((uri, i) => (
-        <RemoteImage
+        <View
           key={`${uri}-${i}`}
-          uri={uri}
-          style={[itemStyle, { width: itemWidth }]}
-          resizeMode="cover"
-        />
+          style={[galleryStyles.itemWrap, { width: itemWidth }]}
+        >
+          <RemoteImage
+            uri={uri}
+            style={[itemStyle, { width: itemWidth }]}
+            resizeMode="cover"
+          />
+          {saveable ? <SaveImageButton uri={uri} /> : null}
+        </View>
       ))}
     </>
   );
 }
+
+const galleryStyles = StyleSheet.create({
+  itemWrap: { position: "relative" },
+  saveBtn: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 14,
+    borderCurve: "continuous",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+});

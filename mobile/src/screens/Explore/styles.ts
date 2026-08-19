@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native";
 import { colors, cardShadow } from "../../theme";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#eef2f7" },
+  root: { flex: 1, backgroundColor: "transparent" },
   map: { ...StyleSheet.absoluteFillObject },
 
   topOverlay: {
@@ -289,10 +289,50 @@ export const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.35)",
   },
   destCover: { width: "100%", height: "100%" },
+  collectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    gap: 8,
+  },
+  sharePlanBtn: {
+    flexShrink: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderCurve: "continuous",
+    backgroundColor: colors.brandSoft,
+    borderWidth: 1,
+    borderColor: colors.brand,
+  },
+  sharePlanText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.brandHot,
+  },
   mapLoading: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#eef2f7",
+    backgroundColor: colors.bg,
+    zIndex: 5,
   },
+  mapHidden: { opacity: 0 },
+  mapErrorText: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: "center",
+    paddingHorizontal: 32,
+    lineHeight: 20,
+  },
+  mapRetryBtn: {
+    marginTop: 14,
+    backgroundColor: colors.brand,
+    borderRadius: 22,
+    borderCurve: "continuous",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  mapRetryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });

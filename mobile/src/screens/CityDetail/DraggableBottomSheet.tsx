@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from "react";
 import { View, useWindowDimensions } from "react-native";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   type SharedValue,
   useAnimatedStyle,
@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { styles } from "./styles";
+import { WaterRippleBackground } from "../../components/WaterRippleBackground";
 
 const SNAP_FRACTIONS = [0.38, 0.52, 0.78] as const;
 /** 全屏吸附时距顶部的留白（逻辑像素） */
@@ -129,7 +130,7 @@ export function DraggableBottomSheet({
   }));
 
   return (
-    <GestureHandlerRootView style={styles.bottomSheetRoot} pointerEvents="box-none">
+    <View style={styles.bottomSheetRoot} pointerEvents="box-none">
       <Animated.View
         style={[
           styles.bottomSheet,
@@ -138,6 +139,11 @@ export function DraggableBottomSheet({
           { paddingBottom: bottomInset },
         ]}
       >
+        {surface === "page" ? (
+          <View style={styles.sheetRippleLayer} pointerEvents="none">
+            <WaterRippleBackground />
+          </View>
+        ) : null}
         <GestureDetector gesture={pan}>
           <View
             style={styles.sheetDragZone}
@@ -149,6 +155,6 @@ export function DraggableBottomSheet({
         <View style={styles.sheetBody}>{children}</View>
         {footer ? <View style={styles.sheetFooter}>{footer}</View> : null}
       </Animated.View>
-    </GestureHandlerRootView>
+    </View>
   );
 }

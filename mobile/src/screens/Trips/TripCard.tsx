@@ -1,14 +1,13 @@
 import React from "react";
 import {
-  Image,
-  ImageSourcePropType,
   Text,
   View,
 } from "react-native";
 import type { TripListItem } from "@travel-guide/shared";
 import { PressScale } from "../../utils/motion";
 import { pastels } from "../../theme";
-import { coverFor } from "../../data/covers";
+import { CityCoverImage } from "../../components/PlaceImage";
+import { landmarksFor } from "../../data/landmarks";
 import {
   fmtMd,
   tripDaysNights,
@@ -37,6 +36,7 @@ export function TripCard({
   const { days, nights } = tripDaysNights(item.start_date, item.end_date);
   const travelers = Math.max(1, item.travelers || 1);
   const initial = (username || item.destination || "旅").slice(0, 1);
+  const landmark = landmarksFor(item.destination)[0] || item.destination;
 
   return (
     <PressScale
@@ -98,8 +98,9 @@ export function TripCard({
         </View>
 
         <View style={styles.coverWrap} pointerEvents="none">
-          <Image
-            source={coverFor(item.destination)}
+          <CityCoverImage
+            city={item.destination}
+            landmark={landmark}
             style={styles.cover}
             resizeMode="cover"
           />

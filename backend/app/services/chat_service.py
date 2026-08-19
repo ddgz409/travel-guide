@@ -21,8 +21,21 @@ import httpx
 
 from app.core.config import get_settings
 from app.services.llm_client import DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_PRESETS
-from app.services.chat_intent import detect_plan_intent
 from app.services.web_search import format_web_snippets, search_web_snippets
+from app.services.planning_tools import (
+    PLANNING_SYSTEM_SUFFIX,
+    PLANNING_TOOLS,
+    PLANNING_TOOL_NAMES,
+    execute_planning_tool,
+    is_planning_conversation,
+)
+from app.services.agent_tools import (
+    AGENT_TOOLS,
+    AGENT_SYSTEM_SUFFIX,
+    CONFIRM_REQUIRED,
+    execute_tool,
+    preview_tool,
+)
 
 if TYPE_CHECKING:
     from app.models import User
@@ -88,17 +101,24 @@ def build_system_prompt(
     mode: WebSearchMode,
     bing_context: str = "",
     trip_context: str = "",
+    agent_enabled: bool = False,
+    planning_enabled: bool = False,
 ) -> str:
     parts = [SYSTEM_PROMPT_BASE]
     parts.append(f"\n你当前使用的模型是 {model}（由 {provider} 提供）。")
     parts.append(
-        "\n当用户明确要求「规划/安排/生成」完整旅游行程时，客户端会自动跳转专属定制页；"
-        "你可用一句话确认并提示「正在打开行程规划」。"
-        "若只是咨询建议、穿衣搭配、景点介绍等，则正常对话回答。"
+        "\n当用户明确要求规划完整旅游行程时，请用逐步追问收集细节（目的地、天数、日期等），"
+        "信息足够后再生成。若只是咨询建议、穿衣搭配、景点介绍等，则正常对话回答。"
     )
 
     if trip_context:
         parts.append(f"\n---\n用户当前关联的行程信息：\n{trip_context}\n---")
+
+    if planning_enabled:
+        parts.append(PLANNING_SYSTEM_SUFFIX)
+
+    if agent_enabled:
+        parts.append(AGENT_SYSTEM_SUFFIX)
 
     if mode == WebSearchMode.ZHIPU_NATIVE:
         parts.append(
@@ -234,6 +254,42 @@ def resolve_server_llm_config(
     return config
 
 
+def _parse_tool_calls(chunk: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """从 streaming chunk 提取 tool_calls（兼容智谱/OpenAI 格式）。"""
+    choice = chunk.get("choices", [{}])[0]
+    delta = choice.get("delta", {})
+    tc = delta.get("tool_calls")
+    if tc:
+        return tc
+    # 有些模型在非 stream chunk 中直接给 message.tool_calls
+    msg = choice.get("message", {})
+    return msg.get("tool_calls")
+
+
+def _run_llm_stream(
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+) -> Generator[dict[str, Any], None, None]:
+    """单次 LLM 流式请求，yield 原始 chunk。"""
+    with httpx.Client(timeout=90.0) as client:
+        with client.stream("POST", url, headers=headers, json=body) as resp:
+            if resp.status_code >= 400:
+                yield {"type": "error", "content": f"❌ 请求失败 (HTTP {resp.status_code})"}
+                return
+            for raw_line in resp.iter_lines():
+                line = raw_line.strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError:
+                    pass
+
+
 def chat_stream(
     messages: list[dict[str, str]],
     provider: str,
@@ -242,23 +298,25 @@ def chat_stream(
     base_url: str,
     llm_override: dict | None = None,
     trip_context: str = "",
-) -> Generator[dict[str, str], None, None]:
-    """流式聊天，逐块 yield {"type": "reasoning"|"content"|"error"|"action", ...}。"""
+    db: Any = None,
+    user: "User | None" = None,
+) -> Generator[dict[str, Any], None, None]:
+    """流式聊天，逐块 yield {"type": "reasoning"|"content"|"error"|"action"|"tool_call"|"tool_result", ...}。"""
     if not api_key:
         yield {"type": "error", "content": "⚠️ 未配置 API Key，请在「设置」中填写。"}
         return
 
     user_text = _last_user_message(messages)
-    plan_action = detect_plan_intent(user_text)
-    if plan_action:
-        yield {"type": "action", "payload": plan_action}
-        dest = plan_action.get("destination", "")
-        yield {
-            "type": "content",
-            "content": f"好的，我来帮你规划 **{dest}** 的行程，正在打开专属定制页面…\n\n"
-            f"（日期：{plan_action.get('start_date')} → {plan_action.get('end_date')}）",
-        }
-        return
+    # 规划改为 LLM 逐步追问，不再在这里直接跳转生成页
+    agent_enabled = user is not None and db is not None
+    planning_enabled = not trip_context and (
+        is_planning_conversation(user_text)
+        or any(
+            is_planning_conversation(m.get("content", ""))
+            for m in messages
+            if m.get("role") == "user"
+        )
+    )
 
     mode = resolve_web_search_mode(provider, llm_override)
     bing_context = ""
@@ -282,6 +340,8 @@ def chat_stream(
         mode=mode,
         bing_context=bing_context,
         trip_context=trip_context,
+        agent_enabled=agent_enabled,
+        planning_enabled=planning_enabled,
     )
     system_msg = {"role": "system", "content": sys_content}
     recent = messages[-MAX_CONTEXT_MESSAGES:]
@@ -292,56 +352,231 @@ def chat_stream(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": payload_messages,
-        "temperature": 0.7,
-        "max_tokens": 2048,
-        "stream": True,
-    }
-
-    if mode == WebSearchMode.ZHIPU_NATIVE:
-        body["tools"] = [{
-            "type": "web_search",
-            "web_search": {"enable": True, "search_result": False},
-        }]
 
     logger.info(
-        "Chat stream provider=%s model=%s web_search=%s base=%s",
+        "Chat stream provider=%s model=%s web_search=%s agent=%s planning=%s base=%s",
         provider,
         model,
         mode.value,
+        agent_enabled,
+        planning_enabled,
         base_url,
     )
 
-    try:
-        with httpx.Client(timeout=90.0) as client:
-            with client.stream("POST", url, headers=headers, json=body) as resp:
-                if resp.status_code >= 400:
-                    yield {"type": "error", "content": f"❌ 请求失败 (HTTP {resp.status_code})"}
+    # Agent 循环：LLM 可能多次调用工具
+    max_rounds = 5
+    for _round in range(max_rounds):
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": payload_messages,
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "stream": True,
+        }
+
+        fn_tools: list[dict[str, Any]] = []
+        if planning_enabled:
+            fn_tools.extend(PLANNING_TOOLS)
+        if agent_enabled:
+            fn_tools.extend(AGENT_TOOLS)
+
+        if mode == WebSearchMode.ZHIPU_NATIVE:
+            body["tools"] = [{
+                "type": "web_search",
+                "web_search": {"enable": True, "search_result": False},
+            }]
+            if fn_tools:
+                body["tools"] = body["tools"] + fn_tools
+        elif fn_tools:
+            body["tools"] = fn_tools
+
+        try:
+            # 收集本次流式响应的 tool_calls 和 content
+            tool_calls_acc: dict[int, dict[str, Any]] = {}
+            content_acc = ""
+            finish_reason = ""
+
+            for chunk in _run_llm_stream(url, headers, body):
+                if chunk.get("type") == "error":
+                    yield chunk
                     return
 
-                for raw_line in resp.iter_lines():
-                    line = raw_line.strip()
-                    if not line or not line.startswith("data: "):
+                choice = chunk.get("choices", [{}])[0]
+                delta = choice.get("delta", {})
+                finish_reason = choice.get("finish_reason") or finish_reason
+
+                # tool_calls 流式累加
+                tc = delta.get("tool_calls")
+                if tc:
+                    for item in tc:
+                        idx = item.get("index", 0)
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                        if item.get("id"):
+                            tool_calls_acc[idx]["id"] = item["id"]
+                        fn = item.get("function", {})
+                        if fn.get("name"):
+                            tool_calls_acc[idx]["function"]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
+
+                reasoning = delta.get("reasoning_content", "")
+                if reasoning:
+                    yield {"type": "reasoning", "content": reasoning}
+                content = delta.get("content", "")
+                if content:
+                    content_acc += content
+                    yield {"type": "content", "content": content}
+
+            # 没有 tool_calls → 对话结束
+            if not tool_calls_acc:
+                return
+
+            # 有 tool_calls → 执行工具，把结果追加到 messages，继续下一轮
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": content_acc or None}
+            assistant_msg["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+            payload_messages.append(assistant_msg)
+
+            for idx in sorted(tool_calls_acc):
+                tc = tool_calls_acc[idx]
+                fn_name = tc["function"]["name"]
+                fn_args_raw = tc["function"]["arguments"]
+                try:
+                    fn_args = json.loads(fn_args_raw) if fn_args_raw else {}
+                except json.JSONDecodeError:
+                    fn_args = {}
+
+                logger.info("Agent tool call: %s(%s)", fn_name, fn_args)
+                yield {"type": "tool_call", "tool": fn_name, "args": fn_args}
+
+                if fn_name in PLANNING_TOOL_NAMES:
+                    result = execute_planning_tool(fn_name, fn_args)
+                    if result.get("ok"):
+                        info = result.get("result") or {}
+                        if fn_name == "ask_user_choice":
+                            yield {
+                                "type": "action",
+                                "payload": {
+                                    "action": "show_choices",
+                                    "style": info.get("style", "chips"),
+                                    "options": info.get("options") or [],
+                                    "confirm_label": info.get("confirm_label", "确认"),
+                                },
+                            }
+                        elif fn_name == "ask_user_date":
+                            yield {
+                                "type": "action",
+                                "payload": {
+                                    "action": "show_date_picker",
+                                    "destination": info.get("destination") or "",
+                                    "suggest_days": info.get("suggest_days") or 3,
+                                },
+                            }
+                        elif fn_name == "finalize_plan":
+                            yield {"type": "action", "payload": info}
+                    if not result.get("ok"):
+                        tool_output = f"错误：{result.get('error', '未知错误')}"
+                    else:
+                        tool_output = json.dumps(
+                            result["result"], ensure_ascii=False, default=str
+                        )
+                    yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
+                    payload_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tool_output,
+                    })
+                    continue
+
+                # 危险操作：不执行，发确认事件让前端弹窗，结果由前端走 REST 完成
+                if fn_name in CONFIRM_REQUIRED:
+                    preview = preview_tool(fn_name, fn_args, db, user)
+                    if preview.get("ok"):
+                        info = preview["result"]
+                        yield {
+                            "type": "confirmation_required",
+                            "payload": {"tool": fn_name, **info},
+                        }
+                        tool_output = json.dumps(
+                            {
+                                "pending_confirmation": True,
+                                "message": f"已向用户弹出删除确认窗口（行程：{info['title']}），等待用户点击确认或取消。请简短告知用户查看弹窗。",
+                            },
+                            ensure_ascii=False,
+                        )
+                        yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
+                        payload_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": tool_output,
+                        })
                         continue
-                    data = line[6:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        reasoning = delta.get("reasoning_content", "")
-                        if reasoning:
-                            yield {"type": "reasoning", "content": reasoning}
-                        content = delta.get("content", "")
-                        if content:
-                            yield {"type": "content", "content": content}
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        pass
-    except httpx.HTTPError as e:
-        logger.exception("Chat stream HTTP error")
-        yield {"type": "error", "content": f"❌ 网络错误：{e}"}
-    except Exception as e:
-        logger.exception("Chat stream error")
-        yield {"type": "error", "content": f"❌ 未知错误：{e}"}
+                    result = preview
+                    tool_output = f"错误：{preview.get('error', '未知错误')}"
+                    yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
+                    payload_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tool_output,
+                    })
+                    continue
+
+                # open_trip / open_shared_trip 是纯前端动作，直接发 action 事件
+                if fn_name in ("open_trip", "open_shared_trip"):
+                    result = execute_tool(fn_name, fn_args, db, user)
+                    if result.get("ok") and result.get("result", {}).get("navigate"):
+                        if fn_name == "open_trip":
+                            yield {
+                                "type": "action",
+                                "payload": {
+                                    "action": "open_trip",
+                                    "trip_id": result["result"]["trip_id"],
+                                    "title": result["result"]["title"],
+                                },
+                            }
+                        else:
+                            yield {
+                                "type": "action",
+                                "payload": {
+                                    "action": "open_share",
+                                    "token": result["result"]["token"],
+                                    "title": result["result"]["title"],
+                                },
+                            }
+                else:
+                    result = execute_tool(fn_name, fn_args, db, user)
+
+                if not result.get("ok"):
+                    tool_output = f"错误：{result.get('error', '未知错误')}"
+                else:
+                    tool_output = json.dumps(result["result"], ensure_ascii=False, default=str)
+                    if fn_name == "list_trips":
+                        info = result.get("result") or {}
+                        yield {
+                            "type": "action",
+                            "payload": {
+                                "action": "show_trip_list",
+                                "trips": info.get("trips") or [],
+                                "message": info.get("message"),
+                            },
+                        }
+
+                yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
+
+                payload_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_output,
+                })
+
+        except httpx.HTTPError as e:
+            logger.exception("Chat stream HTTP error")
+            yield {"type": "error", "content": f"❌ 网络错误：{e}"}
+            return
+        except Exception as e:
+            logger.exception("Chat stream error")
+            yield {"type": "error", "content": f"❌ 未知错误：{e}"}
+            return
+
+    # 超过最大轮次
+    yield {"type": "content", "content": "\n\n（操作步骤较多，如需继续请告诉我）"}

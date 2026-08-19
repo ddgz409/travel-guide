@@ -21,16 +21,34 @@ import {
   type LocationConsent,
 } from "../../utils/locationPrefs";
 import { FadeSlideIn } from "../../utils/motion";
+import { useAuth } from "../../auth/AuthContext";
 import type { AppStackParamList } from "../../navigation/types";
+import { resetToLoginAfterLogout } from "../../navigation/authNavigation";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Settings">;
 
 export function SettingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { user, isGuest, logout } = useAuth();
   const [locationConsent, setLocationConsent] =
     useState<LocationConsent>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+  function handleLogout() {
+    Alert.alert("退出登录", "确定退出当前账号吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "退出",
+        style: "destructive",
+        onPress: () => {
+          void logout().then(() => {
+            resetToLoginAfterLogout(navigation);
+          });
+        },
+      },
+    ]);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +177,26 @@ export function SettingsScreen({ navigation }: Props) {
             </View>
           </View>
         </FadeSlideIn>
+
+        {user && !isGuest ? (
+          <FadeSlideIn delay={190}>
+            <View style={styles.locCard}>
+              <Text style={styles.locTitle}>账号</Text>
+              <Text style={styles.locSub}>
+                当前登录账号：{user.username}。退出后可切换其他账号登录。
+              </Text>
+              <View style={styles.locRow}>
+                <Text style={styles.locStatus}>{user.username}</Text>
+                <Pressable
+                  style={[styles.locBtn, styles.locBtnDanger]}
+                  onPress={handleLogout}
+                >
+                  <Text style={styles.locBtnText}>退出登录</Text>
+                </Pressable>
+              </View>
+            </View>
+          </FadeSlideIn>
+        ) : null}
       </ScrollView>
     </View>
   );

@@ -189,3 +189,59 @@ class TripGenerationCache(Base):
         onupdate=func.current_timestamp(),
         nullable=False,
     )
+
+
+class SharedCollection(Base):
+    """探索页公开共享收藏夹（用户上传地点清单）。"""
+
+    __tablename__ = "shared_collections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emoji: Mapped[str] = mapped_column(String(16), default="📁", nullable=False)
+    city: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    author_display: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    places: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    is_public: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    subscriptions: Mapped[list["CollectionSubscription"]] = relationship(
+        back_populates="collection", cascade="all, delete-orphan"
+    )
+
+
+class CollectionSubscription(Base):
+    """用户订阅共享收藏夹。"""
+
+    __tablename__ = "collection_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "user_id", name="uq_collection_subscription"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("shared_collections.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subscribed_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+    collection: Mapped["SharedCollection"] = relationship(back_populates="subscriptions")

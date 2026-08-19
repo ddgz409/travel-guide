@@ -3,7 +3,8 @@
     "name": "知径",
     "slug": "travel-guide",
     "owner": "ddgz409",
-    "version": "2.2.4",
+    "version": "2.2.7",
+    "scheme": "zhijing",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,7 +21,7 @@
     },
     "android": {
       "package": "com.travelguide.app",
-      "versionCode": 19,
+      "versionCode": 22,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -34,6 +35,24 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "INTERNET"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "http",
+              "host": "81.71.159.218",
+              "port": "8000",
+              "pathPrefix": "/share"
+            },
+            {
+              "scheme": "zhijing"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {
@@ -59,6 +78,13 @@
         "expo-image-picker",
         {
           "photosPermission": "知径需要访问相册，以便从相册选择头像。"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "知径需要访问相册，以便保存地点图片。",
+          "savePhotosPermission": "知径需要保存图片到你的相册。"
         }
       ]
     ]

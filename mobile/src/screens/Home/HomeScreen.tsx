@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Image,
   Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -25,6 +24,7 @@ import {
   enterFade,
 } from "../../utils/motion";
 import { colors } from "../../theme";
+import { CityCoverImage } from "../../components/PlaceImage";
 import { SettingsGear } from "../../components/SettingsGear";
 import type { AppStackParamList } from "../../navigation/types";
 import { styles } from "./styles";
@@ -200,8 +200,9 @@ export function HomeScreen({ navigation }: Props) {
                 style={[styles.heroPage, { width: screenW }]}
                 onPress={() => void goGenerate(s.dest)}
               >
-                <Image
-                  source={s.img}
+                <CityCoverImage
+                  city={s.dest}
+                  landmark={s.landmark}
                   style={[styles.heroImg, { width: screenW }]}
                   resizeMode="cover"
                 />
@@ -390,8 +391,9 @@ export function HomeScreen({ navigation }: Props) {
                   </View>
                   <View style={styles.destCoverWrap} pointerEvents="none">
                     <View style={styles.destCoverInner}>
-                      <Image
-                        source={d.img}
+                      <CityCoverImage
+                        city={d.name}
+                        landmark={d.landmark}
                         style={styles.destCover}
                         resizeMode="cover"
                       />

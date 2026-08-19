@@ -63,7 +63,10 @@ const ITEMS: Item[] = [
   { id: "quick", icon: "⚡", title: "快速模式", phi: QUICK_PHI },
 ];
 
-const deg2rad = (d: number) => (d * Math.PI) / 180;
+const deg2rad = (d: number) => {
+  "worklet";
+  return (d * Math.PI) / 180;
+};
 
 type BubbleProps = {
   item: Item;

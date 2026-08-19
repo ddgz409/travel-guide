@@ -114,9 +114,13 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     elevation: 6,
   },
-  /** 与「我的」页同色，底栏胶囊浮在浅灰页面上 */
+  /** 探索/我的：淡蓝底盖住地图，同时露出底层水波纹 */
   bottomSheetPage: {
-    backgroundColor: "#F4F5F7",
+    backgroundColor: "rgba(238, 247, 252, 0.92)",
+  },
+  sheetRippleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   sheetDragZone: {
     paddingTop: 14,
@@ -135,6 +139,7 @@ export const styles = StyleSheet.create({
   sheetBody: {
     flex: 1,
     minHeight: 0,
+    zIndex: 1,
   },
   sheetFooter: {
     flexShrink: 0,

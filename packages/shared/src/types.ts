@@ -392,3 +392,46 @@ export interface RegeoResult {
   province: string;
   adcode: string;
 }
+
+/** 共享收藏夹地点 */
+export interface CollectionPlace {
+  name: string;
+  city: string;
+  address?: string;
+  lng?: number | null;
+  lat?: number | null;
+  poi_id?: string | null;
+  note?: string | null;
+}
+
+export interface CollectionSummary {
+  id: string;
+  title: string;
+  summary?: string | null;
+  emoji: string;
+  city?: string | null;
+  author_display: string;
+  place_count: number;
+  subscriber_count: number;
+  subscribed: boolean;
+  cover_places: CollectionPlace[];
+  created_at: string;
+}
+
+export interface CollectionDetail extends CollectionSummary {
+  places: CollectionPlace[];
+  is_owner: boolean;
+}
+
+export interface CollectionListResponse {
+  items: CollectionSummary[];
+  total: number;
+}
+
+export interface CollectionCreatePayload {
+  title: string;
+  summary?: string | null;
+  emoji?: string;
+  city?: string | null;
+  places: CollectionPlace[];
+}

@@ -13,6 +13,7 @@ export type FavoritePlace = {
   address: string;
   lng: number;
   lat: number;
+  poiId?: string;
   savedAt: string;
 };
 

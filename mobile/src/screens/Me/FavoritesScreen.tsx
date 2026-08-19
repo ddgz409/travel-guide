@@ -43,6 +43,7 @@ import {
   type FavoriteFolder,
   type FavoritePlace,
 } from "../../utils/favoriteStore";
+import { PlaceImage } from "../../components/PlaceImage";
 import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { styles } from "./favoritesStyles";
 
@@ -185,6 +186,7 @@ export function FavoritesScreen({ navigation }: Props) {
       address: poi.address || poi.location?.address || "",
       lng,
       lat,
+      poiId: poi.poi_id || undefined,
     });
     Keyboard.dismiss();
     setSearchOpen(false);
@@ -283,7 +285,14 @@ export function FavoritesScreen({ navigation }: Props) {
                         ]);
                       }}
                     >
-                      <Text style={styles.placeStar}>★</Text>
+                      <View style={styles.placeThumb}>
+                        <PlaceImage
+                          city={p.city}
+                          name={p.name}
+                          poiId={p.poiId}
+                          style={styles.placeThumbImg}
+                        />
+                      </View>
                       <View style={styles.placeBody}>
                         <Text style={styles.placeName} numberOfLines={1}>
                           {p.name}
@@ -310,6 +319,7 @@ export function FavoritesScreen({ navigation }: Props) {
               >
                 {folders.map((f) => {
                   const count = places.filter((p) => p.folderId === f.id).length;
+                  const cover = places.find((p) => p.folderId === f.id);
                   return (
                     <Pressable
                       key={f.id}
@@ -323,7 +333,18 @@ export function FavoritesScreen({ navigation }: Props) {
                           {count} 地点
                         </Text>
                       </View>
-                      <Text style={styles.folderIcon}>📁</Text>
+                      {cover ? (
+                        <View style={styles.folderCoverWrap}>
+                          <PlaceImage
+                            city={cover.city}
+                            name={cover.name}
+                            poiId={cover.poiId}
+                            style={styles.folderCoverImg}
+                          />
+                        </View>
+                      ) : (
+                        <Text style={styles.folderIcon}>📁</Text>
+                      )}
                     </Pressable>
                   );
                 })}
@@ -403,7 +424,14 @@ export function FavoritesScreen({ navigation }: Props) {
                   style={styles.row}
                   onPress={() => void pickPoi(poi)}
                 >
-                  <Text style={styles.rowPin}>📍</Text>
+                  <View style={styles.rowThumb}>
+                    <PlaceImage
+                      city={cityOfPoi(poi, locCity)}
+                      name={poi.name}
+                      poiId={poi.poi_id || undefined}
+                      style={styles.rowThumbImg}
+                    />
+                  </View>
                   <View style={styles.rowBody}>
                     <Text style={styles.rowTitle} numberOfLines={1}>
                       {poi.name}

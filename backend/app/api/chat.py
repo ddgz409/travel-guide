@@ -30,9 +30,9 @@ router = APIRouter(prefix="/chat", tags=["AI助手"])
 def chat_stream_endpoint(
     payload: ChatRequest,
     user: User | None = Depends(get_optional_user),
-    db: Session = Depends(get_db),  # noqa: ARG001  保持与项目其他路由一致的签名
+    db: Session = Depends(get_db),
 ):
-    """SSE 流式聊天。游客用服务器默认 Key，登录用户用自己的 Key。"""
+    """SSE 流式聊天。游客用服务器默认 Key，登录用户用自己的 Key。支持 agent 工具调用。"""
 
     config = resolve_llm_config(payload.llm, user)
     trip_context = load_trip_context(payload.trip_id, db, user.id if user else None)
@@ -49,6 +49,8 @@ def chat_stream_endpoint(
                 base_url=config["base_url"],
                 llm_override=payload.llm,
                 trip_context=trip_context,
+                db=db,
+                user=user,
             ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"

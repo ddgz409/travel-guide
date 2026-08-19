@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: "transparent" },
   head: {
     flexDirection: "row",
     alignItems: "center",
@@ -51,6 +51,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   locBtnOff: { backgroundColor: colors.brandSoft },
+  locBtnDanger: { backgroundColor: colors.danger },
   locBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   locBtnTextOff: { color: colors.brandHot },
   loginBanner: {

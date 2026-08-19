@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native";
 import { colors, cardShadow, radii } from "../../theme";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F4F5F7" },
+  root: { flex: 1, backgroundColor: "transparent" },
   menuBtn: {
     position: "absolute",
     right: 20,
@@ -96,7 +96,7 @@ export const styles = StyleSheet.create({
     color: "#8A94A8",
     letterSpacing: 1,
   },
-  overviewRoot: { flex: 1, backgroundColor: "#F4F5F7" },
+  overviewRoot: { flex: 1, backgroundColor: colors.bgSurface },
   overviewHead: {
     flexDirection: "row",
     alignItems: "center",
