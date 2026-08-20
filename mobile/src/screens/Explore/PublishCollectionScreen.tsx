@@ -546,18 +546,25 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
           ) : null}
           {results.length > 0 ? (
             <View style={styles.resultsBox}>
-              {results.map((poi) => (
-                <Pressable
-                  key={poi.poi_id || `${poi.name}-${poi.location?.lng}`}
-                  style={styles.searchRow}
-                  onPress={() => addPoiFromAmap(poi)}
-                >
-                  <Text style={styles.searchName}>{poi.name}</Text>
-                  <Text style={styles.searchSub} numberOfLines={1}>
-                    {poi.address || poi.location?.address || ""}
-                  </Text>
-                </Pressable>
-              ))}
+              <ScrollView
+                style={styles.resultsScroll}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+                showsVerticalScrollIndicator={false}
+              >
+                {results.map((poi) => (
+                  <Pressable
+                    key={poi.poi_id || `${poi.name}-${poi.location?.lng}`}
+                    style={styles.searchRow}
+                    onPress={() => addPoiFromAmap(poi)}
+                  >
+                    <Text style={styles.searchName}>{poi.name}</Text>
+                    <Text style={styles.searchSub} numberOfLines={1}>
+                      {poi.address || poi.location?.address || ""}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
           ) : null}
 

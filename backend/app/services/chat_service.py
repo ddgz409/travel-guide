@@ -30,12 +30,14 @@ from app.services.planning_tools import (
     is_planning_conversation,
 )
 from app.services.agent_tools import (
-    AGENT_TOOLS,
     AGENT_SYSTEM_SUFFIX,
     CONFIRM_REQUIRED,
+    SHARE_TOOLS,
+    TRIP_MGMT_TOOLS,
     execute_tool,
     preview_tool,
 )
+from app.services.chat_intent import is_trip_management_intent
 
 if TYPE_CHECKING:
     from app.models import User
@@ -309,6 +311,9 @@ def chat_stream(
     user_text = _last_user_message(messages)
     # 规划改为 LLM 逐步追问，不再在这里直接跳转生成页
     agent_enabled = user is not None and db is not None
+    # 意图门控：仅当用户明确表达行程管理/查看列表意图时才注入行程工具，
+    # 避免咨询类问题（推荐/介绍/怎么玩）被 LLM 误调 list_trips 弹出「我的攻略」列表
+    mgmt_tools_enabled = agent_enabled and is_trip_management_intent(user_text)
     planning_enabled = not trip_context and (
         is_planning_conversation(user_text)
         or any(
@@ -354,11 +359,12 @@ def chat_stream(
     }
 
     logger.info(
-        "Chat stream provider=%s model=%s web_search=%s agent=%s planning=%s base=%s",
+        "Chat stream provider=%s model=%s web_search=%s agent=%s mgmt=%s planning=%s base=%s",
         provider,
         model,
         mode.value,
         agent_enabled,
+        mgmt_tools_enabled,
         planning_enabled,
         base_url,
     )
@@ -379,7 +385,10 @@ def chat_stream(
         if planning_enabled:
             fn_tools.extend(PLANNING_TOOLS)
         if agent_enabled:
-            fn_tools.extend(AGENT_TOOLS)
+            # 分享工具始终可用；行程管理工具仅在有明确管理意图时注入
+            fn_tools.extend(SHARE_TOOLS)
+            if mgmt_tools_enabled:
+                fn_tools.extend(TRIP_MGMT_TOOLS)
 
         if mode == WebSearchMode.ZHIPU_NATIVE:
             body["tools"] = [{

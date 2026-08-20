@@ -19,15 +19,26 @@ logger = logging.getLogger(__name__)
 
 # ---------- 工具 schema（OpenAI function calling 格式） ----------
 
-AGENT_TOOLS: list[dict[str, Any]] = [
+# 行程管理工具组：仅当用户明确表达行程管理/查看列表意图时才注入（见 chat_service 的 mgmt_tools_enabled）
+TRIP_MGMT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
             "name": "list_trips",
-            "description": "列出当前用户的所有行程（标题、目的地、日期、状态）。当用户问「查看攻略列表」「我的行程有哪些」「看看列表里的攻略」等时调用。",
+            "description": (
+                "列出当前用户的行程列表（标题、目的地、日期、状态）。"
+                "仅当用户明确想查看/管理自己的行程或攻略列表时调用（如「我有哪些行程」「查看我的攻略」「删掉北京攻略」）。"
+                "若用户提到了具体目的地或关键词（如「北京」「亲子」），用 keyword 参数筛选，只列匹配的行程。"
+                "用户问推荐、景点介绍、攻略内容、怎么玩等咨询类问题时，绝不调用本工具。"
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "可选。用户提到的目的地/标题关键词（如「北京」「新疆」），只传关键词本身，不要传整句话。不传则列出全部行程。",
+                    },
+                },
                 "required": [],
             },
         },
@@ -83,6 +94,10 @@ AGENT_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+]
+
+# 分享工具组：任何登录用户都可能收到分享链接，始终注入（不会弹行程列表）
+SHARE_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -119,6 +134,8 @@ AGENT_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+AGENT_TOOLS = TRIP_MGMT_TOOLS + SHARE_TOOLS
+
 _SHARE_TOKEN_RE = re.compile(r"/share/([A-Za-z0-9_-]+)")
 
 
@@ -135,12 +152,13 @@ CONFIRM_REQUIRED = {"delete_trip"}
 AGENT_SYSTEM_SUFFIX = """
 
 ---
-你可以通过调用工具直接操作用户的 App 数据。规则：
-1. 用户问「我有哪些行程」「查看攻略列表」「看看我的行程/攻略」→ 调 list_trips。App 会自动弹出卡片列表，你只需简短总结，不必逐条复述
-2. 用户说「删除/删掉/删了 XX 攻略/行程」→ 先调 list_trips 找到对应行程，然后直接调 delete_trip。
-   系统会自动向用户弹出确认窗口，由用户点击按钮决定是否真的删除。不要在对话里反复询问确认，也不要跳转生成页面。
-3. 用户说「打开 XX 行程」→ 先调 list_trips 找到 ID，再调 open_trip
-4. 删除是危险操作，但确认弹窗是系统的安全兜底，你只需找到正确的行程即可
+**先理解用户意图，再决定是否调用工具**：
+1. 用户问旅行咨询（推荐目的地、景点介绍、餐厅美食、天气、怎么玩、路线建议等）时，**正常对话回答，绝不调用任何行程工具，绝不要弹出行程列表**。注意：「攻略」指用户自己创建的行程记录，用户说「推荐攻略/有什么攻略/求攻略」是在问旅行内容，不是查自己的列表。
+2. 仅当用户**明确想查看/管理自己的行程或攻略列表**时（如「我有哪些行程」「查看我的攻略」「删掉北京攻略」「打开我的行程」），才能调用行程工具：
+   - 用户提到具体目的地/关键词（如「北京」）时，调 list_trips 必须传 keyword 参数，只列匹配的行程
+   - App 会自动弹出卡片列表，你只需简短总结，不必逐条复述
+3. 用户说「删除/删掉/删了 XX 攻略/行程」→ 先调 list_trips（可传 keyword）找到对应行程，再调 delete_trip。系统自动弹出确认窗口，不要在对话里反复询问确认。
+4. 用户说「打开 XX 行程」→ 先调 list_trips 找到 ID，再调 open_trip
 5. 如果找不到用户说的行程，告知用户并列出现有行程供选择
 6. 用户发来分享链接（含 /share/）或让你分析别人的行程 → 调 view_shared_trip，然后根据行程内容给出你的分析/建议
 7. 用户说「打开这个分享/链接」→ 调 open_shared_trip（token 用 view_shared_trip 返回的 share_token）
@@ -259,15 +277,19 @@ def execute_tool(
         return {"ok": False, "error": "请先登录后再操作行程数据"}
 
     if name == "list_trips":
-        trips = (
-            db.query(Trip)
-            .filter(Trip.user_id == user.id)
-            .order_by(Trip.created_at.desc())
-            .limit(50)
-            .all()
-        )
+        from sqlalchemy import or_
+
+        kw = (args.get("keyword") or "").strip()
+        query = db.query(Trip).filter(Trip.user_id == user.id)
+        if kw:
+            like = f"%{kw}%"
+            query = query.filter(
+                or_(Trip.destination.ilike(like), Trip.title.ilike(like))
+            )
+        trips = query.order_by(Trip.created_at.desc()).limit(50).all()
         if not trips:
-            return {"ok": True, "result": {"trips": [], "message": "你还没有任何行程记录"}}
+            msg = f"没有找到包含「{kw}」的行程" if kw else "你还没有任何行程记录"
+            return {"ok": True, "result": {"trips": [], "message": msg}}
         return {"ok": True, "result": {"trips": [_fmt_trip(t) for t in trips]}}
 
     if name == "get_trip":

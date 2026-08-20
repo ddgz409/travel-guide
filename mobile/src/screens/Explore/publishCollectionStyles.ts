@@ -94,8 +94,8 @@ export const styles = StyleSheet.create({
     borderCurve: "continuous",
     backgroundColor: colors.bgSurface,
     overflow: "hidden",
-    maxHeight: 180,
   },
+  resultsScroll: { maxHeight: 260 },
   searchRow: {
     paddingHorizontal: 12,
     paddingVertical: 10,

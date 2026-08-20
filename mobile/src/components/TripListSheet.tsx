@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import type { TripStatus } from "@travel-guide/shared";
@@ -39,6 +40,16 @@ export function TripListSheet({
   onClose,
   onSelect,
 }: Props) {
+  const [filterText, setFilterText] = useState("");
+  const kw = filterText.trim().toLowerCase();
+  const filtered = kw
+    ? trips.filter(
+        (t) =>
+          (t.title || "").toLowerCase().includes(kw) ||
+          (t.destination || "").toLowerCase().includes(kw),
+      )
+    : trips;
+
   return (
     <Modal
       visible={visible}
@@ -52,9 +63,34 @@ export function TripListSheet({
           <Text style={styles.title}>我的行程</Text>
           <Text style={styles.sub}>
             {trips.length > 0
-              ? `共 ${trips.length} 条，点击查看详情`
+              ? kw
+                ? `筛选出 ${filtered.length} / 共 ${trips.length} 条，点击查看详情`
+                : `共 ${trips.length} 条，点击查看详情`
               : message || "暂无行程记录"}
           </Text>
+
+          {trips.length > 0 ? (
+            <View style={styles.searchBox}>
+              <TextInput
+                style={styles.searchInput}
+                value={filterText}
+                onChangeText={setFilterText}
+                placeholder="搜索目的地或标题"
+                placeholderTextColor="#9ca3af"
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+              {filterText.length > 0 ? (
+                <Pressable
+                  style={styles.searchClear}
+                  hitSlop={8}
+                  onPress={() => setFilterText("")}
+                >
+                  <Text style={styles.searchClearText}>✕</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
 
           {trips.length === 0 ? (
             <View style={styles.emptyBox}>
@@ -63,13 +99,18 @@ export function TripListSheet({
                 {message || "还没有行程，去首页规划一次吧"}
               </Text>
             </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={styles.emptyText}>没有找到匹配「{kw}」的行程</Text>
+            </View>
           ) : (
             <ScrollView
               style={styles.list}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {trips.map((item, index) => {
+              {filtered.map((item, index) => {
                 const listItem = {
                   id: item.trip_id,
                   title: item.title,
@@ -182,6 +223,19 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   list: { maxHeight: 420 },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderRadius: 14,
+    borderCurve: "continuous",
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    height: 40,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.ink, padding: 0 },
+  searchClear: { padding: 4 },
+  searchClearText: { fontSize: 14, color: colors.muted },
   card: {
     borderRadius: 22,
     borderCurve: "continuous",
