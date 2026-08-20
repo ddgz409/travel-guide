@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -9,6 +10,8 @@ import {
   View,
 } from "react-native";
 import type { TripStatus } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
+import { api } from "../api/client";
 import { CityCoverImage } from "./PlaceImage";
 import { landmarksFor } from "../data/landmarks";
 import { colors, pastels } from "../theme";
@@ -41,14 +44,45 @@ export function TripListSheet({
   onSelect,
 }: Props) {
   const [filterText, setFilterText] = useState("");
+  // 本地维护列表：弹窗内删除后即时移除，无需重新走对话
+  const [localTrips, setLocalTrips] = useState<AgentTripSummary[]>(trips);
+  useEffect(() => {
+    setLocalTrips(trips);
+  }, [trips]);
+
   const kw = filterText.trim().toLowerCase();
   const filtered = kw
-    ? trips.filter(
+    ? localTrips.filter(
         (t) =>
           (t.title || "").toLowerCase().includes(kw) ||
           (t.destination || "").toLowerCase().includes(kw),
       )
-    : trips;
+    : localTrips;
+
+  function confirmDelete(item: AgentTripSummary) {
+    Alert.alert(
+      "删除攻略",
+      `确定删除「${item.title}」吗？\n此操作不可恢复。`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await api.trips.remove(item.trip_id);
+              setLocalTrips((prev) => prev.filter((t) => t.trip_id !== item.trip_id));
+            } catch (e) {
+              Alert.alert(
+                "删除失败",
+                e instanceof ApiError ? e.message : "请稍后重试",
+              );
+            }
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <Modal
@@ -62,14 +96,14 @@ export function TripListSheet({
           <View style={styles.handle} />
           <Text style={styles.title}>我的行程</Text>
           <Text style={styles.sub}>
-            {trips.length > 0
+            {localTrips.length > 0
               ? kw
-                ? `筛选出 ${filtered.length} / 共 ${trips.length} 条，点击查看详情`
-                : `共 ${trips.length} 条，点击查看详情`
+                ? `筛选出 ${filtered.length} / 共 ${localTrips.length} 条，点击查看详情`
+                : `共 ${localTrips.length} 条，点击查看详情`
               : message || "暂无行程记录"}
           </Text>
 
-          {trips.length > 0 ? (
+          {localTrips.length > 0 ? (
             <View style={styles.searchBox}>
               <TextInput
                 style={styles.searchInput}
@@ -92,7 +126,7 @@ export function TripListSheet({
             </View>
           ) : null}
 
-          {trips.length === 0 ? (
+          {localTrips.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyEmoji}>🧳</Text>
               <Text style={styles.emptyText}>
@@ -175,7 +209,16 @@ export function TripListSheet({
                         />
                       </View>
                     </View>
-                    <Text style={styles.openHint}>点击查看 ›</Text>
+                    <View style={styles.cardFoot}>
+                      <Text style={styles.openHint}>点击查看 ›</Text>
+                      <Pressable
+                        onPress={() => confirmDelete(item)}
+                        hitSlop={8}
+                        style={styles.deleteBtn}
+                      >
+                        <Text style={styles.deleteText}>删除</Text>
+                      </Pressable>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -279,12 +322,24 @@ const styles = StyleSheet.create({
   },
   cover: { width: "100%", height: "100%" },
   openHint: {
-    marginTop: 8,
     fontSize: 12,
     fontWeight: "600",
     color: colors.brandHot,
-    textAlign: "right",
   },
+  cardFoot: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  deleteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderCurve: "continuous",
+    backgroundColor: "rgba(255,255,255,0.6)",
+  },
+  deleteText: { fontSize: 12, fontWeight: "700", color: colors.danger },
   emptyBox: {
     alignItems: "center",
     paddingVertical: 28,
