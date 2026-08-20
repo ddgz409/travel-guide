@@ -82,7 +82,10 @@ export function TripGeneratingView({
         </View>
       </View>
 
-      <DraggableBottomSheet bottomInset={Math.max(insets.bottom, 8)}>
+      <DraggableBottomSheet
+        bottomInset={Math.max(insets.bottom, 8)}
+        topOffset={topPad + 56}
+      >
         <Text style={styles.genHero}>AI 正在为你规划行程</Text>
         <View style={styles.genPhaseRow}>
           {PHASES.map((p, i) => {

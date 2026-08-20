@@ -27,6 +27,10 @@ type Props = {
   surface?: "card" | "page";
   /** 探索页：下拉收起底栏气泡，上拉弹出 */
   tabBarReveal?: SharedValue<number> | null;
+  /** 全屏吸附时抽屉顶部距屏幕顶部的留白（逻辑像素）。
+   *  默认 insets.top + FULL_TOP_GAP；有页面顶部浮层（返回键/标题）时传入该浮层高度，
+   *  保证抽屉顶到最高时也不会盖住浮层、拖动小横条不会被浮层遮挡。 */
+  topOffset?: number;
   children: React.ReactNode;
   footer?: React.ReactNode;
 };
@@ -69,6 +73,7 @@ export function DraggableBottomSheet({
   bottomOffset = 0,
   surface = "card",
   tabBarReveal,
+  topOffset,
   children,
   footer,
 }: Props) {
@@ -76,14 +81,18 @@ export function DraggableBottomSheet({
   const insets = useSafeAreaInsets();
 
   const snapHeights = useMemo(() => {
-    const maxHeight = Math.round(screenH - insets.top - FULL_TOP_GAP);
+    const clearance = topOffset ?? insets.top + FULL_TOP_GAP;
+    const maxHeight = Math.max(
+      120,
+      Math.round(screenH - clearance),
+    );
     const fractional = SNAP_FRACTIONS.map((f) =>
       Math.min(Math.round(screenH * f), maxHeight),
     );
     return [...fractional, maxHeight]
       .filter((h, i, arr) => arr.indexOf(h) === i)
       .sort((a, b) => a - b);
-  }, [screenH, insets.top]);
+  }, [screenH, insets.top, topOffset]);
 
   const sheetHeight = useSharedValue(snapHeights[1] ?? snapHeights[0] ?? 0);
   const dragStart = useSharedValue(0);

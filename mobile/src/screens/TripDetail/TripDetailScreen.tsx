@@ -500,6 +500,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
       <DraggableBottomSheet
         bottomInset={Math.max(insets.bottom, 8)}
+        topOffset={topPad + 56}
         footer={
           (trip.collaborators?.length ?? 0) > 0 ? (
             <CollaboratorsRow collaborators={trip.collaborators || []} />
