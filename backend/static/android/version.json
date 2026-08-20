@@ -1,7 +1,7 @@
 {
-  "versionCode": 23,
+  "versionCode": 24,
   "versionName": "2.2.8",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
   "notes": "2.2.8：修复共享收藏夹编辑闪退；收藏夹 POI 封面图修复；发布按钮视觉区分",
-  "force": false
+  "force": true
 }

@@ -417,8 +417,8 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   return (
     <View style={styles.mapRoot}>
       {amapKey && mapHtml ? (
-        <View style={[styles.mapBox, { width: winW, height: winH }]} collapsable={false}>
-          <NativeViewGestureHandler disallowInterruption>
+        <NativeViewGestureHandler disallowInterruption>
+          <View style={[styles.mapBox, { width: winW, height: winH }]} collapsable={false}>
             <WebView
               ref={webRef}
               originWhitelist={["*"]}
@@ -443,8 +443,8 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
                 }
               }}
             />
-          </NativeViewGestureHandler>
-        </View>
+          </View>
+        </NativeViewGestureHandler>
       ) : null}
 
       <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 8) }]}>
