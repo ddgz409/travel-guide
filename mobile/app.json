@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.travelguide.app",
-      "versionCode": 26,
+      "versionCode": 27,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
