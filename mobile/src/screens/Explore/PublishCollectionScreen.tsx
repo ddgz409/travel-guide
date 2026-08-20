@@ -4,6 +4,7 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,7 +16,12 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import type { CollectionPlace, PoiSearchResult } from "@travel-guide/shared";
+import type {
+  CollectionPlace,
+  PoiSearchResult,
+  Trip,
+  TripListItem,
+} from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
@@ -95,6 +101,10 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
     () => peekCachedLocation(),
   );
   const [locating, setLocating] = useState(false);
+  const [tripPickerVisible, setTripPickerVisible] = useState(false);
+  const [tripList, setTripList] = useState<TripListItem[]>([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+  const [importingTrip, setImportingTrip] = useState(false);
   const userLocRef = useRef(userLoc);
   userLocRef.current = userLoc;
   const locCityRef = useRef(locCity);
@@ -346,6 +356,94 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
     );
   }
 
+  const SLOT_LABELS: Record<string, string> = {
+    morning: "上午",
+    afternoon: "下午",
+    evening: "晚上",
+  };
+
+  /** 从行程（攻略）中提取可分享的地点，过滤交通步骤与未选用项 */
+  function placesFromTrip(trip: Trip): CollectionPlace[] {
+    const city = (trip.destination || "").replace(/市$/, "");
+    const seen = new Set<string>();
+    const out: CollectionPlace[] = [];
+    for (const day of trip.days || []) {
+      for (const item of day.items || []) {
+        if (!item || !item.name) continue;
+        if (item.type === "transport") continue;
+        if (item.selected === false) continue;
+        const key = `${city}::${item.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const slot = SLOT_LABELS[item.time_slot || ""] || "";
+        out.push({
+          name: item.name,
+          city,
+          address: item.location?.address || "",
+          lng: item.location?.lng ?? null,
+          lat: item.location?.lat ?? null,
+          poi_id: item.poi_id || null,
+          note: `第${day.day_index}天${slot ? ` ${slot}` : ""}`,
+        });
+      }
+    }
+    return out;
+  }
+
+  async function openTripPicker() {
+    setTripPickerVisible(true);
+    setLoadingTrips(true);
+    try {
+      const list = await api.trips.list();
+      setTripList(list || []);
+    } catch (e) {
+      setTripList([]);
+      Alert.alert("加载失败", e instanceof ApiError ? e.message : "请稍后重试");
+    } finally {
+      setLoadingTrips(false);
+    }
+  }
+
+  async function importFromTrip(tripId: string) {
+    if (importingTrip) return;
+    setImportingTrip(true);
+    try {
+      const trip = await api.trips.get(tripId);
+      const extracted = placesFromTrip(trip);
+      if (extracted.length === 0) {
+        Alert.alert("提示", "该攻略没有可提取的地点（交通步骤已自动过滤）");
+        setTripPickerVisible(false);
+        return;
+      }
+      const limited = extracted.slice(0, 50);
+      setPlaces((prev) => {
+        const seen = new Set(prev.map((p) => `${p.city}::${p.name}`));
+        const merged = [...prev];
+        for (const p of limited) {
+          const key = `${p.city}::${p.name}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(p);
+          }
+        }
+        return merged;
+      });
+      // 标题为空时预填行程标题，用户可再改
+      setTitle((prev) => (prev || "").trim() || trip.title || "");
+      setTripPickerVisible(false);
+      Alert.alert(
+        "已提取",
+        `从「${trip.title}」提取了 ${extracted.length} 个地点${
+          extracted.length > 50 ? "（超出 50 个上限，保留前 50）" : ""
+        }，可继续编辑后发布`,
+      );
+    } catch (e) {
+      Alert.alert("提取失败", e instanceof ApiError ? e.message : "请稍后重试");
+    } finally {
+      setImportingTrip(false);
+    }
+  }
+
   function selectPlace(index: number) {
     setSelectedIndex(index);
     const p = places[index];
@@ -525,9 +623,14 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
 
           <View style={styles.placeHead}>
             <Text style={styles.label}>地点 ({places.length}) · 高德 POI</Text>
-            <Pressable onPress={() => void importFromFavorites()}>
-              <Text style={styles.link}>从收藏导入</Text>
-            </Pressable>
+            <View style={styles.placeHeadBtns}>
+              <Pressable onPress={() => void importFromFavorites()}>
+                <Text style={styles.link}>从收藏导入</Text>
+              </Pressable>
+              <Pressable onPress={() => void openTripPicker()}>
+                <Text style={styles.link}>从攻略导入</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.searchField}>
@@ -614,6 +717,68 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
         </ScrollView>
         </KeyboardAvoidingView>
       </DraggableBottomSheet>
+
+      <Modal
+        visible={tripPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTripPickerVisible(false)}
+      >
+        <Pressable
+          style={styles.tripPickerBackdrop}
+          onPress={() => setTripPickerVisible(false)}
+        >
+          <Pressable style={styles.tripPickerSheet} onPress={() => undefined}>
+            <View style={styles.tripPickerHandle} />
+            <Text style={styles.tripPickerTitle}>选择攻略</Text>
+            <Text style={styles.tripPickerSub}>
+              自动提取攻略中的地点填入编辑页（交通步骤已过滤）
+            </Text>
+            {loadingTrips ? (
+              <ActivityIndicator
+                color={colors.brand}
+                style={{ marginVertical: 28 }}
+              />
+            ) : tripList.length === 0 ? (
+              <View style={styles.tripPickerEmpty}>
+                <Text style={styles.tripPickerEmptyEmoji}>🧳</Text>
+                <Text style={styles.tripPickerEmptyText}>
+                  还没有攻略，先去首页规划一个吧
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.tripPickerList}
+                showsVerticalScrollIndicator={false}
+              >
+                {tripList.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    style={styles.tripPickerRow}
+                    disabled={importingTrip}
+                    onPress={() => void importFromTrip(t.id)}
+                  >
+                    <Text style={styles.tripPickerName} numberOfLines={1}>
+                      {t.title || `${t.destination}行程`}
+                    </Text>
+                    <Text style={styles.tripPickerMeta}>
+                      {t.destination} · {t.start_date} → {t.end_date}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+            <Pressable
+              style={styles.tripPickerClose}
+              onPress={() => setTripPickerVisible(false)}
+            >
+              <Text style={styles.tripPickerCloseText}>
+                {importingTrip ? "提取中…" : "取消"}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
