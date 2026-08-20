@@ -364,7 +364,8 @@ def chat_stream(
     )
 
     # Agent 循环：LLM 可能多次调用工具
-    max_rounds = 5
+    # 限制 3 轮，避免自问自答死循环；追问类工具（ask_user_choice/date）后立即停止等待用户回复
+    max_rounds = 3
     for _round in range(max_rounds):
         body: dict[str, Any] = {
             "model": model,
@@ -437,6 +438,10 @@ def chat_stream(
             assistant_msg["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
             payload_messages.append(assistant_msg)
 
+            # 本轮是否触发了需要用户回复的工具（ask_user_choice / ask_user_date）
+            # 如果是，执行完工具后必须停下来等用户回复，不能继续让 LLM 自问自答
+            awaiting_user_reply = False
+
             for idx in sorted(tool_calls_acc):
                 tc = tool_calls_acc[idx]
                 fn_name = tc["function"]["name"]
@@ -454,6 +459,7 @@ def chat_stream(
                     if result.get("ok"):
                         info = result.get("result") or {}
                         if fn_name == "ask_user_choice":
+                            awaiting_user_reply = True
                             yield {
                                 "type": "action",
                                 "payload": {
@@ -464,6 +470,7 @@ def chat_stream(
                                 },
                             }
                         elif fn_name == "ask_user_date":
+                            awaiting_user_reply = True
                             yield {
                                 "type": "action",
                                 "payload": {
@@ -569,6 +576,10 @@ def chat_stream(
                     "content": tool_output,
                 })
 
+            # 本轮触发了 ask_user_choice / ask_user_date -> 等用户回复，停止循环
+            if awaiting_user_reply:
+                return
+
         except httpx.HTTPError as e:
             logger.exception("Chat stream HTTP error")
             yield {"type": "error", "content": f"❌ 网络错误：{e}"}
@@ -578,5 +589,5 @@ def chat_stream(
             yield {"type": "error", "content": f"❌ 未知错误：{e}"}
             return
 
-    # 超过最大轮次
-    yield {"type": "content", "content": "\n\n（操作步骤较多，如需继续请告诉我）"}
+    # 超过最大轮次：给用户明确提示
+    yield {"type": "content", "content": "\n\n（操作步骤较多，请回复上面的选项，或直接告诉我你想怎么做）"}

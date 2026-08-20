@@ -89,6 +89,8 @@ export function ChatScreen({ navigation, route }: Props) {
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_H);
   const [loading, setLoading] = useState(false);
   const [smartPlanMode, setSmartPlanMode] = useState(false);
+  // 当前从 AI 选项卡片回填到输入框的内容；手动编辑输入框会清空它（自定义覆盖卡片）
+  const [selectedCardSend, setSelectedCardSend] = useState<string | null>(null);
   const [tripListSheet, setTripListSheet] = useState<{
     trips: AgentTripSummary[];
     message?: string | null;
@@ -204,6 +206,7 @@ export function ChatScreen({ navigation, route }: Props) {
 
     setInput("");
     setInputHeight(INPUT_MIN_H);
+    setSelectedCardSend(null);
     const userMsg: Msg = { role: "user", content };
     const updated = [...(baseMsgs ?? msgs), userMsg];
     setMsgs(updated);
@@ -493,7 +496,15 @@ export function ChatScreen({ navigation, route }: Props) {
           onContentSizeChange={scrollToBottom}
           renderItem={({ item, index }) => {
             const isUser = item.role === "user";
-            const widgetDisabled = loading || !!item.widgetUsed;
+            const widgetDisabled = loading;
+            // 点击 AI 选项卡片：把内容回填进输入框，不直接发送。
+            // 卡片始终可点（不标记 widgetUsed），清空输入框后可重新点选回填。
+            const pickCard = (sendText: string) => {
+              if (widgetDisabled) return;
+              setInput(sendText);
+              setSelectedCardSend(sendText);
+            };
+            // date picker 仍走原逻辑（选择日期后直接作为回复发送）
             const markWidgetAndSend = (sendText: string) => {
               const marked = msgs.map((m, i) =>
                 i === index ? { ...m, widgetUsed: true } : m,
@@ -522,14 +533,15 @@ export function ChatScreen({ navigation, route }: Props) {
                   <Text style={isUser ? styles.msgUserText : styles.msgAIText}>
                     {item.content}
                   </Text>
-                  {!isUser && item.widget && !item.widgetUsed ? (
+                  {!isUser && item.widget ? (
                     item.widget.kind === "choices" ? (
                       <ChatFollowUpChoices
                         style={item.widget.style}
                         options={item.widget.options}
                         confirmLabel={item.widget.confirmLabel}
                         disabled={widgetDisabled}
-                        onSelect={markWidgetAndSend}
+                        selectedSend={selectedCardSend}
+                        onPick={pickCard}
                       />
                     ) : (
                       <ChatDatePickerCard
@@ -576,7 +588,12 @@ export function ChatScreen({ navigation, route }: Props) {
               },
             ]}
             value={input}
-            onChangeText={setInput}
+            onChangeText={(t) => {
+              setInput(t);
+              // 手动编辑输入框即解除与卡片的关联（自定义覆盖一切）。
+              // 注意：清空后 selectedCardSend 也置空，用户可重新点卡片回填（需求 4）。
+              if (selectedCardSend !== null) setSelectedCardSend(null);
+            }}
             placeholder="输入旅行问题…"
             placeholderTextColor={colors.muted}
             multiline

@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NativeViewGestureHandler } from "react-native-gesture-handler";
 import { WebView } from "react-native-webview";
 import type { CollectionPlace, PoiSearchResult } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
@@ -23,6 +22,7 @@ import { getAmapJsKey } from "../../api/config";
 import { useAuth } from "../../auth/AuthContext";
 import { PlaceImage } from "../../components/PlaceImage";
 import { MapLocateIcon } from "../../components/MapLocateIcon";
+import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
@@ -417,34 +417,31 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   return (
     <View style={styles.mapRoot}>
       {amapKey && mapHtml ? (
-        <NativeViewGestureHandler disallowInterruption>
-          <View style={[styles.mapBox, { width: winW, height: winH }]} collapsable={false}>
-            <WebView
-              ref={webRef}
-              originWhitelist={["*"]}
-              source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
-              style={[styles.map, { width: winW, height: winH }]}
-              javaScriptEnabled
-              domStorageEnabled
-              scrollEnabled={false}
-              onMessage={(e) => {
-                try {
-                  const msg = JSON.parse(e.nativeEvent.data);
-                  if (msg?.type === "ready") {
-                    mapReadyRef.current = true;
-                    syncMapMarkers(places, selectedIndex);
-                    const pos = userLocRef.current;
-                    if (pos && places.length === 0) {
-                      inject(buildMapUserLocationJs(pos.lng, pos.lat, { center: true, zoom: 14 }));
-                    }
-                  }
-                } catch {
-                  /* ignore */
+        <WebView
+          ref={webRef}
+          originWhitelist={["*"]}
+          source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
+          style={[styles.map, { width: winW, height: winH }]}
+          javaScriptEnabled
+          domStorageEnabled
+          scrollEnabled={false}
+          collapsable={false}
+          onMessage={(e) => {
+            try {
+              const msg = JSON.parse(e.nativeEvent.data);
+              if (msg?.type === "ready") {
+                mapReadyRef.current = true;
+                syncMapMarkers(places, selectedIndex);
+                const pos = userLocRef.current;
+                if (pos && places.length === 0) {
+                  inject(buildMapUserLocationJs(pos.lng, pos.lat, { center: true, zoom: 14 }));
                 }
-              }}
-            />
-          </View>
-        </NativeViewGestureHandler>
+              }
+            } catch {
+              /* ignore */
+            }
+          }}
+        />
       ) : null}
 
       <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 8) }]}>
@@ -467,14 +464,25 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
         )}
       </Pressable>
 
-      <View style={[styles.staticSheet, { paddingBottom: sheetInset }]}>
-        <View style={styles.staticSheetHandle}>
-          <View style={styles.staticSheetHandleBar} />
-        </View>
+      <DraggableBottomSheet
+        bottomInset={sheetInset}
+        surface="card"
+        footer={
+          <Pressable
+            style={[styles.publishBtn, saving && styles.publishBtnDisabled]}
+            onPress={() => void publish()}
+            disabled={saving}
+          >
+            <Text style={styles.publishText}>
+              {saving ? "保存中…" : editId ? "保存修改" : "发布到探索页"}
+            </Text>
+          </Pressable>
+        }
+      >
         <KeyboardAvoidingView
-          style={styles.staticSheetBody}
+          style={styles.sheetBody}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+          keyboardVerticalOffset={0}
         >
         <ScrollView
           style={styles.sheetScroll}
@@ -598,16 +606,7 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
           ))}
         </ScrollView>
         </KeyboardAvoidingView>
-        <Pressable
-          style={[styles.publishBtn, saving && styles.publishBtnDisabled]}
-          onPress={() => void publish()}
-          disabled={saving}
-        >
-          <Text style={styles.publishText}>
-            {saving ? "保存中…" : editId ? "保存修改" : "发布到探索页"}
-          </Text>
-        </Pressable>
-      </View>
+      </DraggableBottomSheet>
     </View>
   );
 }

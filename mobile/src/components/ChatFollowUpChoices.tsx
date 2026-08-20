@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -9,48 +9,62 @@ type Props = {
   options: ChoiceOption[];
   confirmLabel?: string;
   disabled?: boolean;
-  onSelect: (send: string) => void;
+  /** 当前已回填到输入框的卡片 send 值（用于高亮） */
+  selectedSend?: string | null;
+  /** 点选卡片：回填输入框，不直接发送 */
+  onPick: (send: string) => void;
 };
 
-/** 规划追问：快捷 chips 或列表 + 确认 */
+/**
+ * 规划追问卡片：轻量候选选项。
+ * 点击 = 把选项内容回填到自定义输入框（不直接发送），
+ * 用户可在输入框里继续修改，改完再点「发」提交。
+ */
 export function ChatFollowUpChoices({
   style,
   options,
   confirmLabel = "确认",
   disabled,
-  onSelect,
+  selectedSend,
+  onPick,
 }: Props) {
-  const [selected, setSelected] = useState<number | null>(null);
-
   if (style === "chips") {
     return (
       <View style={styles.chipsWrap}>
-        {options.map((opt, i) => (
-          <Pressable
-            key={`${opt.label}-${i}`}
-            style={[styles.chip, disabled && styles.disabled]}
-            disabled={disabled}
-            onPress={() => onSelect(opt.send)}
-          >
-            <Text style={styles.chipText}>{opt.label}</Text>
-          </Pressable>
-        ))}
+        {options.map((opt, i) => {
+          const active = selectedSend === opt.send;
+          return (
+            <Pressable
+              key={`${opt.label}-${i}`}
+              style={[styles.chip, active && styles.chipActive, disabled && styles.disabled]}
+              disabled={disabled}
+              onPress={() => onPick(opt.send)}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     );
   }
 
-  const picked = selected != null ? options[selected] : null;
+  const pickedIdx = selectedSend
+    ? options.findIndex((o) => o.send === selectedSend)
+    : -1;
+  const picked = pickedIdx >= 0 ? options[pickedIdx] : null;
 
   return (
     <View style={styles.listWrap}>
       {options.map((opt, i) => {
-        const active = selected === i;
+        const active = selectedSend === opt.send;
         return (
           <Pressable
             key={`${opt.label}-${i}`}
             style={[styles.listItem, active && styles.listItemActive, disabled && styles.disabled]}
             disabled={disabled}
-            onPress={() => setSelected(i)}
+            onPress={() => onPick(opt.send)}
           >
             <View style={[styles.radio, active && styles.radioActive]}>
               {active ? <View style={styles.radioDot} /> : null}
@@ -67,7 +81,7 @@ export function ChatFollowUpChoices({
           (!picked || disabled) && styles.confirmBtnDisabled,
         ]}
         disabled={!picked || disabled}
-        onPress={() => picked && onSelect(picked.send)}
+        onPress={() => picked && onPick(picked.send)}
       >
         <Text style={styles.confirmBtnText}>{confirmLabel}</Text>
       </Pressable>
@@ -86,7 +100,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
+  chipActive: {
+    borderColor: colors.ink,
+    backgroundColor: colors.brandSoft,
+  },
   chipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
+  chipTextActive: { color: colors.brandHot, fontWeight: "700" },
   listWrap: { marginTop: 10, gap: 6 },
   listItem: {
     flexDirection: "row",

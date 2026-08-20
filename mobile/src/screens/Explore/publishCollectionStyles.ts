@@ -40,35 +40,8 @@ export const styles = StyleSheet.create({
     ...cardShadow,
   },
   sheetScroll: { flex: 1, minHeight: 0, paddingHorizontal: 20 },
-  /** 静态底部面板：不使用 DraggableBottomSheet，避免与地图 WebView 的手势冲突导致闪退 */
-  staticSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "62%",
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderCurve: "continuous",
-    overflow: "hidden",
-    paddingBottom: 0,
-    ...cardShadow,
-  },
-  staticSheetHandle: {
-    paddingTop: 10,
-    paddingBottom: 6,
-    alignItems: "center",
-    flexShrink: 0,
-  },
-  staticSheetHandleBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 12,
-    borderCurve: "continuous",
-    backgroundColor: "#bbb",
-  },
-  staticSheetBody: { flex: 1, minHeight: 0 },
+  /** 抽屉内容区（DraggableBottomSheet 内部） */
+  sheetBody: { flex: 1, minHeight: 0 },
   label: {
     marginTop: 12,
     marginBottom: 6,
