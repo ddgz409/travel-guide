@@ -273,9 +273,22 @@ export function ChatScreen({ navigation, route }: Props) {
                 return;
               }
               if (actionPayload?.action === "open_trip") {
-                setLoading(false);
-                navigation.navigate("TripDetail", { tripId: actionPayload.trip_id });
-                return;
+                // 跳转攻略详情前先弹窗确认；聊天流继续，取消则留在当前对话
+                Alert.alert(
+                  "确认跳转",
+                  `是否打开攻略「${actionPayload.title || "该攻略"}」？`,
+                  [
+                    { text: "取消", style: "cancel" },
+                    {
+                      text: "打开",
+                      onPress: () =>
+                        navigation.navigate("TripDetail", {
+                          tripId: actionPayload.trip_id,
+                        }),
+                    },
+                  ],
+                );
+                continue;
               }
               if (actionPayload?.action === "open_share" && actionPayload.token) {
                 setLoading(false);
