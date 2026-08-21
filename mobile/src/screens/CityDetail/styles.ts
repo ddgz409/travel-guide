@@ -100,14 +100,27 @@ export const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 30,
-    elevation: 30,
+    elevation: 24,
+    justifyContent: "flex-end",
   },
   bottomSheet: {
-    backgroundColor: "#fff",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 34, borderCurve: "continuous",
     borderTopRightRadius: 34, borderCurve: "continuous",
     overflow: "hidden",
-    ...cardShadow,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 6,
+  },
+  /** 探索/我的：淡蓝底盖住地图，同时露出底层水波纹 */
+  bottomSheetPage: {
+    backgroundColor: "rgba(238, 247, 252, 0.92)",
+  },
+  sheetRippleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   sheetDragZone: {
     paddingTop: 14,
@@ -126,6 +139,7 @@ export const styles = StyleSheet.create({
   sheetBody: {
     flex: 1,
     minHeight: 0,
+    zIndex: 1,
   },
   sheetFooter: {
     flexShrink: 0,

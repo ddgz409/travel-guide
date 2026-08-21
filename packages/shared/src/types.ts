@@ -392,3 +392,89 @@ export interface RegeoResult {
   province: string;
   adcode: string;
 }
+
+/** 共享收藏夹地点 */
+export interface CollectionPlace {
+  name: string;
+  city: string;
+  address?: string;
+  lng?: number | null;
+  lat?: number | null;
+  poi_id?: string | null;
+  note?: string | null;
+}
+
+export interface CollectionSummary {
+  id: string;
+  title: string;
+  summary?: string | null;
+  emoji: string;
+  city?: string | null;
+  author_display: string;
+  /** 真实注册用户作者的 user_id；系统预置/游客帖子为 null */
+  author_id?: string | null;
+  place_count: number;
+  subscriber_count: number;
+  subscribed: boolean;
+  is_owner: boolean;
+  like_count: number;
+  liked: boolean;
+  comment_count: number;
+  cover_places: CollectionPlace[];
+  created_at: string;
+}
+
+export interface CollectionDetail extends CollectionSummary {
+  places: CollectionPlace[];
+  is_owner: boolean;
+}
+
+export interface CollectionListResponse {
+  items: CollectionSummary[];
+  total: number;
+}
+
+/** 帖子评论 */
+export interface CollectionComment {
+  id: string;
+  collection_id: string;
+  user_id?: string | null;
+  username: string;
+  content: string;
+  created_at: string;
+}
+
+export interface CommentListResponse {
+  items: CollectionComment[];
+  total: number;
+}
+
+/** 用户主页（公开） */
+export interface UserProfile {
+  id: string;
+  username: string;
+  follower_count: number;
+  following_count: number;
+  post_count: number;
+  is_following: boolean;
+  is_self: boolean;
+}
+
+/** 粉丝 / 关注名单里的用户简档 */
+export interface UserBrief {
+  id: string;
+  username: string;
+}
+
+export interface FollowListResponse {
+  items: UserBrief[];
+  total: number;
+}
+
+export interface CollectionCreatePayload {
+  title: string;
+  summary?: string | null;
+  emoji?: string;
+  city?: string | null;
+  places: CollectionPlace[];
+}

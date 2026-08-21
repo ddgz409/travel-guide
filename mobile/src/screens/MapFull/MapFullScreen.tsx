@@ -10,6 +10,7 @@ import { WebView } from "react-native-webview";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import { useMapLocation } from "../../hooks/useMapLocation";
+import { MapLocateIcon } from "../../components/MapLocateIcon";
 import { getAmapJsKey } from "../../api/config";
 import type { AppStackParamList } from "../../navigation/types";
 import { styles } from "./styles";
@@ -102,7 +103,7 @@ export function MapFullScreen({ route }: Props) {
           {locating ? (
             <ActivityIndicator color="#1a66ff" />
           ) : (
-            <Text style={styles.locateText}>定位</Text>
+            <MapLocateIcon size={18} color="#1a66ff" />
           )}
         </Pressable>
       </View>

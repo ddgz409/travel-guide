@@ -23,6 +23,7 @@ import { api } from "../../api/client";
 import { buildAmapHtml } from "../../utils/amapHtml";
 import { getAmapJsKey } from "../../api/config";
 import { useMapLocation } from "../../hooks/useMapLocation";
+import { MapLocateIcon } from "../MapLocateIcon";
 import { colors } from "../../theme";
 import {
   DISMISS_X,
@@ -310,7 +311,7 @@ export function TransportRouteSheet({
                       {locating ? (
                         <ActivityIndicator color="#1a66ff" />
                       ) : (
-                        <Text style={styles.locateText}>定位</Text>
+                        <MapLocateIcon size={18} color="#1a66ff" />
                       )}
                     </Pressable>
                   </View>

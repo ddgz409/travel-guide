@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -18,14 +19,25 @@ import { colors } from "../../theme";
 import { useModelPicker } from "../../components/ModelPicker";
 import { getChatSearchSubtitle } from "../../utils/chatSearch";
 import {
-  detectPlanIntent,
   type PlanNavigateAction,
 } from "../../utils/chatIntent";
 import { submitTripGenerate } from "../../utils/submitTripGenerate";
+import { ChatFollowUpChoices } from "../../components/ChatFollowUpChoices";
+import { ChatDatePickerCard } from "../../components/ChatDatePickerCard";
 import { ApiError } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
 import { styles } from "./styles";
+import {
+  genSessionId,
+  getChatSession,
+  saveChatSession,
+  deleteChatSession,
+} from "../../utils/chatHistoryStore";
+import {
+  TripListSheet,
+  type AgentTripSummary,
+} from "../../components/TripListSheet";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Chat">;
 
@@ -33,6 +45,17 @@ type Msg = {
   role: "user" | "assistant";
   content: string;
   reasoning?: string;
+  widget?: {
+    kind: "choices";
+    style: "chips" | "select_list";
+    options: { label: string; send: string }[];
+    confirmLabel?: string;
+  } | {
+    kind: "date_picker";
+    destination?: string;
+    suggestDays: number;
+  };
+  widgetUsed?: boolean;
 };
 
 type PlanAction = PlanNavigateAction;
@@ -67,15 +90,77 @@ export function ChatScreen({ navigation, route }: Props) {
   const tripId = route.params?.tripId;
   const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
   const { curModel, openModelPopup, modelModal } = useModelPicker();
+  // 当前会话 id：路由给了就用（恢复历史），否则新建
+  const sessionIdRef = useRef<string>(
+    route.params?.chatSessionId || genSessionId(),
+  );
+  const userKey = user?.id || (isGuest ? "guest" : "guest");
+  const msgsRef = useRef<Msg[]>([]);
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  msgsRef.current = msgs;
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_H);
   const [loading, setLoading] = useState(false);
   const [smartPlanMode, setSmartPlanMode] = useState(false);
+  // 当前从 AI 选项卡片回填到输入框的内容；手动编辑输入框会清空它（自定义覆盖卡片）
+  const [selectedCardSend, setSelectedCardSend] = useState<string | null>(null);
+  const [tripListSheet, setTripListSheet] = useState<{
+    trips: AgentTripSummary[];
+    message?: string | null;
+  } | null>(null);
   const smartPlanBackRef = useRef<(() => boolean) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
   const initialSentRef = useRef(false);
+  // Agent 确认弹窗产生的结果消息（删除成功/取消等），流式更新时会被合并保留
+  const agentNoticesRef = useRef<Msg[]>([]);
+
+  const pushAgentNotice = useCallback((content: string) => {
+    const notice: Msg = { role: "assistant", content };
+    agentNoticesRef.current.push(notice);
+    setMsgs((prev) => [...prev, notice]);
+    scrollToBottom();
+  }, []);
+
+  const showTripList = useCallback(
+    (trips: AgentTripSummary[], message?: string | null) => {
+      setTripListSheet({ trips, message });
+    },
+    [],
+  );
+
+  const showDeleteConfirm = useCallback(
+    (p: { trip_id: string; title: string; destination?: string; start_date?: string; end_date?: string }) => {
+      const meta = [p.destination, p.start_date && p.end_date ? `${p.start_date} → ${p.end_date}` : null]
+        .filter(Boolean)
+        .join(" · ");
+      Alert.alert(
+        "确认删除行程",
+        `确定删除「${p.title}」吗？${meta ? `\n${meta}` : ""}\n\n此操作不可恢复。`,
+        [
+          {
+            text: "取消",
+            style: "cancel",
+            onPress: () => pushAgentNotice("🚫 已取消删除。"),
+          },
+          {
+            text: "删除",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await api.trips.remove(p.trip_id);
+                pushAgentNotice(`✅ 已删除行程「${p.title}」。`);
+              } catch (e) {
+                const msg = e instanceof ApiError ? e.message : "删除失败，请重试";
+                pushAgentNotice(`❌ ${msg}`);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [pushAgentNotice],
+  );
 
   function scrollToBottom() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
@@ -128,38 +213,24 @@ export function ChatScreen({ navigation, route }: Props) {
     ],
   );
 
-  function handlePlanIntent(content: string, updated: Msg[]): boolean {
-    if (tripId) return false;
-    const action = detectPlanIntent(content);
-    if (!action) return false;
-    setMsgs([
-      ...updated,
-      {
-        role: "assistant",
-        content: `好的，我来帮你规划 **${action.destination}** 的行程，正在生成中…\n\n（${action.start_date} → ${action.end_date}）`,
-      },
-    ]);
-    setLoading(false);
-    void startPlanFromAction(action);
-    return true;
-  }
-
-  async function send(text?: string) {
+  async function send(text?: string, baseMsgs?: Msg[]) {
     const content = (text || input).trim();
     if (!content || loading) return;
 
     setInput("");
     setInputHeight(INPUT_MIN_H);
+    setSelectedCardSend(null);
     const userMsg: Msg = { role: "user", content };
-    const updated = [...msgs, userMsg];
+    const updated = [...(baseMsgs ?? msgs), userMsg];
     setMsgs(updated);
     setLoading(true);
     scrollToBottom();
 
-    if (handlePlanIntent(content, updated)) return;
+    // 规划走服务端逐步追问，不在客户端直接跳转生成页
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    agentNoticesRef.current = [];
 
     try {
       const llmOverride: {
@@ -206,11 +277,100 @@ export function ChatScreen({ navigation, route }: Props) {
           }
           try {
             const parsed = JSON.parse(data);
-            if (parsed.type === "action" && parsed.payload?.action === "navigate_generate") {
-              if (tripId) break;
-              setLoading(false);
-              void startPlanFromAction(parsed.payload as PlanAction);
-              return;
+            if (parsed.type === "action") {
+              const actionPayload = parsed.payload;
+              if (actionPayload?.action === "navigate_generate") {
+                if (tripId) break;
+                setLoading(false);
+                void startPlanFromAction(actionPayload as PlanAction);
+                return;
+              }
+              if (actionPayload?.action === "open_trip") {
+                // 跳转攻略详情前先弹窗确认；聊天流继续，取消则留在当前对话
+                Alert.alert(
+                  "确认跳转",
+                  `是否打开攻略「${actionPayload.title || "该攻略"}」？`,
+                  [
+                    { text: "取消", style: "cancel" },
+                    {
+                      text: "打开",
+                      onPress: () =>
+                        navigation.navigate("TripDetail", {
+                          tripId: actionPayload.trip_id,
+                        }),
+                    },
+                  ],
+                );
+                continue;
+              }
+              if (actionPayload?.action === "open_share" && actionPayload.token) {
+                setLoading(false);
+                navigation.navigate("Share", { token: actionPayload.token });
+                return;
+              }
+              if (actionPayload?.action === "open_collection_editor") {
+                setLoading(false);
+                navigation.navigate("PublishCollection", {
+                  prefill: {
+                    title: actionPayload.title || "",
+                    summary: actionPayload.summary || "",
+                    emoji: actionPayload.emoji || "📁",
+                    destination: actionPayload.destination || "",
+                    places: (actionPayload.places as any[]) || [],
+                  },
+                });
+                return;
+              }
+              if (actionPayload?.action === "show_trip_list") {
+                showTripList(
+                  (actionPayload.trips as AgentTripSummary[]) || [],
+                  actionPayload.message,
+                );
+                continue;
+              }
+              if (actionPayload?.action === "show_choices") {
+                const last = msgsWithAI[msgsWithAI.length - 1];
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...last,
+                  widget: {
+                    kind: "choices",
+                    style: actionPayload.style === "select_list" ? "select_list" : "chips",
+                    options: actionPayload.options || [],
+                    confirmLabel: actionPayload.confirm_label,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                continue;
+              }
+              if (actionPayload?.action === "show_date_picker") {
+                const last = msgsWithAI[msgsWithAI.length - 1];
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...last,
+                  widget: {
+                    kind: "date_picker",
+                    destination: actionPayload.destination,
+                    suggestDays: actionPayload.suggest_days || 3,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                continue;
+              }
+            } else if (parsed.type === "tool_result" && parsed.tool === "list_trips") {
+              try {
+                const data = JSON.parse(parsed.result);
+                if (Array.isArray(data?.trips)) {
+                  showTripList(data.trips, data.message);
+                }
+              } catch {
+                /* ignore */
+              }
+              continue;
+            } else if (parsed.type === "confirmation_required") {
+              const p = parsed.payload;
+              if (p?.tool === "delete_trip" && p.trip_id) {
+                showDeleteConfirm(p);
+              }
+              continue;
             } else if (parsed.type === "reasoning") {
               aiReasoning += parsed.content;
             } else if (parsed.type === "content") {
@@ -223,7 +383,7 @@ export function ChatScreen({ navigation, route }: Props) {
               content: aiContent,
               reasoning: aiReasoning || undefined,
             };
-            setMsgs([...msgsWithAI]);
+            setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
           } catch {
             /* skip non-JSON */
           }
@@ -243,7 +403,72 @@ export function ChatScreen({ navigation, route }: Props) {
     setInput("");
     setLoading(false);
     initialSentRef.current = false;
+    agentNoticesRef.current = [];
+    setTripListSheet(null);
   }, [route.params?.chatSessionId, route.params?.tripId]);
+
+  // 历史记录：挂载时按会话 id 恢复消息
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    let alive = true;
+    void (async () => {
+      const sess = await getChatSession(userKey, sid);
+      if (alive && sess && sess.msgs.length > 0) {
+        setMsgs(sess.msgs as Msg[]);
+        agentNoticesRef.current = [];
+        scrollToBottom();
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // 仅按会话 id / 用户加载一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionIdRef.current, userKey]);
+
+  // 历史记录：消息变化时防抖保存
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!sid || msgs.length === 0) return;
+    const slim = msgs.map((m) => ({
+      role: m.role,
+      content: m.content,
+      reasoning: m.reasoning,
+    }));
+    const title =
+      msgs.find((m) => m.role === "user")?.content || "新对话";
+    const t = setTimeout(() => {
+      void saveChatSession(userKey, {
+        id: sid,
+        title: title.slice(0, 30),
+        msgs: slim,
+        updatedAt: Date.now(),
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [msgs, userKey]);
+
+  // 历史记录：离开时兜底保存一次
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    return () => {
+      const m = msgsRef.current;
+      if (!sid || m.length === 0) return;
+      const title = m.find((x) => x.role === "user")?.content || "新对话";
+      void saveChatSession(userKey, {
+        id: sid,
+        title: title.slice(0, 30),
+        msgs: m.map((x) => ({
+          role: x.role,
+          content: x.content,
+          reasoning: x.reasoning,
+        })),
+        updatedAt: Date.now(),
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
 
   useEffect(() => {
     const prefill = route.params?.prefillMessage?.trim();
@@ -287,6 +512,10 @@ export function ChatScreen({ navigation, route }: Props) {
 
   function clear() {
     setMsgs([]);
+    agentNoticesRef.current = [];
+    setTripListSheet(null);
+    const sid = sessionIdRef.current;
+    if (sid) void deleteChatSession(userKey, sid);
   }
 
   const showWelcome = msgs.length === 0;
@@ -323,6 +552,15 @@ export function ChatScreen({ navigation, route }: Props) {
               onPress={() => setSmartPlanMode(true)}
             >
               <Text style={styles.smartPlanBtnText}>智能规划</Text>
+            </Pressable>
+          ) : null}
+          {!smartPlanMode ? (
+            <Pressable
+              style={styles.historyBtn}
+              onPress={() => navigation.navigate("ChatHistory")}
+              hitSlop={6}
+            >
+              <Text style={styles.historyBtnText}>历史</Text>
             </Pressable>
           ) : null}
           {!smartPlanMode && msgs.length > 0 ? (
@@ -369,8 +607,24 @@ export function ChatScreen({ navigation, route }: Props) {
           style={styles.list}
           contentContainerStyle={{ paddingBottom: 16 }}
           onContentSizeChange={scrollToBottom}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isUser = item.role === "user";
+            const widgetDisabled = loading;
+            // 点击 AI 选项卡片：把内容回填进输入框，不直接发送。
+            // 卡片始终可点（不标记 widgetUsed），清空输入框后可重新点选回填。
+            const pickCard = (sendText: string) => {
+              if (widgetDisabled) return;
+              setInput(sendText);
+              setSelectedCardSend(sendText);
+            };
+            // date picker 仍走原逻辑（选择日期后直接作为回复发送）
+            const markWidgetAndSend = (sendText: string) => {
+              const marked = msgs.map((m, i) =>
+                i === index ? { ...m, widgetUsed: true } : m,
+              );
+              setMsgs(marked);
+              void send(sendText, marked);
+            };
             return (
               <View style={[styles.msgRow, isUser && styles.msgUserRow]}>
                 <View
@@ -392,6 +646,26 @@ export function ChatScreen({ navigation, route }: Props) {
                   <Text style={isUser ? styles.msgUserText : styles.msgAIText}>
                     {item.content}
                   </Text>
+                  {!isUser && item.widget ? (
+                    item.widget.kind === "choices" ? (
+                      <ChatFollowUpChoices
+                        style={item.widget.style}
+                        options={item.widget.options}
+                        confirmLabel={item.widget.confirmLabel}
+                        disabled={widgetDisabled}
+                        selectedSend={selectedCardSend}
+                        onPick={pickCard}
+                      />
+                    ) : (
+                      <ChatDatePickerCard
+                        destination={item.widget.destination}
+                        suggestDays={item.widget.suggestDays}
+                        disabled={widgetDisabled}
+                        onConfirm={markWidgetAndSend}
+                        onSkip={markWidgetAndSend}
+                      />
+                    )
+                  ) : null}
                 </View>
               </View>
             );
@@ -427,7 +701,12 @@ export function ChatScreen({ navigation, route }: Props) {
               },
             ]}
             value={input}
-            onChangeText={setInput}
+            onChangeText={(t) => {
+              setInput(t);
+              // 手动编辑输入框即解除与卡片的关联（自定义覆盖一切）。
+              // 注意：清空后 selectedCardSend 也置空，用户可重新点卡片回填（需求 4）。
+              if (selectedCardSend !== null) setSelectedCardSend(null);
+            }}
             placeholder="输入旅行问题…"
             placeholderTextColor={colors.muted}
             multiline
@@ -458,6 +737,14 @@ export function ChatScreen({ navigation, route }: Props) {
       ) : null}
 
       {modelModal}
+
+      <TripListSheet
+        visible={tripListSheet != null}
+        trips={tripListSheet?.trips ?? []}
+        message={tripListSheet?.message}
+        onClose={() => setTripListSheet(null)}
+        onSelect={(tripId) => navigation.navigate("TripDetail", { tripId })}
+      />
     </KeyboardAvoidingView>
   );
 }

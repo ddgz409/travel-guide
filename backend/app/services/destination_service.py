@@ -4,14 +4,19 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from collections.abc import Generator
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from app.services.amap_client import AmapError, POI_TYPES, Poi, get_amap_client
 from app.services.destination_landmarks import is_micro_poi, landmarks_for
+from app.services.image_quality import check_image_quality, pick_best_image
 
 if TYPE_CHECKING:
     from app.models import User
@@ -20,6 +25,32 @@ logger = logging.getLogger(__name__)
 
 _CITY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_S = 3600
+
+_COVERS_DIR = Path(__file__).resolve().parents[2] / "static" / "covers"
+_COVERS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _cached_cover_url(city: str, name: str, url: str) -> str | None:
+    """把好图下载到 static/covers，返回稳定 URL；失败返回原 URL。"""
+    if not url or not url.startswith("http"):
+        return url
+    try:
+        safe = f"{city}_{name}".replace(" ", "_").replace("/", "_").replace("\\", "_")[:60]
+        digest = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
+        filename = f"{safe}_{digest}.jpg"
+        path = _COVERS_DIR / filename
+        if path.exists() and path.stat().st_size > 1024:
+            return f"/static/covers/{filename}"
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+        content = resp.content
+        if len(content) < 1024:
+            return url
+        path.write_bytes(content)
+        return f"/static/covers/{filename}"
+    except Exception:
+        return url
 
 FOOD_HINTS: dict[str, list[str]] = {
     "北京": ["北京烤鸭", "炸酱面", "涮羊肉"],
@@ -269,42 +300,51 @@ def get_place_images(
     limit: int = 3,
     poi_id: str = "",
 ) -> dict[str, Any]:
-    """单地点图片：优先高德 POI 实景图，失败再尝试小红书。"""
-    from app.services.xhs_image_client import fetch_xhs_images
-
+    """单地点图片：仅高德 POI 实景图，质量检测过滤黑图/纯色。"""
     city = (city or "").strip()
     name = (name or "").strip()
     limit = max(1, min(limit, 6))
     poi_type = POI_TYPES.get("meal") if kind == "foods" else POI_TYPES.get("attraction") if kind == "spots" else None
 
-    imgs: list[str] = []
+    good_url: str | None = None
     source: str | None = None
+    amap = get_amap_client()
+
     try:
-        amap = get_amap_client()
         if (amap.api_key or "").strip():
-            imgs = amap.get_poi_photos(
+            # 多拿几张，逐个质量检测
+            raw = amap.get_poi_photos(
                 poi_id=poi_id.strip() or None,
                 keyword=name,
                 city=city or None,
                 poi_type=poi_type,
-                limit=limit,
+                limit=max(limit, 6),
             )
-            if imgs:
+            good_url = pick_best_image(raw)
+            # 未指定类型且未命中时，退一步用景点类型再搜一次，
+            # 否则部分 POI 关键词搜索拿不到照片（收藏夹地点多为景点）
+            if not good_url and poi_type is None:
+                raw = amap.get_poi_photos(
+                    poi_id=poi_id.strip() or None,
+                    keyword=name,
+                    city=city or None,
+                    poi_type=POI_TYPES["attraction"],
+                    limit=max(limit, 6),
+                )
+                good_url = pick_best_image(raw)
+            if good_url:
                 source = "amap"
     except Exception:
         logger.exception("amap place images failed city=%s name=%s", city, name)
 
-    if not imgs and not (get_amap_client().api_key or "").strip():
-        imgs = fetch_xhs_images(city, name, kind, limit=limit)
-        if imgs:
-            source = "xhs"
+    cached_url = _cached_cover_url(city, name, good_url) if good_url else None
 
     return {
         "city": city,
         "name": name,
         "kind": kind,
-        "image": imgs[0] if imgs else None,
-        "images": imgs,
+        "image": cached_url,
+        "images": [cached_url] if cached_url else [],
         "source": source,
     }
 
@@ -320,12 +360,17 @@ def get_city_covers(pairs: list[dict[str, str]]) -> dict[str, str | None]:
         landmark = (row.get("landmark") or city).strip()
         if not city:
             continue
-        photos = amap.get_poi_photos(
-            keyword=landmark,
-            city=city,
-            poi_type=POI_TYPES["attraction"],
-            limit=1,
-        )
-        out[city] = photos[0] if photos else None
+        try:
+            photos = amap.get_poi_photos(
+                keyword=landmark,
+                city=city,
+                poi_type=POI_TYPES["attraction"],
+                limit=6,
+            )
+            good = pick_best_image(photos)
+            out[city] = _cached_cover_url(city, landmark, good) if good else None
+        except Exception:
+            logger.exception("city cover failed city=%s landmark=%s", city, landmark)
+            out[city] = None
         time.sleep(0.35)
     return out

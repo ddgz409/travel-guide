@@ -191,11 +191,11 @@ export function MeScreen() {
           </Pressable>
           <Pressable
             style={styles.miniCard}
-            onPress={() => Alert.alert("我的订阅", "订阅功能即将上线")}
+            onPress={() => (navigation as any).navigate("MySubscriptions")}
           >
             <Text style={styles.miniIcon}>🔔</Text>
             <Text style={styles.miniTitle}>我的订阅</Text>
-            <Text style={styles.miniSub}>收藏夹 · 0</Text>
+            <Text style={styles.miniSub}>探索页共享收藏夹</Text>
           </Pressable>
         </View>
 
@@ -226,7 +226,7 @@ export function MeScreen() {
                 Platform.OS === "android" ? { fontFamily: "serif" } : null,
               ]}
             >
-              《还没有打卡过哦》
+              这里空空如也~
             </Text>
           )}
         </Pressable>

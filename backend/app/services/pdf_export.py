@@ -25,9 +25,14 @@ def _register_cjk_font() -> str:
         return "CJK"
 
     candidates = [
+        # Windows 开发机
         ("C:/Windows/Fonts/msyh.ttc", "CJK"),  # 微软雅黑
         ("C:/Windows/Fonts/simsun.ttc", "CJK"),  # 宋体
         ("C:/Windows/Fonts/msyhbd.ttc", "CJK"),  # 雅黑粗体
+        # Linux 服务器：apt install fonts-wqy-microhei / fonts-noto-cjk
+        ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "CJK"),
+        ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "CJK"),
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "CJK"),
     ]
     for path, name in candidates:
         try:

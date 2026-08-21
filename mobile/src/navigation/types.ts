@@ -1,3 +1,5 @@
+import type { CollectionPlace } from "@travel-guide/shared";
+
 export type AppStackParamList = {
   Main: undefined;
   Chat: {
@@ -6,6 +8,7 @@ export type AppStackParamList = {
     tripId?: string;
     chatSessionId?: string;
   } | undefined;
+  ChatHistory: undefined;
   Trips: undefined;
   Explore: undefined;
   CityDetail: { city: string };
@@ -27,7 +30,7 @@ export type AppStackParamList = {
   Login: { next?: { screen: "Share"; token: string } } | undefined;
   Register: { next?: { screen: "Share"; token: string } } | undefined;
   Settings: undefined;
-  Share: { token: string };
+  Share: { token?: string } | undefined;
   TravelSearch: undefined;
   PortalSelect: { from: string; to: string; mode: string };
   ModelManage: undefined;
@@ -42,4 +45,30 @@ export type AppStackParamList = {
   FootprintList: { kind: "country" | "city" | "place" };
   AddFootprint: undefined;
   Favorites: undefined;
+  CollectionDetail: { collectionId: string };
+  SharedCollections: undefined;
+  /** 发帖作者主页（仅真实注册用户） */
+  UserProfile: { userId: string; username?: string };
+  /** 粉丝 / 关注名单 */
+  FollowList: {
+    userId: string;
+    username: string;
+    initialTab: "followers" | "following";
+  };
+  PublishCollection:
+    | {
+        collectionId?: string;
+        /** 从攻略详情「一键发帖」进入：打开后自动流式填入该攻略的地点 */
+        tripId?: string;
+        /** AI 助手从已有攻略生成，打开后流式填入地点 */
+        prefill?: {
+          title: string;
+          summary?: string | null;
+          emoji?: string;
+          destination?: string;
+          places: CollectionPlace[];
+        };
+      }
+    | undefined;
+  MySubscriptions: undefined;
 };

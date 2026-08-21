@@ -1,4 +1,5 @@
 import * as Location from "expo-location";
+import { wgs84ToGcj02 } from "./geo";
 import {
   loadLocationConsent,
   saveLocationConsent,
@@ -58,8 +59,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+/** expo-location 返回 WGS-84；高德地图与后端 regeo 使用 GCJ-02 */
 function locFromPosition(pos: Location.LocationObject): LatLng {
-  return { lng: pos.coords.longitude, lat: pos.coords.latitude };
+  return wgs84ToGcj02(pos.coords.longitude, pos.coords.latitude);
 }
 
 function rememberFromPosition(pos: Location.LocationObject, city?: string): LatLng {

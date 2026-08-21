@@ -28,6 +28,7 @@ import { isCheckedIn } from "../../utils/checkInStore";
 import type { AppStackParamList } from "../../navigation/types";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
+import { MapLocateIcon } from "../../components/MapLocateIcon";
 import { useMapLocation } from "../../hooks/useMapLocation";
 import { openXiaohongshu } from "../../utils/openExternal";
 import {
@@ -384,7 +385,7 @@ export function CityDetailScreen({ navigation, route }: Props) {
         {locating ? (
           <ActivityIndicator color={colors.brand} size="small" />
         ) : (
-          <Text style={styles.locateIcon}>◎</Text>
+          <MapLocateIcon size={18} color="#1a66ff" />
         )}
       </Pressable>
 

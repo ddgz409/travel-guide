@@ -554,6 +554,10 @@ export const styles = StyleSheet.create({
     borderColor: colors.brand,
     backgroundColor: colors.brandSoft,
   },
+  actionPost: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brand,
+  },
   hint: { marginTop: 8, fontSize: 13, color: colors.muted, textAlign: "center" },
   error: { color: colors.danger, fontSize: 16, textAlign: "center" },
   retry: {

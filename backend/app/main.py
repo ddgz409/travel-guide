@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
+from app.api.share_page import router as share_page_router
 from app.core.config import get_settings
 from app.core.database import Base, engine, ensure_sqlite_columns
 
@@ -33,6 +34,8 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+# 分享页 HTML（浏览器直接打开，不带 API 前缀）
+app.include_router(share_page_router)
 
 # 侧载 APK / 版本文件：/static/android/...
 _static_dir = Path(__file__).resolve().parent.parent / "static"

@@ -53,7 +53,19 @@ const KNOWN_CITY_SET = new Set<string>(
 );
 
 const PLAN_RE =
-  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划)|(?:行程|攻略|旅行计划|旅游计划)|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
+  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划)|(?:帮我|请).*(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行|旅游)?|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
+
+const TRIP_MGMT_RE =
+  /删除|删掉|删了|移除|清除|去掉|取消|不要了|查看|看看|列表|有哪些|我的行程|行程列表|攻略列表|打开|分享|\/share\/|修改|编辑|更新|帖子|收藏夹|发布|发帖|做成清单|转成清单|改成清单|编辑成清单/i;
+
+const NEW_PLAN_RE = /(?:规划|安排|制定|设计|生成)(?:一个|一份|新的)?(?:行程|攻略)/;
+
+export function isTripManagementIntent(text: string): boolean {
+  const raw = (text || "").trim();
+  if (!raw || !TRIP_MGMT_RE.test(raw)) return false;
+  if (NEW_PLAN_RE.test(raw)) return false;
+  return true;
+}
 
 const INTEREST_MAP: [string, string][] = [
   ["美食", "美食"],
@@ -341,7 +353,9 @@ export function searchPlanSuggestions(query: string): SmartPlanSuggestion {
 
 export function detectPlanIntent(text: string): PlanNavigateAction | null {
   const raw = (text || "").trim();
-  if (raw.length < 4 || !PLAN_RE.test(raw)) return null;
+  if (raw.length < 4) return null;
+  if (isTripManagementIntent(raw)) return null;
+  if (!PLAN_RE.test(raw)) return null;
   const destination = extractCity(raw);
   if (!destination || !isKnownCityName(destination)) return null;
   const { start, end } = parseDates(raw);

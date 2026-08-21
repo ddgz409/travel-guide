@@ -83,13 +83,18 @@ export function TripsScreen() {
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <Text style={styles.pageTitle}>我的行程</Text>
-        {!user && !isGuest && (
-          <Pressable
-            onPress={() => (navigation as any).navigate("Login")}
-          >
-            <Text style={styles.logout}>登录</Text>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => (navigation as any).navigate("Share")}>
+            <Text style={styles.shareLink}>分享链接</Text>
           </Pressable>
-        )}
+          {!user && !isGuest ? (
+            <Pressable
+              onPress={() => (navigation as any).navigate("Login")}
+            >
+              <Text style={styles.logout}>登录</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {isGuest ? (

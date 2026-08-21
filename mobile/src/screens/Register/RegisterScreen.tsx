@@ -13,6 +13,7 @@ import { formatAuthError, useAuth } from "../../auth/AuthContext";
 import { FadeSlideIn } from "../../utils/motion";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
+import { resetToMain } from "../../navigation/authNavigation";
 import { styles } from "./styles";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Register">;
@@ -37,7 +38,7 @@ export function RegisterScreen({ navigation, route }: Props) {
       if (next?.screen === "Share") {
         navigation.replace("Share", { token: next.token });
       } else {
-        navigation.popToTop();
+        resetToMain(navigation);
       }
     } catch (e) {
       setError(formatAuthError(e));

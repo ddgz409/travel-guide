@@ -20,6 +20,7 @@ import { getAmapJsKey } from "../../api/config";
 import { colors } from "../../theme";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
+import { MapLocateIcon } from "../../components/MapLocateIcon";
 import {
   getDeviceLocation,
   getFreshDeviceLocation,
@@ -390,7 +391,7 @@ export function AddFootprintScreen({ navigation }: Props) {
           {locating ? (
             <ActivityIndicator color={colors.brand} size="small" />
           ) : (
-            <Text style={styles.locateText}>定位</Text>
+            <MapLocateIcon size={18} color="#1a66ff" />
           )}
         </Pressable>
       </View>

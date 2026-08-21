@@ -303,7 +303,7 @@ export function buildAmapHtml(opts: {
               map: map,
               position: pos,
               title: m.name,
-              offset: new AMap.Pixel(-16, -40),
+              anchor: 'bottom-center',
               content: div,
               zIndex: data.focusCenter ? 10 : 100 + i
             });
@@ -389,7 +389,33 @@ export function buildAmapHtml(opts: {
           map.on('dragend', function () { setMapTouching(false); });
         }
         post('ready');
+        setTimeout(function () {
+          if (window.__mapResize) window.__mapResize();
+        }, 120);
       }
+
+      window.__mapResize = function () {
+        if (!window.__map) return;
+        try { window.__map.resize(); } catch (e) {}
+      };
+
+      var bootAttempts = 0;
+      function tryBoot() {
+        if (!window.AMap) {
+          bootAttempts += 1;
+          if (bootAttempts < 20) {
+            setTimeout(tryBoot, 400);
+            return;
+          }
+          post('error', { reason: 'amap_script' });
+          document.body.innerHTML = '<div style="padding:16px;font:14px sans-serif;color:#666">高德地图脚本加载失败，请检查网络后重试</div>';
+          return;
+        }
+        boot();
+      }
+
+      if (window.AMap) tryBoot();
+      else tryBoot();
 
       window.zoomIn = function () {
         if (!window.__map) return;
@@ -481,9 +507,6 @@ export function buildAmapHtml(opts: {
         window.__didCenterCategory = false;
         window.__redraw();
       };
-
-      if (window.AMap) boot();
-      else setTimeout(boot, 500);
     })();
   </script>
 </body>

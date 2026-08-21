@@ -2,61 +2,69 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  Image,
   InteractionManager,
   Keyboard,
   Pressable,
-  StyleSheet,
+  ScrollView,
   Text,
   TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
-import {
-  NativeViewGestureHandler,
-  ScrollView,
-} from "react-native-gesture-handler";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { CollectionSummary } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { citiesGrouped } from "../../data/cities";
 import { PressScale } from "../../utils/motion";
-import { colors, pastels } from "../../theme";
+import { colors } from "../../theme";
 import { api } from "../../api/client";
 import { getAmapJsKey } from "../../api/config";
 import { buildAmapHtml } from "../../utils/amapHtml";
 import { buildMapUserLocationJs } from "../../utils/mapUserLocation";
 import { CityCoverImage } from "../../components/PlaceImage";
+import { CollectionCard } from "../../components/CollectionCard";
 import { HeaderAvatarButton } from "../../components/HeaderAvatarButton";
 import { SettingsGear } from "../../components/SettingsGear";
-import { resolveImageUrl } from "../../utils/placeImage";
-import { getDeviceLocation, getFreshDeviceLocation, describeLocationError, ensureLocationAccess, rememberLocation, peekCachedLocation, peekCachedAccuracy } from "../../utils/location";
+import { MapExpandIcon } from "../../components/MapExpandIcon";
+import { MapLocateIcon } from "../../components/MapLocateIcon";
+import { tabBarTotalHeight } from "../../components/CustomTabBar";
+import {
+  getDeviceLocation,
+  getFreshDeviceLocation,
+  describeLocationError,
+  ensureLocationAccess,
+  rememberLocation,
+  peekCachedLocation,
+  peekCachedAccuracy,
+} from "../../utils/location";
+import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
+import { useMainTab } from "../../navigation/MainTabContext";
 import { DESTINATIONS, INTERESTS, CARD_COLORS, SHORTCUT_COLORS } from "./content";
 import { styles } from "./styles";
-
-const CARD_COLORS_ARR = pastels;
 
 export function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const navigation = useNavigation();
+  const { tab, tabBarReveal } = useMainTab();
   const [q, setQ] = useState("");
+  const [collections, setCollections] = useState<CollectionSummary[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
-  /** 防止 onBlur 的 180ms 定时器堆积：每次新失焦清除旧定时器 */
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** 防止快速双击 city chip 触发两次 navigate */
   const navigatingRef = useRef(false);
 
-  // 地图相关
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
-  const mapGestureRef = useRef<NativeViewGestureHandler>(null);
   const mapReadyRef = useRef(false);
+  const loadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapMounted, setMapMounted] = useState(false);
-  const [pageScrollEnabled, setPageScrollEnabled] = useState(true);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapKey, setMapKey] = useState(0);
 
-  // 定位城市状态
   const [locCity, setLocCity] = useState<string | null>(null);
   const [locCoord, setLocCoord] = useState<{ lng: number; lat: number } | null>(null);
   const [locLoading, setLocLoading] = useState(false);
@@ -65,39 +73,24 @@ export function ExploreScreen() {
 
   const cityGroups = useMemo(() => citiesGrouped(q), [q]);
   const showCityPanel = searchFocus || q.trim().length > 0;
-  const [cityCovers, setCityCovers] = useState<Record<string, string>>({});
 
-  // 组件卸载时清除 onBlur 残留定时器
+  const topPad = Math.max(insets.top, 10);
+  const tabBarOffset = tabBarTotalHeight(insets.bottom);
+  const locateTop = topPad + 56;
+
   useEffect(() => {
     return () => {
       if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     };
   }, []);
 
-  useEffect(() => {
-    // 先用北京单城验证图片链路，避免 8 城并发触发高德 QPS 限制
-    void api.destinations
-      .placeImages("北京", "故宫博物院", "spots", 1)
-      .then((res) => {
-        if (res.image) {
-          setCityCovers((prev) => ({ ...prev, 北京: resolveImageUrl(res.image!) }));
-        }
-      })
-      .catch(() => {
-        /* 失败时 CityCoverImage 显示本地 fallback */
-      });
-  }, []);
-
-  // 获取定位城市：先请求系统权限，再定位 + regeo
   const fetchLocation = useCallback(async (silent: boolean) => {
     if (silent) setLocLoading(true);
     else setLocBtnLoading(true);
     setLocError(null);
 
     const cached = peekCachedLocation();
-    if (cached) {
-      setLocCoord(cached);
-    }
+    if (cached) setLocCoord(cached);
 
     try {
       const ok = await ensureLocationAccess(
@@ -141,10 +134,52 @@ export function ExploreScreen() {
     }
   }, []);
 
-  // 页面加载时静默尝试获取定位城市
   useEffect(() => {
-    fetchLocation(true);
+    void fetchLocation(true);
   }, [fetchLocation]);
+
+  const loadLatestCollections = useCallback(async () => {
+    setCollectionsLoading(true);
+    try {
+      const res = await api.collections.list(8, 0);
+      setCollections(res.items);
+    } catch {
+      setCollections([]);
+    } finally {
+      setCollectionsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (tab === "Explore") void loadLatestCollections();
+    }, [tab, loadLatestCollections]),
+  );
+
+  function openSharedCollections() {
+    (navigation as any).navigate("SharedCollections");
+  }
+
+  function confirmDeleteCollection(item: CollectionSummary) {
+    Alert.alert("删除发布", `确定删除「${item.title}」吗？\n此操作不可恢复。`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.collections.remove(item.id);
+            await loadLatestCollections();
+          } catch (e) {
+            Alert.alert(
+              "删除失败",
+              e instanceof ApiError ? e.message : "请稍后重试",
+            );
+          }
+        },
+      },
+    ]);
+  }
 
   function goGenerate(dest?: string, interests?: string[]) {
     if (navigatingRef.current) return;
@@ -167,9 +202,7 @@ export function ExploreScreen() {
     }, 500);
   }
 
-  // 卡片左右各 margin 6；分区左右 padding 20
   const shortcutW = (screenW - 30 - 20) / 2;
-  // section padding 16*2 + gap 10 -> 一行两个
   const destW = (screenW - 32 - 10) / 2;
 
   const mapHtml = useMemo(() => {
@@ -191,26 +224,65 @@ export function ExploreScreen() {
   }, []);
 
   useEffect(() => {
-    if (!mapLoaded || !locCoord) return;
+    mapReadyRef.current = false;
+    setMapLoaded(false);
+    setMapError(null);
+  }, [mapHtml, mapKey]);
+
+  const retryMap = useCallback(() => {
+    mapReadyRef.current = false;
+    setMapLoaded(false);
+    setMapError(null);
+    setMapKey((k) => k + 1);
+  }, []);
+
+  const injectLocation = useCallback(() => {
+    if (!mapReadyRef.current || !locCoord) return;
     webRef.current?.injectJavaScript(
-      buildMapUserLocationJs(locCoord.lng, locCoord.lat, {
+      `${buildMapUserLocationJs(locCoord.lng, locCoord.lat, {
         center: true,
         zoom: 15,
         clearMarkers: true,
-      }),
+      })}; true;`,
     );
-  }, [mapLoaded, locCoord, locCity]);
+  }, [locCoord]);
 
-  // 定位城市卡片用的描述（从 DESTINATIONS 找，找不到用默认）
-  const locDesc = useMemo(() => {
-    if (!locCity) return "";
-    const d = DESTINATIONS.find(
-      (x) => x.name === locCity || locCity.includes(x.name) || x.name.includes(locCity),
+  const resizeMap = useCallback(() => {
+    webRef.current?.injectJavaScript(
+      `(function(){ if(window.__mapResize){ window.__mapResize(); } else if(window.__map){ try{ window.__map.resize(); }catch(e){} } })(); true;`,
     );
-    return d ? d.desc : "点击查看详情";
-  }, [locCity]);
+  }, []);
 
-  // 地图点击放大 -> 跳转 MapFull（官方圆点定位，不用倒水滴 marker）
+  // Tab 切回探索页时 WebView 从 display:none 恢复，需触发 resize 否则地图空白
+  useEffect(() => {
+    if (tab !== "Explore" || !mapMounted) return;
+    const t = setTimeout(() => {
+      if (mapReadyRef.current) resizeMap();
+    }, 150);
+    return () => clearTimeout(t);
+  }, [tab, mapMounted, mapLoaded, resizeMap]);
+
+  useEffect(() => {
+    if (!mapMounted || mapLoaded || mapError) return;
+    loadTimerRef.current = setTimeout(() => {
+      if (!mapReadyRef.current) {
+        setMapError("地图加载超时，请检查网络后重试");
+      }
+    }, 12000);
+    return () => {
+      if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+    };
+  }, [mapMounted, mapLoaded, mapError, mapKey]);
+
+  useEffect(() => {
+    injectLocation();
+  }, [mapLoaded, injectLocation]);
+
+  const sheetTitle = locCity || "探索";
+  const sheetDesc = locLoading
+    ? "正在获取你的位置…"
+    : locError || "搜目的地，或从下方选城市开始规划";
+
   function openFullMap() {
     (navigation as any).navigate("MapFull", {
       title: locCity || "我的位置",
@@ -223,319 +295,358 @@ export function ExploreScreen() {
 
   return (
     <View style={styles.root}>
-      <View
-        style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}
-      >
-        <HeaderAvatarButton />
-        <View style={styles.topActions}>
-          <PressScale
-            style={styles.topActionItem}
-            onPress={() => (navigation as any).navigate("Settings")}
-          >
-            <SettingsGear size={22} color={colors.ink} holeColor={colors.card} />
-          </PressScale>
-        </View>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled
-        scrollEnabled={pageScrollEnabled}
-        waitFor={mapGestureRef}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      >
-        <View style={styles.hero}>
-          <View style={styles.heroMapBox}>
-            {amapKey && mapHtml && mapMounted ? (
-              <>
-                {!mapLoaded ? (
-                  <View style={styles.mapLoading}>
-                    <ActivityIndicator color={colors.brand} />
-                  </View>
-                ) : null}
-                <NativeViewGestureHandler
-                  ref={mapGestureRef}
-                  disallowInterruption
-                >
-                  <View style={StyleSheet.absoluteFill} collapsable={false}>
-                    <WebView
-                      ref={webRef}
-                      originWhitelist={["*"]}
-                      source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
-                      style={StyleSheet.absoluteFill}
-                      javaScriptEnabled
-                      domStorageEnabled
-                      scrollEnabled={false}
-                      setSupportMultipleWindows={false}
-                      androidLayerType="hardware"
-                      onMessage={(e) => {
-                        try {
-                          const msg = JSON.parse(e.nativeEvent.data);
-                          if (msg?.type === "ready") {
-                            mapReadyRef.current = true;
-                            setMapLoaded(true);
-                          }
-                          if (msg?.type === "mapGesture") {
-                            setPageScrollEnabled(!msg.payload?.active);
-                          }
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                      onLoadEnd={() => {
-                        setTimeout(() => {
-                          mapReadyRef.current = true;
-                          setMapLoaded(true);
-                        }, 600);
-                      }}
-                    />
-                  </View>
-                </NativeViewGestureHandler>
-                <View style={styles.heroLocBar} pointerEvents="box-none">
-                  {locCity ? (
-                    <PressScale
-                      style={styles.heroLocChip}
-                      scaleTo={0.98}
-                      onPress={() => goCityDetail(locCity)}
-                    >
-                      <Text style={styles.heroLocIcon}>📍</Text>
-                      <View style={styles.heroLocTextWrap}>
-                        <Text style={styles.heroLocTitle}>你在 {locCity}</Text>
-                        <Text style={styles.heroLocMeta} numberOfLines={1}>
-                          {locDesc}
-                        </Text>
-                      </View>
-                      <Text style={styles.heroLocArrow}>›</Text>
-                    </PressScale>
-                  ) : locLoading ? (
-                    <View style={styles.heroLocChip}>
-                      <ActivityIndicator color={colors.brand} size="small" />
-                      <Text style={styles.heroLocHint}>正在获取你的位置…</Text>
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={styles.heroLocChip}
-                      onPress={() => void fetchLocation(false)}
-                    >
-                      <Text style={styles.heroLocIcon}>📍</Text>
-                      <Text style={styles.heroLocHint}>
-                        {locError || "点击开启定位，查看所在城市"}
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-                <View style={styles.heroMapControls} pointerEvents="box-none">
-                  <Pressable
-                    style={[styles.mapCtrlBtn, styles.mapLocateBtn]}
-                    onPress={() => void fetchLocation(false)}
-                    disabled={locBtnLoading}
-                  >
-                    {locBtnLoading ? (
-                      <ActivityIndicator color="#1a66ff" size="small" />
-                    ) : (
-                      <Text style={styles.mapLocateText}>定位</Text>
-                    )}
-                  </Pressable>
-                </View>
-                <Pressable style={styles.heroMapExpand} onPress={openFullMap}>
-                  <Text style={styles.mapTapText}>全屏</Text>
-                </Pressable>
-              </>
-            ) : (
-              <View style={styles.mapLoading}>
-                {amapKey && mapHtml ? (
-                  <ActivityIndicator color={colors.brand} />
-                ) : (
-                  <Text style={{ fontSize: 15, color: colors.muted }}>
-                    {locLoading
-                      ? "正在获取位置…"
-                      : locError
-                        ? locError
-                        : "地图未配置，请检查高德 Key"}
-                  </Text>
-                )}
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.searchWrap}>
-          <View style={styles.searchBox}>
-            <TextInput
-              style={styles.searchInput}
-              value={q}
-              onChangeText={setQ}
-              onFocus={() => setSearchFocus(true)}
-              onBlur={() => {
-                if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-                blurTimerRef.current = setTimeout(
-                  () => setSearchFocus(false),
-                  180,
-                );
-              }}
-              placeholder="搜目的地，或从下方选城市"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              onSubmitEditing={() => {
-                if (q.trim()) goGenerate(q.trim());
-              }}
-            />
-            <Pressable
-              style={styles.searchBtn}
-              onPress={() => {
-                if (q.trim()) goGenerate(q.trim());
-              }}
-            >
-              <Text style={styles.searchBtnText}>搜索</Text>
-            </Pressable>
-          </View>
-
-          {showCityPanel ? (
-            <View style={styles.cityPanel}>
-              <Text style={styles.cityPanelTitle}>全部城市 · 按首字母</Text>
-              <ScrollView
-                style={styles.cityScroll}
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="always"
-              >
-                {cityGroups.length === 0 ? (
-                  <Text style={styles.cityEmpty}>没有匹配城市，可直接搜索</Text>
-                ) : (
-                  cityGroups.map(([letter, cities]) => (
-                    <View key={letter} style={styles.cityGroup}>
-                      <Text style={styles.cityLetter}>{letter}</Text>
-                      <View style={styles.cityChips}>
-                        {cities.map((name) => (
-                          <PressScale
-                            key={name}
-                            scaleTo={0.96}
-                            style={[
-                              styles.cityChip,
-                              q.trim() === name && styles.cityChipOn,
-                            ]}
-                            onPress={() => {
-                              Keyboard.dismiss();
-                              setQ(name);
-                              setSearchFocus(false);
-                              goCityDetail(name);
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.cityChipText,
-                                q.trim() === name && styles.cityChipTextOn,
-                              ]}
-                            >
-                              {name}
-                            </Text>
-                          </PressScale>
-                        ))}
-                      </View>
-                    </View>
-                  ))
-                )}
-              </ScrollView>
+      {amapKey && mapHtml && mapMounted ? (
+        <>
+          {!mapLoaded && !mapError ? (
+            <View style={styles.mapLoading}>
+              <ActivityIndicator color={colors.brand} />
             </View>
           ) : null}
+          {mapError ? (
+            <View style={styles.mapLoading}>
+              <Text style={styles.mapErrorText}>{mapError}</Text>
+              <Pressable style={styles.mapRetryBtn} onPress={retryMap}>
+                <Text style={styles.mapRetryText}>重新加载</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <WebView
+            key={mapKey}
+            ref={webRef}
+            originWhitelist={["*"]}
+            source={{ html: mapHtml, baseUrl: "https://webapi.amap.com" }}
+            style={[styles.map, !mapLoaded && !mapError ? styles.mapHidden : null]}
+            javaScriptEnabled
+            domStorageEnabled
+            scrollEnabled={false}
+            setSupportMultipleWindows={false}
+            collapsable={false}
+            onMessage={(e) => {
+              try {
+                const msg = JSON.parse(e.nativeEvent.data);
+                if (msg?.type === "ready") {
+                  mapReadyRef.current = true;
+                  setMapLoaded(true);
+                  setMapError(null);
+                  if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+                  setTimeout(() => injectLocation(), 80);
+                  setTimeout(() => resizeMap(), 120);
+                } else if (msg?.type === "error") {
+                  setMapError("地图加载失败，请检查网络后重试");
+                }
+              } catch {
+                /* ignore */
+              }
+            }}
+            onRenderProcessGone={() => {
+              retryMap();
+              return true;
+            }}
+            onContentProcessDidTerminate={() => {
+              retryMap();
+            }}
+          />
+        </>
+      ) : (
+        <View style={styles.mapLoading}>
+          {amapKey && mapHtml ? (
+            <ActivityIndicator color={colors.brand} />
+          ) : (
+            <Text style={{ fontSize: 15, color: colors.muted }}>
+              {locLoading ? "正在获取位置…" : locError || "地图未配置，请检查高德 Key"}
+            </Text>
+          )}
         </View>
+      )}
 
-        <View style={styles.shortcuts}>
-          {[
-            {
-              title: "AI 助手",
-              desc: "旅游问题随时问",
-              onPress: () => (navigation as any).navigate("Chat"),
-            },
-            {
-              title: "出行搜索",
-              desc: "机票火车票比价",
-              onPress: () => (navigation as any).navigate("TravelSearch"),
-            },
-          ].map((x, i) => (
-            <PressScale
-              key={x.title}
-              style={[
-                styles.shortcut,
-                {
-                  width: shortcutW,
-                  backgroundColor: SHORTCUT_COLORS[i % SHORTCUT_COLORS.length],
-                },
-              ]}
-              onPress={x.onPress}
-            >
-              <Text style={styles.shortcutTitle}>{x.title}</Text>
-              <Text style={styles.shortcutDesc}>{x.desc}</Text>
-            </PressScale>
-          ))}
+      <View style={[styles.topOverlay, { paddingTop: topPad }]}>
+        <View style={styles.topAvatar}>
+          <HeaderAvatarButton />
         </View>
+        <PressScale
+          style={styles.topSettingsBtn}
+          onPress={() => (navigation as any).navigate("Settings")}
+        >
+          <SettingsGear size={22} color={colors.ink} holeColor={colors.card} />
+        </PressScale>
+      </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>按兴趣出发</Text>
-          <View style={styles.chips}>
-            {INTERESTS.map((it) => (
-              <PressScale
-                key={it.tag}
-                style={styles.chip}
-                onPress={() => goGenerate(undefined, [it.tag])}
+      <View style={[styles.mapControls, { top: locateTop }]}>
+        <Pressable
+          style={styles.mapCtrlBtn}
+          onPress={() => void fetchLocation(false)}
+          disabled={locBtnLoading}
+        >
+          {locBtnLoading ? (
+            <ActivityIndicator color={colors.brand} size="small" />
+          ) : (
+            <MapLocateIcon size={18} color="#1a66ff" />
+          )}
+        </Pressable>
+        {amapKey ? (
+          <Pressable
+            style={styles.mapCtrlBtn}
+            onPress={openFullMap}
+            accessibilityRole="button"
+            accessibilityLabel="全屏地图"
+          >
+            <MapExpandIcon size={18} color="#1a66ff" />
+          </Pressable>
+        ) : null}
+      </View>
+
+      <DraggableBottomSheet
+        bottomInset={8}
+        bottomOffset={tabBarOffset}
+        surface="page"
+        tabBarReveal={tabBarReveal}
+      >
+        <View style={styles.sheetContent}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle} numberOfLines={1}>
+              {sheetTitle}
+            </Text>
+            {locCity ? (
+              <Pressable
+                style={styles.nearbyBubble}
+                onPress={() => goCityDetail(locCity)}
               >
-                <Text style={styles.chipText}>{it.label}</Text>
+                <Text style={styles.nearbyBubbleText}>附近发现</Text>
+                <Text style={styles.nearbyBubbleArrow}>›</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {!locCity ? (
+            <Text style={styles.sheetDesc} numberOfLines={2}>
+              {sheetDesc}
+            </Text>
+          ) : null}
+
+          <ScrollView
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            contentContainerStyle={[
+              styles.sheetScrollContent,
+              { paddingBottom: tabBarOffset },
+            ]}
+          >
+          <View style={styles.searchWrap}>
+            <View style={styles.searchBox}>
+              <TextInput
+                style={styles.searchInput}
+                value={q}
+                onChangeText={setQ}
+                onFocus={() => setSearchFocus(true)}
+                onBlur={() => {
+                  if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+                  blurTimerRef.current = setTimeout(() => setSearchFocus(false), 180);
+                }}
+                placeholder="搜目的地，或从下方选城市"
+                placeholderTextColor={colors.muted}
+                returnKeyType="search"
+                onSubmitEditing={() => {
+                  if (q.trim()) goGenerate(q.trim());
+                }}
+              />
+              <Pressable
+                style={styles.searchBtn}
+                onPress={() => {
+                  if (q.trim()) goGenerate(q.trim());
+                }}
+              >
+                <Text style={styles.searchBtnText}>搜索</Text>
+              </Pressable>
+            </View>
+
+            {showCityPanel ? (
+              <View style={styles.cityPanel}>
+                <Text style={styles.cityPanelTitle}>全部城市 · 按首字母</Text>
+                <ScrollView
+                  style={styles.cityScroll}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="always"
+                >
+                  {cityGroups.length === 0 ? (
+                    <Text style={styles.cityEmpty}>没有匹配城市，可直接搜索</Text>
+                  ) : (
+                    cityGroups.map(([letter, cities]) => (
+                      <View key={letter} style={styles.cityGroup}>
+                        <Text style={styles.cityLetter}>{letter}</Text>
+                        <View style={styles.cityChips}>
+                          {cities.map((name) => (
+                            <PressScale
+                              key={name}
+                              scaleTo={0.96}
+                              style={[
+                                styles.cityChip,
+                                q.trim() === name && styles.cityChipOn,
+                              ]}
+                              onPress={() => {
+                                Keyboard.dismiss();
+                                setQ(name);
+                                setSearchFocus(false);
+                                goCityDetail(name);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.cityChipText,
+                                  q.trim() === name && styles.cityChipTextOn,
+                                ]}
+                              >
+                                {name}
+                              </Text>
+                            </PressScale>
+                          ))}
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.shortcuts}>
+            {[
+              {
+                title: "AI 助手",
+                desc: "旅游问题随时问",
+                onPress: () => (navigation as any).navigate("Chat"),
+              },
+              {
+                title: "大家的收藏",
+                desc: "订阅旅友清单",
+                onPress: openSharedCollections,
+              },
+              {
+                title: "出行搜索",
+                desc: "机票火车票比价",
+                onPress: () => (navigation as any).navigate("TravelSearch"),
+              },
+            ].map((x, i) => (
+              <PressScale
+                key={x.title}
+                style={[
+                  styles.shortcut,
+                  {
+                    width: shortcutW,
+                    backgroundColor: SHORTCUT_COLORS[i % SHORTCUT_COLORS.length],
+                  },
+                ]}
+                onPress={x.onPress}
+              >
+                <Text style={styles.shortcutTitle}>{x.title}</Text>
+                <Text style={styles.shortcutDesc}>{x.desc}</Text>
               </PressScale>
             ))}
           </View>
-        </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionRow}>
-            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
-              热门目的地
-            </Text>
-            <PressScale onPress={() => goGenerate()}>
-              <Text style={[styles.sectionLink, { marginBottom: 0 }]}>
-                AI 生成 {"->"}
-              </Text>
-            </PressScale>
-          </View>
-          <View style={styles.destGrid}>
-            {DESTINATIONS.map((d, i) => (
-              <PressScale
-                key={d.name}
-                style={[styles.destCardPress, { width: destW }]}
-                scaleTo={0.985}
-                onPress={() => goCityDetail(d.name)}
-              >
-                <View
-                  style={[
-                    styles.destCard,
-                    { backgroundColor: CARD_COLORS[i % CARD_COLORS.length] },
-                  ]}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>按兴趣出发</Text>
+            <View style={styles.chips}>
+              {INTERESTS.map((it) => (
+                <PressScale
+                  key={it.tag}
+                  style={styles.chip}
+                  onPress={() => goGenerate(undefined, [it.tag])}
                 >
-                  <View style={styles.destLeft}>
-                    <Text style={styles.destTitle} numberOfLines={1}>
-                      {d.name}
-                    </Text>
-                    <Text style={styles.destMeta} numberOfLines={2}>
-                      {d.desc}
-                    </Text>
-                  </View>
-                  <View style={styles.destCoverWrap} pointerEvents="none">
-                    <View style={styles.destCoverInner}>
-                      <CityCoverImage
-                        city={d.name}
-                        landmark={d.landmark}
-                        uri={cityCovers[d.name]}
-                        fallback={d.img}
-                        style={styles.destCover}
-                        resizeMode="cover"
-                      />
+                  <Text style={styles.chipText}>{it.label}</Text>
+                </PressScale>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                热门目的地
+              </Text>
+              <PressScale onPress={() => goGenerate()}>
+                <Text style={[styles.sectionLink, { marginBottom: 0 }]}>
+                  AI 生成 {"->"}
+                </Text>
+              </PressScale>
+            </View>
+            <View style={styles.destGrid}>
+              {DESTINATIONS.map((d, i) => (
+                <PressScale
+                  key={d.name}
+                  style={[styles.destCardPress, { width: destW }]}
+                  scaleTo={0.985}
+                  onPress={() => goCityDetail(d.name)}
+                >
+                  <View
+                    style={[
+                      styles.destCard,
+                      { backgroundColor: CARD_COLORS[i % CARD_COLORS.length] },
+                    ]}
+                  >
+                    <View style={styles.destLeft}>
+                      <Text style={styles.destTitle} numberOfLines={1}>
+                        {d.name}
+                      </Text>
+                      <Text style={styles.destMeta} numberOfLines={2}>
+                        {d.desc}
+                      </Text>
+                    </View>
+                    <View style={styles.destCoverWrap} pointerEvents="none">
+                      <View style={styles.destCoverInner}>
+                        <CityCoverImage
+                          city={d.name}
+                          landmark={d.landmark}
+                          style={styles.destCover}
+                          resizeMode="cover"
+                        />
+                      </View>
                     </View>
                   </View>
-                </View>
+                </PressScale>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>最新共享</Text>
+              <PressScale onPress={openSharedCollections}>
+                <Text style={[styles.sectionLink, { marginBottom: 0 }]}>查看全部 →</Text>
               </PressScale>
+            </View>
+            {collectionsLoading && collections.length === 0 ? (
+              <ActivityIndicator color={colors.brand} style={{ marginVertical: 12 }} />
+            ) : null}
+            {collections.slice(0, 8).map((item) => (
+              <CollectionCard
+                key={item.id}
+                item={item}
+                onPress={() =>
+                  (navigation as any).navigate("CollectionDetail", {
+                    collectionId: item.id,
+                  })
+                }
+                onDelete={
+                  item.is_owner
+                    ? () => confirmDeleteCollection(item)
+                    : undefined
+                }
+                onAuthorPress={
+                  item.author_id
+                    ? () =>
+                        (navigation as any).navigate("UserProfile", {
+                          userId: item.author_id,
+                          username: item.author_display,
+                        })
+                    : undefined
+                }
+              />
             ))}
           </View>
+        </ScrollView>
         </View>
-      </ScrollView>
+      </DraggableBottomSheet>
     </View>
   );
 }

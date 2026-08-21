@@ -63,7 +63,7 @@ export function FootprintListScreen({ navigation, route }: Props) {
         ]}
       >
         {entries.length === 0 ? (
-          <Text style={styles.listEmpty}>还没有打卡过哦</Text>
+          <Text style={styles.listEmpty}>这里空空如也~</Text>
         ) : (
           <>
             <Text style={styles.listSection}>{SECTIONS[kind]}</Text>

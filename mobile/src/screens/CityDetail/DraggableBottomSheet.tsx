@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo } from "react";
 import { View, useWindowDimensions } from "react-native";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { styles } from "./styles";
+import { WaterRippleBackground } from "../../components/WaterRippleBackground";
 
-const SNAP_FRACTIONS = [0.34, 0.5, 0.78] as const;
+const SNAP_FRACTIONS = [0.38, 0.52, 0.78] as const;
 /** 全屏吸附时距顶部的留白（逻辑像素） */
 const FULL_TOP_GAP = 8;
 /** 约 1mm 的触控/判定增量（逻辑像素） */
@@ -19,8 +21,17 @@ const SNAP_VELOCITY_DELTA = 8 + DRAG_MM;
 
 type Props = {
   bottomInset: number;
+  /** 仅给内部列表留出底栏高度；抽屉本身铺到屏幕底，底栏独立浮在内容上 */
+  bottomOffset?: number;
+  /** page：与「我的」同款浅灰底，胶囊浮在页面上；card：城市详情白底 */
+  surface?: "card" | "page";
+  /** 探索页：下拉收起底栏气泡，上拉弹出 */
+  tabBarReveal?: SharedValue<number> | null;
+  /** 全屏吸附时抽屉顶部距屏幕顶部的留白（逻辑像素）。
+   *  默认 insets.top + FULL_TOP_GAP；有页面顶部浮层（返回键/标题）时传入该浮层高度，
+   *  保证抽屉顶到最高时也不会盖住浮层、拖动小横条不会被浮层遮挡。 */
+  topOffset?: number;
   children: React.ReactNode;
-  /** 固定在抽屉最底部（如协作者横条，可独立收起） */
   footer?: React.ReactNode;
 };
 
@@ -50,29 +61,46 @@ function nearestSnap(current: number, snaps: number[], velocityY: number): numbe
   return best;
 }
 
+function revealFromHeight(height: number, min: number, shown: number): number {
+  "worklet";
+  const span = Math.max(1, shown - min);
+  const t = (height - min) / span;
+  return Math.max(0, Math.min(1, t));
+}
+
 export function DraggableBottomSheet({
   bottomInset,
+  bottomOffset = 0,
+  surface = "card",
+  tabBarReveal,
+  topOffset,
   children,
   footer,
 }: Props) {
   const { height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+
   const snapHeights = useMemo(() => {
-    const maxHeight = Math.round(screenH - insets.top - FULL_TOP_GAP);
+    const clearance = topOffset ?? insets.top + FULL_TOP_GAP;
+    const maxHeight = Math.max(
+      120,
+      Math.round(screenH - clearance),
+    );
     const fractional = SNAP_FRACTIONS.map((f) =>
       Math.min(Math.round(screenH * f), maxHeight),
     );
     return [...fractional, maxHeight]
       .filter((h, i, arr) => arr.indexOf(h) === i)
       .sort((a, b) => a - b);
-  }, [screenH, insets.top]);
+  }, [screenH, insets.top, topOffset]);
 
   const sheetHeight = useSharedValue(snapHeights[1] ?? snapHeights[0] ?? 0);
   const dragStart = useSharedValue(0);
 
   useEffect(() => {
     sheetHeight.value = snapHeights[1] ?? snapHeights[0] ?? 0;
-  }, [snapHeights, sheetHeight]);
+    if (tabBarReveal) tabBarReveal.value = 1;
+  }, [snapHeights, sheetHeight, tabBarReveal]);
 
   const pan = useMemo(
     () =>
@@ -85,14 +113,25 @@ export function DraggableBottomSheet({
         .onUpdate((e) => {
           const min = snapHeights[0];
           const max = snapHeights[snapHeights.length - 1];
-          const next = dragStart.value - e.translationY;
-          sheetHeight.value = Math.max(min, Math.min(max, next));
+          const shown = snapHeights[1] ?? min;
+          const next = Math.max(min, Math.min(max, dragStart.value - e.translationY));
+          sheetHeight.value = next;
+          if (tabBarReveal) {
+            tabBarReveal.value = revealFromHeight(next, min, shown);
+          }
         })
         .onEnd((e) => {
+          const min = snapHeights[0];
           const target = nearestSnap(sheetHeight.value, snapHeights, e.velocityY);
           sheetHeight.value = withSpring(target, { damping: 22, stiffness: 220 });
+          if (tabBarReveal) {
+            tabBarReveal.value = withSpring(target <= min + 2 ? 0 : 1, {
+              damping: 22,
+              stiffness: 220,
+            });
+          }
         }),
-    [dragStart, sheetHeight, snapHeights],
+    [dragStart, sheetHeight, snapHeights, tabBarReveal],
   );
 
   const sheetStyle = useAnimatedStyle(() => ({
@@ -100,10 +139,20 @@ export function DraggableBottomSheet({
   }));
 
   return (
-    <GestureHandlerRootView style={styles.bottomSheetRoot}>
+    <View style={styles.bottomSheetRoot} pointerEvents="box-none">
       <Animated.View
-        style={[styles.bottomSheet, sheetStyle, { paddingBottom: bottomInset }]}
+        style={[
+          styles.bottomSheet,
+          surface === "page" ? styles.bottomSheetPage : null,
+          sheetStyle,
+          { paddingBottom: bottomInset },
+        ]}
       >
+        {surface === "page" ? (
+          <View style={styles.sheetRippleLayer} pointerEvents="none">
+            <WaterRippleBackground />
+          </View>
+        ) : null}
         <GestureDetector gesture={pan}>
           <View
             style={styles.sheetDragZone}
@@ -115,6 +164,6 @@ export function DraggableBottomSheet({
         <View style={styles.sheetBody}>{children}</View>
         {footer ? <View style={styles.sheetFooter}>{footer}</View> : null}
       </Animated.View>
-    </GestureHandlerRootView>
+    </View>
   );
 }

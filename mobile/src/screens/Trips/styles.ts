@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native";
 import { cardShadow, colors } from "../../theme";
 
 export const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: "transparent" },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 8,
@@ -26,6 +26,7 @@ export const styles = StyleSheet.create({
   },
   genBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   logout: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  shareLink: { color: colors.brandHot, fontSize: 14, fontWeight: "600", marginRight: 12 },
   pageTitle: {
     paddingHorizontal: 20,
     paddingTop: 4,
@@ -174,6 +175,7 @@ export const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 32, borderCurve: "continuous",
     backgroundColor: "rgba(255,255,255,0.35)",
+    overflow: "hidden",
   },
   center: { padding: 32, alignItems: "center" },
   error: { color: colors.danger, textAlign: "center", fontSize: 15 },

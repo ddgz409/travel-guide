@@ -1,6 +1,8 @@
-/** 与「知径」品牌色对齐：天蓝主色 + 纯白背景 */
+/** 与「知径」品牌色对齐：天蓝主色 + 清澈淡蓝背景 */
 export const colors = {
-  bg: "#FFFFFF",
+  bg: "#FAFDFF",
+  /** 区块/抽屉略深一层，仍保持通透感 */
+  bgSurface: "#F3F9FD",
   ink: "#1a1a1a",
   muted: "#9E9E9E",
   brand: "#4FC3F7",
