@@ -1,11 +1,13 @@
 """攻略路由：生成 / 列表 / 详情 / 编辑 / 重新生成 / 分享 / 导出。"""
 import io
 import json
+import re
 import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -1270,11 +1272,19 @@ def export_trip(
     if trip.status != "ready":
         raise HTTPException(status_code=400, detail="攻略尚未生成完成，无法导出")
     pdf_bytes = export_trip_pdf(trip)
-    filename = f"{trip.title}.pdf"
+    # 文件名含中文时 Content-Disposition 需用 RFC 5987（filename*=UTF-8''...）转码，
+    # 否则 latin-1 编码头会抛 UnicodeEncodeError 导致 500
+    ascii_name = re.sub(r"[^\w\-]+", "_", trip.title) or "trip"
+    utf8_name = quote(trip.title)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}.pdf"; '
+                f"filename*=UTF-8''{utf8_name}.pdf"
+            )
+        },
     )
 
 
