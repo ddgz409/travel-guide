@@ -259,6 +259,7 @@ def _to_summary(
         place_count=len(places),
         subscriber_count=_subscriber_count(db, row.id),
         subscribed=_is_subscribed(db, row.id, user_id),
+        is_owner=bool(user_id and row.user_id == user_id),
         cover_places=cover,
         created_at=row.created_at,
     )
@@ -274,7 +275,6 @@ def _to_detail(
     return CollectionDetail(
         **base.model_dump(),
         places=places,
-        is_owner=bool(user_id and row.user_id == user_id),
     )
 
 

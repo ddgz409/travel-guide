@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { CollectionSummary } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { citiesGrouped } from "../../data/cities";
@@ -157,6 +158,27 @@ export function ExploreScreen() {
 
   function openSharedCollections() {
     (navigation as any).navigate("SharedCollections");
+  }
+
+  function confirmDeleteCollection(item: CollectionSummary) {
+    Alert.alert("删除发布", `确定删除「${item.title}」吗？\n此操作不可恢复。`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.collections.remove(item.id);
+            await loadLatestCollections();
+          } catch (e) {
+            Alert.alert(
+              "删除失败",
+              e instanceof ApiError ? e.message : "请稍后重试",
+            );
+          }
+        },
+      },
+    ]);
   }
 
   function goGenerate(dest?: string, interests?: string[]) {
@@ -604,6 +626,11 @@ export function ExploreScreen() {
                   (navigation as any).navigate("CollectionDetail", {
                     collectionId: item.id,
                   })
+                }
+                onDelete={
+                  item.is_owner
+                    ? () => confirmDeleteCollection(item)
+                    : undefined
                 }
               />
             ))}

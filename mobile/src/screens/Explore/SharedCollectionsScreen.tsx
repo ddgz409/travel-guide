@@ -11,6 +11,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CollectionSummary } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { CollectionCard } from "../../components/CollectionCard";
@@ -55,6 +56,27 @@ export function SharedCollectionsScreen({ navigation }: Props) {
     navigation.navigate("PublishCollection");
   }
 
+  function confirmDelete(item: CollectionSummary) {
+    Alert.alert("删除发布", `确定删除「${item.title}」吗？\n此操作不可恢复。`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.collections.remove(item.id);
+            setItems((prev) => prev.filter((x) => x.id !== item.id));
+          } catch (e) {
+            Alert.alert(
+              "删除失败",
+              e instanceof ApiError ? e.message : "请稍后重试",
+            );
+          }
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -87,6 +109,9 @@ export function SharedCollectionsScreen({ navigation }: Props) {
                 item={item}
                 onPress={() =>
                   navigation.navigate("CollectionDetail", { collectionId: item.id })
+                }
+                onDelete={
+                  item.is_owner ? () => confirmDelete(item) : undefined
                 }
               />
             ))

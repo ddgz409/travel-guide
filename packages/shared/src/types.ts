@@ -414,6 +414,7 @@ export interface CollectionSummary {
   place_count: number;
   subscriber_count: number;
   subscribed: boolean;
+  is_owner: boolean;
   cover_places: CollectionPlace[];
   created_at: string;
 }

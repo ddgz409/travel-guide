@@ -42,13 +42,13 @@ class CollectionSummary(BaseModel):
     place_count: int
     subscriber_count: int
     subscribed: bool = False
+    is_owner: bool = False
     cover_places: list[CollectionPlaceOut] = Field(default_factory=list)
     created_at: datetime
 
 
 class CollectionDetail(CollectionSummary):
     places: list[CollectionPlaceOut]
-    is_owner: bool = False
 
 
 class CollectionListResponse(BaseModel):

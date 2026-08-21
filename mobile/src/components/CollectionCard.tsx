@@ -8,10 +8,12 @@ import { formatCollectionMeta } from "../utils/collectionFormat";
 type Props = {
   item: CollectionSummary;
   onPress: () => void;
+  /** 提供时在卡片右下角显示「删除」，仅自己的发布贴子传入 */
+  onDelete?: () => void;
 };
 
 /** 探索页共享收藏夹卡片 */
-export function CollectionCard({ item, onPress }: Props) {
+export function CollectionCard({ item, onPress, onDelete }: Props) {
   const covers = item.cover_places?.length
     ? item.cover_places
     : [{ name: item.city || "景点", city: item.city || "北京" }];
@@ -45,7 +47,22 @@ export function CollectionCard({ item, onPress }: Props) {
         <Text style={styles.title} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={styles.meta}>{formatCollectionMeta(item.place_count, item.subscriber_count)}</Text>
+        <View style={styles.metaRow}>
+          <Text style={styles.meta}>
+            {formatCollectionMeta(item.place_count, item.subscriber_count)}
+          </Text>
+          {onDelete ? (
+            <Pressable
+              style={styles.deleteBtn}
+              onPress={onDelete}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="删除这条发布"
+            >
+              <Text style={styles.deleteText}>删除</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     </Pressable>
   );
@@ -111,10 +128,22 @@ const styles = StyleSheet.create({
     color: colors.ink,
     lineHeight: 22,
   },
-  meta: {
-    alignSelf: "flex-end",
-    fontSize: 11,
-    color: colors.muted,
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginTop: 8,
   },
+  meta: {
+    fontSize: 11,
+    color: colors.muted,
+  },
+  deleteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderCurve: "continuous",
+    backgroundColor: "rgba(255,255,255,0.7)",
+  },
+  deleteText: { fontSize: 12, fontWeight: "700", color: colors.danger },
 });

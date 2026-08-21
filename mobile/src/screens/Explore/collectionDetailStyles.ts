@@ -12,6 +12,21 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   back: { fontSize: 16, color: colors.brandHot, fontWeight: "700" },
+  ownerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  deleteBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderCurve: "continuous",
+    backgroundColor: "#FFF0F0",
+    borderWidth: 1,
+    borderColor: "#FFC7C7",
+  },
+  deleteBtnText: { fontSize: 13, color: colors.danger, fontWeight: "800" },
   editBtn: {
     flexDirection: "row",
     alignItems: "center",

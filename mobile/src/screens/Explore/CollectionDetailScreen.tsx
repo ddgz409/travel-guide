@@ -81,6 +81,31 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
     }
   }
 
+  function confirmDelete() {
+    if (!detail || busy) return;
+    Alert.alert("删除发布", `确定删除「${detail.title}」吗？\n此操作不可恢复。`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          setBusy(true);
+          try {
+            await api.collections.remove(detail.id);
+            navigation.goBack();
+          } catch (e) {
+            Alert.alert(
+              "删除失败",
+              e instanceof ApiError ? e.message : "请稍后重试",
+            );
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  }
+
   if (loading || !detail) {
     return (
       <View style={[styles.root, styles.center, { paddingTop: insets.top }]}>
@@ -96,15 +121,29 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
           <Text style={styles.back}>‹ 返回</Text>
         </Pressable>
         {detail.is_owner ? (
-          <Pressable
-            style={styles.editBtn}
-            onPress={() =>
-              navigation.navigate("PublishCollection", { collectionId: detail.id })
-            }
-          >
-            <Text style={styles.editBtnIcon}>✎</Text>
-            <Text style={styles.editBtnText}>编辑</Text>
-          </Pressable>
+          <View style={styles.ownerActions}>
+            <Pressable
+              style={styles.deleteBtn}
+              onPress={() => void confirmDelete()}
+              disabled={busy}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="删除这条发布"
+            >
+              <Text style={styles.deleteBtnText}>
+                {busy ? "…" : "删除"}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.editBtn}
+              onPress={() =>
+                navigation.navigate("PublishCollection", { collectionId: detail.id })
+              }
+            >
+              <Text style={styles.editBtnIcon}>✎</Text>
+              <Text style={styles.editBtnText}>编辑</Text>
+            </Pressable>
+          </View>
         ) : (
           <View style={{ width: 72 }} />
         )}
