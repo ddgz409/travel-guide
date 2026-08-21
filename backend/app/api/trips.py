@@ -1273,8 +1273,9 @@ def export_trip(
         raise HTTPException(status_code=400, detail="攻略尚未生成完成，无法导出")
     pdf_bytes = export_trip_pdf(trip)
     # 文件名含中文时 Content-Disposition 需用 RFC 5987（filename*=UTF-8''...）转码，
-    # 否则 latin-1 编码头会抛 UnicodeEncodeError 导致 500
-    ascii_name = re.sub(r"[^\w\-]+", "_", trip.title) or "trip"
+    # 否则 latin-1 编码头会抛 UnicodeEncodeError 导致 500。
+    # 注意：Python 正则 \w 默认匹配中文，必须用显式 ASCII 白名单。
+    ascii_name = re.sub(r"[^A-Za-z0-9_\-]+", "_", trip.title) or "trip"
     utf8_name = quote(trip.title)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
