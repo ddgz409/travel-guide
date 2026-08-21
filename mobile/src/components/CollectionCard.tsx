@@ -69,7 +69,11 @@ export function CollectionCard({ item, onPress, onDelete, onAuthorPress }: Props
         )}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>
-            {formatCollectionMeta(item.place_count, item.subscriber_count)}
+            {formatCollectionMeta(
+              item.place_count,
+              item.subscriber_count,
+              item.like_count,
+            )}
           </Text>
           {onDelete ? (
             <Pressable

@@ -13,6 +13,7 @@ import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { DayMap } from "../../components/DayMap/DayMap";
+import { UserAvatar } from "../../components/UserAvatar";
 import { colors } from "../../theme";
 import { PressScale } from "../../utils/motion";
 import type { AppStackParamList } from "../../navigation/types";
@@ -125,13 +126,17 @@ export function ShareScreen({ navigation, route }: Props) {
       {collaborators.length > 0 ? (
         <View style={styles.collabBox}>
           <Text style={styles.collabTitle}>协作者</Text>
-          <Text style={styles.collabList}>
-            {collaborators
-              .map((c) =>
-                c.role === "owner" ? `${c.username}（创建者）` : c.username,
-              )
-              .join("、")}
-          </Text>
+          <View style={styles.collabAvatarRow}>
+            {collaborators.map((c) => (
+              <View key={c.user_id} style={styles.collabAvatarChip}>
+                <UserAvatar name={c.username} size={30} />
+                <Text style={styles.collabAvatarName} numberOfLines={1}>
+                  {c.username}
+                  {c.role === "owner" ? "（创建者）" : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
 

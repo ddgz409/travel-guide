@@ -50,7 +50,9 @@ export const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   collabTitle: { fontSize: 13, fontWeight: "700", color: colors.ink },
-  collabList: { marginTop: 6, fontSize: 13, color: colors.muted, lineHeight: 20 },
+  collabAvatarRow: { marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  collabAvatarChip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 160 },
+  collabAvatarName: { fontSize: 12, color: colors.ink, flexShrink: 1 },
   joinBtn: {
     marginTop: 14,
     backgroundColor: colors.brand,

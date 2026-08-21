@@ -28,6 +28,8 @@ import type {
   CollectionDetail,
   CollectionListResponse,
   CollectionCreatePayload,
+  CollectionComment,
+  CommentListResponse,
   UserProfile,
   FollowListResponse,
 } from "./types";
@@ -421,6 +423,21 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<void>(`/collections/${id}/subscribe`, { method: "POST" }),
       unsubscribe: (id: string) =>
         request<void>(`/collections/${id}/subscribe`, { method: "DELETE" }),
+      like: (id: string) =>
+        request<void>(`/collections/${id}/like`, { method: "POST" }),
+      unlike: (id: string) =>
+        request<void>(`/collections/${id}/like`, { method: "DELETE" }),
+      comments: (id: string) =>
+        request<CommentListResponse>(`/collections/${id}/comments`),
+      addComment: (id: string, content: string) =>
+        request<CollectionComment>(`/collections/${id}/comments`, {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        }),
+      deleteComment: (id: string, commentId: string) =>
+        request<void>(`/collections/${id}/comments/${commentId}`, {
+          method: "DELETE",
+        }),
     },
     users: {
       profile: (id: string) => request<UserProfile>(`/users/${id}/profile`),

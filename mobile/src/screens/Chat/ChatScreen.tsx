@@ -29,6 +29,12 @@ import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
 import { styles } from "./styles";
 import {
+  genSessionId,
+  getChatSession,
+  saveChatSession,
+  deleteChatSession,
+} from "../../utils/chatHistoryStore";
+import {
   TripListSheet,
   type AgentTripSummary,
 } from "../../components/TripListSheet";
@@ -84,7 +90,14 @@ export function ChatScreen({ navigation, route }: Props) {
   const tripId = route.params?.tripId;
   const { user, isGuest, enterGuest, rememberGuestTrip } = useAuth();
   const { curModel, openModelPopup, modelModal } = useModelPicker();
+  // 当前会话 id：路由给了就用（恢复历史），否则新建
+  const sessionIdRef = useRef<string>(
+    route.params?.chatSessionId || genSessionId(),
+  );
+  const userKey = user?.id || (isGuest ? "guest" : "guest");
+  const msgsRef = useRef<Msg[]>([]);
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  msgsRef.current = msgs;
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_H);
   const [loading, setLoading] = useState(false);
@@ -394,6 +407,69 @@ export function ChatScreen({ navigation, route }: Props) {
     setTripListSheet(null);
   }, [route.params?.chatSessionId, route.params?.tripId]);
 
+  // 历史记录：挂载时按会话 id 恢复消息
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    let alive = true;
+    void (async () => {
+      const sess = await getChatSession(userKey, sid);
+      if (alive && sess && sess.msgs.length > 0) {
+        setMsgs(sess.msgs as Msg[]);
+        agentNoticesRef.current = [];
+        scrollToBottom();
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // 仅按会话 id / 用户加载一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionIdRef.current, userKey]);
+
+  // 历史记录：消息变化时防抖保存
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!sid || msgs.length === 0) return;
+    const slim = msgs.map((m) => ({
+      role: m.role,
+      content: m.content,
+      reasoning: m.reasoning,
+    }));
+    const title =
+      msgs.find((m) => m.role === "user")?.content || "新对话";
+    const t = setTimeout(() => {
+      void saveChatSession(userKey, {
+        id: sid,
+        title: title.slice(0, 30),
+        msgs: slim,
+        updatedAt: Date.now(),
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [msgs, userKey]);
+
+  // 历史记录：离开时兜底保存一次
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    return () => {
+      const m = msgsRef.current;
+      if (!sid || m.length === 0) return;
+      const title = m.find((x) => x.role === "user")?.content || "新对话";
+      void saveChatSession(userKey, {
+        id: sid,
+        title: title.slice(0, 30),
+        msgs: m.map((x) => ({
+          role: x.role,
+          content: x.content,
+          reasoning: x.reasoning,
+        })),
+        updatedAt: Date.now(),
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
+
   useEffect(() => {
     const prefill = route.params?.prefillMessage?.trim();
     if (prefill) {
@@ -438,6 +514,8 @@ export function ChatScreen({ navigation, route }: Props) {
     setMsgs([]);
     agentNoticesRef.current = [];
     setTripListSheet(null);
+    const sid = sessionIdRef.current;
+    if (sid) void deleteChatSession(userKey, sid);
   }
 
   const showWelcome = msgs.length === 0;
@@ -474,6 +552,15 @@ export function ChatScreen({ navigation, route }: Props) {
               onPress={() => setSmartPlanMode(true)}
             >
               <Text style={styles.smartPlanBtnText}>智能规划</Text>
+            </Pressable>
+          ) : null}
+          {!smartPlanMode ? (
+            <Pressable
+              style={styles.historyBtn}
+              onPress={() => navigation.navigate("ChatHistory")}
+              hitSlop={6}
+            >
+              <Text style={styles.historyBtnText}>历史</Text>
             </Pressable>
           ) : null}
           {!smartPlanMode && msgs.length > 0 ? (

@@ -54,15 +54,6 @@ function hasCoords(loc: { lng?: number | null; lat?: number | null } | null | un
   return loc != null && loc.lng != null && loc.lat != null;
 }
 
-function buildTripChatPrompt(trip: Trip): string {
-  const hint = (trip.preferences as Record<string, unknown> | undefined)?.chat_hint;
-  const extra =
-    typeof hint === "string" && hint.trim()
-      ? `另外请回答：${hint.trim()}`
-      : "请帮我看看有没有可以优化的地方。";
-  return `关于这次${trip.destination}旅行（${trip.start_date} 至 ${trip.end_date}，${trip.travelers} 人），${extra}`;
-}
-
 export function TripDetailScreen({ route, navigation }: Props) {
   const { tripId } = route.params;
   const insets = useSafeAreaInsets();
@@ -529,7 +520,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
               onPress={() =>
                 navigation.push("Chat", {
                   tripId: trip.id,
-                  prefillMessage: buildTripChatPrompt(trip),
                   chatSessionId: String(Date.now()),
                 })
               }

@@ -8,6 +8,7 @@ export type AppStackParamList = {
     tripId?: string;
     chatSessionId?: string;
   } | undefined;
+  ChatHistory: undefined;
   Trips: undefined;
   Explore: undefined;
   CityDetail: { city: string };

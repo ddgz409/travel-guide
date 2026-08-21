@@ -29,6 +29,7 @@ import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
 import { MapFullScreen } from "./src/screens/MapFull/MapFullScreen";
 import { ChatScreen } from "./src/screens/Chat/ChatScreen";
+import { ChatHistoryScreen } from "./src/screens/Chat/ChatHistoryScreen";
 import { TravelSearchScreen } from "./src/screens/TravelSearch/TravelSearchScreen";
 import { PortalSelectScreen } from "./src/screens/PortalSelect/PortalSelectScreen";
 import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
@@ -173,6 +174,11 @@ function RootNavigator() {
         name="Chat"
         component={ChatScreen}
         options={{ headerShown: false, ...riseSoft }}
+      />
+      <Stack.Screen
+        name="ChatHistory"
+        component={ChatHistoryScreen}
+        options={{ headerShown: false, ...pushNested }}
       />
       <Stack.Screen
         name="Login"

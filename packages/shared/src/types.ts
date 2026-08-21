@@ -417,6 +417,9 @@ export interface CollectionSummary {
   subscriber_count: number;
   subscribed: boolean;
   is_owner: boolean;
+  like_count: number;
+  liked: boolean;
+  comment_count: number;
   cover_places: CollectionPlace[];
   created_at: string;
 }
@@ -428,6 +431,21 @@ export interface CollectionDetail extends CollectionSummary {
 
 export interface CollectionListResponse {
   items: CollectionSummary[];
+  total: number;
+}
+
+/** 帖子评论 */
+export interface CollectionComment {
+  id: string;
+  collection_id: string;
+  user_id?: string | null;
+  username: string;
+  content: string;
+  created_at: string;
+}
+
+export interface CommentListResponse {
+  items: CollectionComment[];
   total: number;
 }
 

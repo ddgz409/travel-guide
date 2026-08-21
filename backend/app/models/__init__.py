@@ -265,3 +265,48 @@ class UserFollow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )
+
+
+class CollectionLike(Base):
+    """帖子点赞。"""
+
+    __tablename__ = "collection_likes"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "user_id", name="uq_collection_like"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("shared_collections.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+
+class CollectionComment(Base):
+    """帖子评论。"""
+
+    __tablename__ = "collection_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("shared_collections.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    username: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    content: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )

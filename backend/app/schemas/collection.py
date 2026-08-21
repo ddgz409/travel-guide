@@ -44,6 +44,9 @@ class CollectionSummary(BaseModel):
     subscriber_count: int
     subscribed: bool = False
     is_owner: bool = False
+    like_count: int = 0
+    liked: bool = False
+    comment_count: int = 0
     cover_places: list[CollectionPlaceOut] = Field(default_factory=list)
     created_at: datetime
 
@@ -54,4 +57,22 @@ class CollectionDetail(CollectionSummary):
 
 class CollectionListResponse(BaseModel):
     items: list[CollectionSummary]
+    total: int
+
+
+class CommentOut(BaseModel):
+    id: str
+    collection_id: str
+    user_id: str | None
+    username: str
+    content: str
+    created_at: datetime
+
+
+class CommentCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+
+
+class CommentListResponse(BaseModel):
+    items: list[CommentOut]
     total: int

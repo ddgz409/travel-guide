@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_optional_user
-from app.models import CollectionSubscription, SharedCollection, User
+from app.models import (
+    CollectionComment,
+    CollectionLike,
+    CollectionSubscription,
+    SharedCollection,
+    User,
+)
 from app.services.amap_client import AmapError, get_amap_client
 from app.schemas.collection import (
     CollectionCreate,
@@ -16,6 +22,9 @@ from app.schemas.collection import (
     CollectionPlaceOut,
     CollectionSummary,
     CollectionUpdate,
+    CommentCreate,
+    CommentListResponse,
+    CommentOut,
 )
 
 router = APIRouter(prefix="/collections", tags=["共享收藏夹"])
@@ -242,6 +251,40 @@ def _is_subscribed(db: Session, collection_id: str, user_id: str | None) -> bool
     return row is not None
 
 
+def _like_count(db: Session, collection_id: str) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(CollectionLike)
+            .where(CollectionLike.collection_id == collection_id)
+        )
+        or 0
+    )
+
+
+def _is_liked(db: Session, collection_id: str, user_id: str | None) -> bool:
+    if not user_id:
+        return False
+    row = db.scalar(
+        select(CollectionLike.id).where(
+            CollectionLike.collection_id == collection_id,
+            CollectionLike.user_id == user_id,
+        )
+    )
+    return row is not None
+
+
+def _comment_count(db: Session, collection_id: str) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(CollectionComment)
+            .where(CollectionComment.collection_id == collection_id)
+        )
+        or 0
+    )
+
+
 def _to_summary(
     row: SharedCollection,
     db: Session,
@@ -261,6 +304,9 @@ def _to_summary(
         subscriber_count=_subscriber_count(db, row.id),
         subscribed=_is_subscribed(db, row.id, user_id),
         is_owner=bool(user_id and row.user_id == user_id),
+        like_count=_like_count(db, row.id),
+        liked=_is_liked(db, row.id, user_id),
+        comment_count=_comment_count(db, row.id),
         cover_places=cover,
         created_at=row.created_at,
     )
@@ -465,4 +511,152 @@ def unsubscribe(
     if not sub:
         return
     db.delete(sub)
+    db.commit()
+
+
+def _get_public_collection(db: Session, collection_id: str) -> SharedCollection:
+    row = db.get(SharedCollection, collection_id)
+    if not row or not row.is_public:
+        raise HTTPException(status_code=404, detail="收藏夹不存在")
+    return row
+
+
+@router.post("/{collection_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+def like_collection(
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """点赞帖子。"""
+    _get_public_collection(db, collection_id)
+    exists = db.scalar(
+        select(CollectionLike.id).where(
+            CollectionLike.collection_id == collection_id,
+            CollectionLike.user_id == user.id,
+        )
+    )
+    if not exists:
+        db.add(CollectionLike(collection_id=collection_id, user_id=user.id))
+        db.commit()
+
+
+@router.delete("/{collection_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+def unlike_collection(
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """取消点赞。"""
+    row = db.scalar(
+        select(CollectionLike).where(
+            CollectionLike.collection_id == collection_id,
+            CollectionLike.user_id == user.id,
+        )
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+
+
+@router.get("/{collection_id}/comments", response_model=CommentListResponse)
+def list_comments(
+    collection_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current: User | None = Depends(get_optional_user),
+):
+    """帖子评论列表（公开可看）。"""
+    _get_public_collection(db, collection_id)
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(CollectionComment)
+            .where(CollectionComment.collection_id == collection_id)
+        )
+        or 0
+    )
+    rows = db.scalars(
+        select(CollectionComment)
+        .where(CollectionComment.collection_id == collection_id)
+        .order_by(CollectionComment.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return CommentListResponse(
+        items=[
+            CommentOut(
+                id=c.id,
+                collection_id=c.collection_id,
+                user_id=c.user_id,
+                username=c.username or "旅人",
+                content=c.content,
+                created_at=c.created_at,
+            )
+            for c in rows
+        ],
+        total=total,
+    )
+
+
+@router.post(
+    "/{collection_id}/comments",
+    response_model=CommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_comment(
+    collection_id: str,
+    payload: CommentCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """发表评论。"""
+    _get_public_collection(db, collection_id)
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="评论内容不能为空")
+    c = CollectionComment(
+        collection_id=collection_id,
+        user_id=user.id,
+        username=user.username,
+        content=content[:500],
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return CommentOut(
+        id=c.id,
+        collection_id=c.collection_id,
+        user_id=c.user_id,
+        username=c.username,
+        content=c.content,
+        created_at=c.created_at,
+    )
+
+
+@router.delete(
+    "/{collection_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_comment(
+    collection_id: str,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """删除评论：评论作者或帖子作者可删。"""
+    c = db.scalar(
+        select(CollectionComment).where(
+            CollectionComment.id == comment_id,
+            CollectionComment.collection_id == collection_id,
+        )
+    )
+    if not c:
+        return
+    col = db.get(SharedCollection, collection_id)
+    is_col_owner = bool(col and col.user_id == user.id)
+    is_author = bool(c.user_id and c.user_id == user.id)
+    if not (is_author or is_col_owner):
+        raise HTTPException(status_code=403, detail="无权删除该评论")
+    db.delete(c)
     db.commit()
