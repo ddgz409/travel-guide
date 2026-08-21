@@ -3,7 +3,7 @@
     "name": "知径",
     "slug": "travel-guide",
     "owner": "ddgz409",
-    "version": "2.2.9",
+    "version": "3.0.0",
     "scheme": "zhijing",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.travelguide.app",
-      "versionCode": 28,
+      "versionCode": 29,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
