@@ -79,6 +79,8 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   const { width: winW, height: winH } = useWindowDimensions();
   const { user } = useAuth();
   const editId = route.params?.collectionId;
+  /** AI 助手从已有攻略生成的预填内容（无 collectionId 时流式填入） */
+  const prefill = route.params?.prefill;
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
@@ -105,6 +107,9 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   const [tripList, setTripList] = useState<TripListItem[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [importingTrip, setImportingTrip] = useState(false);
+  // AI 预填流式状态：待填入的地点队列与剩余数量
+  const [streamQueue, setStreamQueue] = useState<CollectionPlace[] | null>(null);
+  const [streamingLeft, setStreamingLeft] = useState(0);
   const userLocRef = useRef(userLoc);
   userLocRef.current = userLoc;
   const locCityRef = useRef(locCity);
@@ -175,6 +180,35 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   useEffect(() => {
     syncMapMarkers(places, selectedIndex);
   }, [places, selectedIndex, syncMapMarkers]);
+
+  // AI 预填：无编辑 id 时，把攻略地点逐条“流式”填入，用户可边看边编辑
+  useEffect(() => {
+    if (!prefill || editId) return;
+    const list = (prefill.places || []).slice(0, 50);
+    if (list.length === 0) return;
+    setTitle(prefill.title || "");
+    setSummary(prefill.summary || "");
+    if (prefill.emoji) setEmoji(prefill.emoji);
+    setStreamQueue(list);
+    setStreamingLeft(list.length);
+  }, [editId, prefill]);
+
+  useEffect(() => {
+    if (!streamQueue || streamingLeft <= 0) return;
+    const timer = setTimeout(() => {
+      const idx = streamQueue.length - streamingLeft;
+      const p = streamQueue[idx];
+      if (p) {
+        setPlaces((prev) => {
+          const seen = new Set(prev.map((x) => `${x.city}::${x.name}`));
+          if (seen.has(`${p.city}::${p.name}`)) return prev;
+          return [...prev, p];
+        });
+      }
+      setStreamingLeft((n) => n - 1);
+    }, 90);
+    return () => clearTimeout(timer);
+  }, [streamQueue, streamingLeft]);
 
   const locate = useCallback(async (interactive = false) => {
     if (interactive) setLocating(true);
@@ -668,6 +702,22 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
                   </Pressable>
                 ))}
               </ScrollView>
+            </View>
+          ) : null}
+
+          {streamQueue && streamingLeft > 0 ? (
+            <View style={styles.aiStreamBanner}>
+              <ActivityIndicator size="small" color={colors.brand} />
+              <Text style={styles.aiStreamText}>
+                🤖 AI 正在填入攻略地点…{" "}
+                {streamQueue.length - streamingLeft + 1}/{streamQueue.length}
+              </Text>
+            </View>
+          ) : streamQueue && !streamingLeft && places.length > 0 ? (
+            <View style={styles.aiStreamDone}>
+              <Text style={styles.aiStreamDoneText}>
+                ✅ 已从攻略填入 {places.length} 个地点，可直接编辑或发布
+              </Text>
             </View>
           ) : null}
 

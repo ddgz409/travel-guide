@@ -1,3 +1,5 @@
+import type { CollectionPlace } from "@travel-guide/shared";
+
 export type AppStackParamList = {
   Main: undefined;
   Chat: {
@@ -44,6 +46,18 @@ export type AppStackParamList = {
   Favorites: undefined;
   CollectionDetail: { collectionId: string };
   SharedCollections: undefined;
-  PublishCollection: { collectionId?: string } | undefined;
+  PublishCollection:
+    | {
+        collectionId?: string;
+        /** AI 助手从已有攻略生成，打开后流式填入地点 */
+        prefill?: {
+          title: string;
+          summary?: string | null;
+          emoji?: string;
+          destination?: string;
+          places: CollectionPlace[];
+        };
+      }
+    | undefined;
   MySubscriptions: undefined;
 };

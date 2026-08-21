@@ -31,6 +31,7 @@ from app.services.planning_tools import (
 )
 from app.services.agent_tools import (
     AGENT_SYSTEM_SUFFIX,
+    COLLECTION_EDIT_TOOLS,
     CONFIRM_REQUIRED,
     SHARE_TOOLS,
     TRIP_MGMT_TOOLS,
@@ -389,6 +390,8 @@ def chat_stream(
             fn_tools.extend(SHARE_TOOLS)
             if mgmt_tools_enabled:
                 fn_tools.extend(TRIP_MGMT_TOOLS)
+                # 把已有攻略做成/编辑成共享贴子（帖子/清单/收藏夹）也属于管理意图
+                fn_tools.extend(COLLECTION_EDIT_TOOLS)
 
         if mode == WebSearchMode.ZHIPU_NATIVE:
             body["tools"] = [{
@@ -537,8 +540,8 @@ def chat_stream(
                     })
                     continue
 
-                # open_trip / open_shared_trip 是纯前端动作，直接发 action 事件
-                if fn_name in ("open_trip", "open_shared_trip"):
+                # open_trip / open_shared_trip / edit_collection_from_trip 是纯前端动作，直接发 action 事件
+                if fn_name in ("open_trip", "open_shared_trip", "edit_collection_from_trip"):
                     result = execute_tool(fn_name, fn_args, db, user)
                     if result.get("ok") and result.get("result", {}).get("navigate"):
                         if fn_name == "open_trip":
@@ -550,13 +553,28 @@ def chat_stream(
                                     "title": result["result"]["title"],
                                 },
                             }
-                        else:
+                        elif fn_name == "open_shared_trip":
                             yield {
                                 "type": "action",
                                 "payload": {
                                     "action": "open_share",
                                     "token": result["result"]["token"],
                                     "title": result["result"]["title"],
+                                },
+                            }
+                        else:
+                            # edit_collection_from_trip：打开发布收藏夹编辑页，前端流式填入地点
+                            r = result["result"]
+                            yield {
+                                "type": "action",
+                                "payload": {
+                                    "action": "open_collection_editor",
+                                    "trip_id": r.get("trip_id"),
+                                    "title": r.get("title") or "",
+                                    "summary": r.get("summary") or "",
+                                    "destination": r.get("destination") or "",
+                                    "emoji": r.get("emoji") or "📁",
+                                    "places": r.get("places") or [],
                                 },
                             }
                 else:

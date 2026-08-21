@@ -282,6 +282,19 @@ export function ChatScreen({ navigation, route }: Props) {
                 navigation.navigate("Share", { token: actionPayload.token });
                 return;
               }
+              if (actionPayload?.action === "open_collection_editor") {
+                setLoading(false);
+                navigation.navigate("PublishCollection", {
+                  prefill: {
+                    title: actionPayload.title || "",
+                    summary: actionPayload.summary || "",
+                    emoji: actionPayload.emoji || "📁",
+                    destination: actionPayload.destination || "",
+                    places: (actionPayload.places as any[]) || [],
+                  },
+                });
+                return;
+              }
               if (actionPayload?.action === "show_trip_list") {
                 showTripList(
                   (actionPayload.trips as AgentTripSummary[]) || [],

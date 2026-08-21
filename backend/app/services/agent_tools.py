@@ -134,7 +134,43 @@ SHARE_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-AGENT_TOOLS = TRIP_MGMT_TOOLS + SHARE_TOOLS
+# 收藏夹/贴子编辑工具组：仅当用户想把已有攻略做成/编辑成共享贴子（帖子/清单/收藏夹）时，
+# 随行程管理意图一起注入（见 chat_service 的 mgmt_tools_enabled）
+COLLECTION_EDIT_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_collection_from_trip",
+            "description": (
+                "根据用户已有的行程攻略，打开「发布收藏夹」编辑页并自动填入攻略中的地点，"
+                "用户可继续编辑后发布到探索页。当用户说「把 XX 攻略做成/编辑成帖子（清单/收藏夹）」"
+                "「把这篇攻略发布成贴子」等想把已有攻略变成共享贴子时调用。"
+                "先调 list_trips 找到对应行程拿到 trip_id；title/summary 尽量简短（title ≤ 20 字，summary ≤ 30 字），"
+                "不传 title 则用行程标题，App 会打开发布页并流式填入地点。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {
+                        "type": "string",
+                        "description": "行程 ID（从 list_trips 结果中获取）",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "可选。贴子的标题，简短（建议 ≤ 20 字）。不传则用行程标题。",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "可选。贴子的简短介绍（建议 ≤ 30 字）。",
+                    },
+                },
+                "required": ["trip_id"],
+            },
+        },
+    },
+]
+
+AGENT_TOOLS = TRIP_MGMT_TOOLS + SHARE_TOOLS + COLLECTION_EDIT_TOOLS
 
 _SHARE_TOKEN_RE = re.compile(r"/share/([A-Za-z0-9_-]+)")
 
@@ -162,6 +198,7 @@ AGENT_SYSTEM_SUFFIX = """
 5. 如果找不到用户说的行程，告知用户并列出现有行程供选择
 6. 用户发来分享链接（含 /share/）或让你分析别人的行程 → 调 view_shared_trip，然后根据行程内容给出你的分析/建议
 7. 用户说「打开这个分享/链接」→ 调 open_shared_trip（token 用 view_shared_trip 返回的 share_token）
+8. 用户想把已有攻略做成/编辑成共享贴子（帖子/清单/收藏夹）→ 先调 list_trips 找到对应行程，再调 edit_collection_from_trip。App 会自动打开发布页并流式填入地点，你只需简短说明即可，不要在对话里复述地点列表。
 """
 
 
@@ -234,6 +271,41 @@ def _trip_detail(trip: Any) -> dict[str, Any]:
             "items": items,
         })
     return d
+
+
+_SLOT_LABELS = {"morning": "上午", "afternoon": "下午", "evening": "晚上"}
+
+
+def _extract_trip_places(trip: Any) -> list[dict[str, Any]]:
+    """从行程攻略提取可发布的地点（过滤交通步骤与未选用项），备注保持简短。"""
+    city = (trip.destination or "").rstrip("市")
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for day in (trip.days or []):
+        for item in (day.items or []):
+            if not item or not item.name:
+                continue
+            if item.type == "transport":
+                continue
+            if item.selected is False:
+                continue
+            key = f"{city}::{item.name}"
+            if key in seen:
+                continue
+            seen.add(key)
+            loc = item.location or {}
+            slot = _SLOT_LABELS.get(item.time_slot or "", "") or ""
+            note = f"第{day.day_index}天" + (f" {slot}" if slot else "")
+            out.append({
+                "name": item.name,
+                "city": city or (loc.get("city") or ""),
+                "address": loc.get("address") or "",
+                "lng": loc.get("lng"),
+                "lat": loc.get("lat"),
+                "poi_id": item.poi_id,
+                "note": note,
+            })
+    return out
 
 
 def execute_tool(
@@ -323,5 +395,30 @@ def execute_tool(
         if trip is None or trip.user_id != user.id:
             return {"ok": False, "error": "行程不存在"}
         return {"ok": True, "result": {"trip_id": trip.id, "title": trip.title, "navigate": True}}
+
+    if name == "edit_collection_from_trip":
+        trip_id = (args.get("trip_id") or "").strip()
+        if not trip_id:
+            return {"ok": False, "error": "缺少 trip_id"}
+        trip = db.get(Trip, trip_id)
+        if trip is None or trip.user_id != user.id:
+            return {"ok": False, "error": "行程不存在或无权限"}
+        places = _extract_trip_places(trip)
+        if not places:
+            return {"ok": False, "error": "该攻略没有可提取的地点（交通步骤已自动过滤）"}
+        title = (args.get("title") or "").strip() or trip.title or f"{trip.destination}清单"
+        summary = (args.get("summary") or "").strip() or ""
+        return {
+            "ok": True,
+            "result": {
+                "navigate": True,
+                "trip_id": trip.id,
+                "title": title[:60],
+                "summary": summary[:120],
+                "destination": trip.destination,
+                "emoji": "📁",
+                "places": places[:50],
+            },
+        }
 
     return {"ok": False, "error": f"未知工具: {name}"}
