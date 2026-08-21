@@ -28,6 +28,8 @@ import type {
   CollectionDetail,
   CollectionListResponse,
   CollectionCreatePayload,
+  UserProfile,
+  FollowListResponse,
 } from "./types";
 
 export class ApiError extends Error {
@@ -396,9 +398,9 @@ export function createApiClient(opts: CreateApiClientOptions) {
         ),
     },
     collections: {
-      list: (limit = 20, offset = 0) =>
+      list: (limit = 20, offset = 0, author?: string) =>
         request<CollectionListResponse>(
-          `/collections?limit=${limit}&offset=${offset}`,
+          `/collections?limit=${limit}&offset=${offset}${author ? `&author=${encodeURIComponent(author)}` : ""}`,
         ),
       get: (id: string) => request<CollectionDetail>(`/collections/${id}`),
       mine: () => request<CollectionListResponse>("/collections/mine"),
@@ -419,6 +421,17 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<void>(`/collections/${id}/subscribe`, { method: "POST" }),
       unsubscribe: (id: string) =>
         request<void>(`/collections/${id}/subscribe`, { method: "DELETE" }),
+    },
+    users: {
+      profile: (id: string) => request<UserProfile>(`/users/${id}/profile`),
+      follow: (id: string) =>
+        request<void>(`/users/${id}/follow`, { method: "POST" }),
+      unfollow: (id: string) =>
+        request<void>(`/users/${id}/follow`, { method: "DELETE" }),
+      followers: (id: string) =>
+        request<FollowListResponse>(`/users/${id}/followers`),
+      following: (id: string) =>
+        request<FollowListResponse>(`/users/${id}/following`),
     },
   };
 }

@@ -632,6 +632,15 @@ export function ExploreScreen() {
                     ? () => confirmDeleteCollection(item)
                     : undefined
                 }
+                onAuthorPress={
+                  item.author_id
+                    ? () =>
+                        (navigation as any).navigate("UserProfile", {
+                          userId: item.author_id,
+                          username: item.author_display,
+                        })
+                    : undefined
+                }
               />
             ))}
           </View>

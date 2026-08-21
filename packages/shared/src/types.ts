@@ -411,6 +411,8 @@ export interface CollectionSummary {
   emoji: string;
   city?: string | null;
   author_display: string;
+  /** 真实注册用户作者的 user_id；系统预置/游客帖子为 null */
+  author_id?: string | null;
   place_count: number;
   subscriber_count: number;
   subscribed: boolean;
@@ -426,6 +428,28 @@ export interface CollectionDetail extends CollectionSummary {
 
 export interface CollectionListResponse {
   items: CollectionSummary[];
+  total: number;
+}
+
+/** 用户主页（公开） */
+export interface UserProfile {
+  id: string;
+  username: string;
+  follower_count: number;
+  following_count: number;
+  post_count: number;
+  is_following: boolean;
+  is_self: boolean;
+}
+
+/** 粉丝 / 关注名单里的用户简档 */
+export interface UserBrief {
+  id: string;
+  username: string;
+}
+
+export interface FollowListResponse {
+  items: UserBrief[];
   total: number;
 }
 

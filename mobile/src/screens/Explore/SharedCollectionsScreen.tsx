@@ -113,6 +113,15 @@ export function SharedCollectionsScreen({ navigation }: Props) {
                 onDelete={
                   item.is_owner ? () => confirmDelete(item) : undefined
                 }
+                onAuthorPress={
+                  item.author_id
+                    ? () =>
+                        navigation.navigate("UserProfile", {
+                          userId: item.author_id as string,
+                          username: item.author_display,
+                        })
+                    : undefined
+                }
               />
             ))
           )}

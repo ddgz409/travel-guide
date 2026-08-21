@@ -39,6 +39,7 @@ class CollectionSummary(BaseModel):
     emoji: str
     city: str | None = None
     author_display: str
+    author_id: str | None = None
     place_count: int
     subscriber_count: int
     subscribed: bool = False

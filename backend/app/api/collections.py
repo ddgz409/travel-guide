@@ -256,6 +256,7 @@ def _to_summary(
         emoji=row.emoji or "📁",
         city=row.city,
         author_display=row.author_display or "旅人",
+        author_id=row.user_id,
         place_count=len(places),
         subscriber_count=_subscriber_count(db, row.id),
         subscribed=_is_subscribed(db, row.id, user_id),
@@ -282,22 +283,24 @@ def _to_detail(
 def list_collections(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
+    author: str | None = Query(None, description="按作者 user_id 过滤"),
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
 ):
     """公开收藏夹列表（探索页）。"""
     _ensure_seed(db)
+    where = [SharedCollection.is_public.is_(True)]
+    if author:
+        where.append(SharedCollection.user_id == author)
     total = (
         db.scalar(
-            select(func.count())
-            .select_from(SharedCollection)
-            .where(SharedCollection.is_public.is_(True))
+            select(func.count()).select_from(SharedCollection).where(*where)
         )
         or 0
     )
     rows = db.scalars(
         select(SharedCollection)
-        .where(SharedCollection.is_public.is_(True))
+        .where(*where)
         .order_by(SharedCollection.created_at.desc())
         .offset(offset)
         .limit(limit)

@@ -245,3 +245,23 @@ class CollectionSubscription(Base):
     )
 
     collection: Mapped["SharedCollection"] = relationship(back_populates="subscriptions")
+
+
+class UserFollow(Base):
+    """用户关注关系：follower_id 关注 followee_id。"""
+
+    __tablename__ = "user_follows"
+    __table_args__ = (
+        UniqueConstraint("follower_id", "followee_id", name="uq_user_follow"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    follower_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    followee_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )

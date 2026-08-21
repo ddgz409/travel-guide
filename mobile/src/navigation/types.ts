@@ -46,6 +46,14 @@ export type AppStackParamList = {
   Favorites: undefined;
   CollectionDetail: { collectionId: string };
   SharedCollections: undefined;
+  /** 发帖作者主页（仅真实注册用户） */
+  UserProfile: { userId: string; username?: string };
+  /** 粉丝 / 关注名单 */
+  FollowList: {
+    userId: string;
+    username: string;
+    initialTab: "followers" | "following";
+  };
   PublishCollection:
     | {
         collectionId?: string;

@@ -152,7 +152,25 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.emoji}>{detail.emoji}</Text>
         <Text style={styles.title}>{detail.title}</Text>
-        <Text style={styles.author}>by {detail.author_display}</Text>
+        {detail.author_id ? (
+          <Pressable
+            onPress={() =>
+              navigation.navigate("UserProfile", {
+                userId: detail.author_id as string,
+                username: detail.author_display,
+              })
+            }
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`查看作者 ${detail.author_display} 的主页`}
+          >
+            <Text style={[styles.author, styles.authorLink]}>
+              by {detail.author_display} ›
+            </Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.author}>by {detail.author_display}</Text>
+        )}
         {detail.summary ? <Text style={styles.summary}>{detail.summary}</Text> : null}
         <Text style={styles.meta}>
           {formatCollectionMeta(detail.place_count, detail.subscriber_count)}

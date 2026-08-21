@@ -51,6 +51,7 @@ export const styles = StyleSheet.create({
     lineHeight: 34,
   },
   author: { marginTop: 6, fontSize: 13, color: colors.muted },
+  authorLink: { color: colors.brandHot, fontWeight: "700" },
   summary: {
     marginTop: 12,
     fontSize: 15,

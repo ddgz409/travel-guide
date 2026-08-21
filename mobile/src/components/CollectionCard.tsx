@@ -10,13 +10,16 @@ type Props = {
   onPress: () => void;
   /** 提供时在卡片右下角显示「删除」，仅自己的发布贴子传入 */
   onDelete?: () => void;
+  /** 提供时作者名可点（仅真实注册用户作者传入） */
+  onAuthorPress?: () => void;
 };
 
 /** 探索页共享收藏夹卡片 */
-export function CollectionCard({ item, onPress, onDelete }: Props) {
+export function CollectionCard({ item, onPress, onDelete, onAuthorPress }: Props) {
   const covers = item.cover_places?.length
     ? item.cover_places
     : [{ name: item.city || "景点", city: item.city || "北京" }];
+  const authorName = item.author_display || "旅人";
 
   return (
     <Pressable style={styles.card} onPress={onPress}>
@@ -47,6 +50,23 @@ export function CollectionCard({ item, onPress, onDelete }: Props) {
         <Text style={styles.title} numberOfLines={2}>
           {item.title}
         </Text>
+        {onAuthorPress ? (
+          <Pressable
+            onPress={onAuthorPress}
+            hitSlop={6}
+            style={styles.authorRow}
+            accessibilityRole="button"
+            accessibilityLabel={`查看作者 ${authorName} 的主页`}
+          >
+            <Text style={styles.authorLink} numberOfLines={1}>
+              by {authorName} ›
+            </Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.authorPlain} numberOfLines={1}>
+            by {authorName}
+          </Text>
+        )}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>
             {formatCollectionMeta(item.place_count, item.subscriber_count)}
@@ -132,8 +152,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
+    marginTop: 6,
   },
+  authorRow: { alignSelf: "flex-start", marginTop: 4 },
+  authorLink: { fontSize: 12, fontWeight: "700", color: colors.brandHot },
+  authorPlain: { marginTop: 4, fontSize: 12, color: colors.muted },
   meta: {
     fontSize: 11,
     color: colors.muted,

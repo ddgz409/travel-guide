@@ -22,6 +22,8 @@ import { FavoritesScreen } from "./src/screens/Me/FavoritesScreen";
 import { MySubscriptionsScreen } from "./src/screens/Me/MySubscriptionsScreen";
 import { SharedCollectionsScreen } from "./src/screens/Explore/SharedCollectionsScreen";
 import { CollectionDetailScreen } from "./src/screens/Explore/CollectionDetailScreen";
+import { UserProfileScreen } from "./src/screens/Explore/UserProfileScreen";
+import { FollowListScreen } from "./src/screens/Explore/FollowListScreen";
 import { PublishCollectionScreen } from "./src/screens/Explore/PublishCollectionScreen";
 import { GenerateScreen } from "./src/screens/Generate/GenerateScreen";
 import { SettingsScreen } from "./src/screens/Settings/SettingsScreen";
@@ -237,6 +239,16 @@ function RootNavigator() {
         name="CollectionDetail"
         component={CollectionDetailScreen}
         options={{ headerShown: false, ...pushPage }}
+      />
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
+        options={{ headerShown: false, ...pushPage }}
+      />
+      <Stack.Screen
+        name="FollowList"
+        component={FollowListScreen}
+        options={{ headerShown: false, ...pushNested }}
       />
       <Stack.Screen
         name="PublishCollection"
