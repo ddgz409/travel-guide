@@ -57,6 +57,8 @@ export type AppStackParamList = {
   PublishCollection:
     | {
         collectionId?: string;
+        /** 从攻略详情「一键发帖」进入：打开后自动流式填入该攻略的地点 */
+        tripId?: string;
         /** AI 助手从已有攻略生成，打开后流式填入地点 */
         prefill?: {
           title: string;

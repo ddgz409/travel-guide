@@ -81,6 +81,8 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
   const editId = route.params?.collectionId;
   /** AI 助手从已有攻略生成的预填内容（无 collectionId 时流式填入） */
   const prefill = route.params?.prefill;
+  /** 攻略详情「一键发帖」进入：加载该攻略并流式填入地点 */
+  const tripId = route.params?.tripId;
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
@@ -209,6 +211,29 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
     }, 90);
     return () => clearTimeout(timer);
   }, [streamQueue, streamingLeft]);
+
+  // 攻略详情「一键发帖」：无编辑/无 AI 预填时，加载攻略并把地点流式填入
+  useEffect(() => {
+    if (!tripId || editId || prefill) return;
+    void (async () => {
+      try {
+        const trip = await api.trips.get(tripId);
+        const extracted = placesFromTrip(trip);
+        if (extracted.length === 0) {
+          Alert.alert("提示", "该攻略没有可提取的地点（交通步骤已自动过滤）");
+          navigation.goBack();
+          return;
+        }
+        const list = extracted.slice(0, 50);
+        setTitle((prev) => (prev || "").trim() || trip.title || "");
+        setStreamQueue(list);
+        setStreamingLeft(list.length);
+      } catch (e) {
+        Alert.alert("加载失败", e instanceof ApiError ? e.message : "请稍后重试");
+        navigation.goBack();
+      }
+    })();
+  }, [tripId, editId, prefill, navigation]);
 
   const locate = useCallback(async (interactive = false) => {
     if (interactive) setLocating(true);
@@ -709,7 +734,7 @@ export function PublishCollectionScreen({ navigation, route }: Props) {
             <View style={styles.aiStreamBanner}>
               <ActivityIndicator size="small" color={colors.brand} />
               <Text style={styles.aiStreamText}>
-                🤖 AI 正在填入攻略地点…{" "}
+                正在填入攻略地点…{" "}
                 {streamQueue.length - streamingLeft + 1}/{streamQueue.length}
               </Text>
             </View>

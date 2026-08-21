@@ -545,6 +545,14 @@ export function TripDetailScreen({ route, navigation }: Props) {
             >
               <Text style={styles.actionText}>导出 PDF</Text>
             </PressScale>
+            <PressScale
+              style={[styles.actionBtn, styles.actionPost]}
+              onPress={() =>
+                navigation.navigate("PublishCollection", { tripId: trip.id })
+              }
+            >
+              <Text style={[styles.actionText, { color: "#fff" }]}>一键发帖</Text>
+            </PressScale>
             {trip.share_token ? (
               <PressScale
                 style={styles.actionBtn}
