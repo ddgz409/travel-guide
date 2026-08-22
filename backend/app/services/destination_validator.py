@@ -44,7 +44,56 @@ RING_ROUTES: dict[str, list[str]] = {
     "西北大环线": ["西宁", "塔尔寺", "青海湖", "茶卡", "大柴旦", "敦煌", "嘉峪关", "张掖", "祁连", "西宁"],
     "新疆环线": ["乌鲁木齐", "吐鲁番", "喀纳斯", "禾木", "赛里木湖", "伊宁", "乌鲁木齐"],
     "云南大环线": ["昆明", "大理", "丽江", "香格里拉", "泸沽湖", "昆明"],
+    "海南环岛": ["海口", "文昌", "琼海", "万宁", "陵水", "三亚", "东方", "儋州", "临高", "海口"],
+    "海南环岛环线": ["海口", "文昌", "琼海", "万宁", "陵水", "三亚", "东方", "儋州", "临高", "海口"],
 }
+
+# 省份 -> 省内热门旅游城市序列（用户输入「山东」「云南」等即可展开成多城市路线）。
+# 热门地级市优先排前面（天数不足时生成器会按顺序覆盖前几个城市）。
+PROVINCE_CITIES: dict[str, list[str]] = {
+    "北京": ["北京"],
+    "上海": ["上海"],
+    "天津": ["天津"],
+    "重庆": ["重庆"],
+    "山东": ["济南", "青岛", "威海", "烟台", "泰安", "曲阜"],
+    "云南": ["昆明", "大理", "丽江", "香格里拉", "西双版纳", "泸沽湖"],
+    "四川": ["成都", "九寨沟", "峨眉山", "乐山", "都江堰", "稻城"],
+    "湖南": ["长沙", "张家界", "凤凰", "岳阳", "韶山"],
+    "福建": ["厦门", "福州", "泉州", "武夷山", "漳州"],
+    "江西": ["南昌", "九江", "景德镇", "婺源", "上饶"],
+    "安徽": ["合肥", "黄山", "九华山", "宏村", "芜湖"],
+    "贵州": ["贵阳", "黄果树", "西江千户苗寨", "荔波", "镇远"],
+    "广西": ["桂林", "阳朔", "南宁", "北海", "涠洲岛"],
+    "河南": ["郑州", "洛阳", "开封", "安阳", "焦作"],
+    "湖北": ["武汉", "宜昌", "恩施", "神农架", "十堰"],
+    "陕西": ["西安", "延安", "华山", "汉中", "宝鸡"],
+    "山西": ["太原", "大同", "平遥", "五台山", "忻州"],
+    "河北": ["石家庄", "承德", "秦皇岛", "张家口", "保定"],
+    "辽宁": ["沈阳", "大连", "丹东", "锦州", "本溪"],
+    "吉林": ["长春", "吉林", "延边", "长白山", "通化"],
+    "黑龙江": ["哈尔滨", "牡丹江", "齐齐哈尔", "伊春", "黑河"],
+    "江苏": ["南京", "苏州", "无锡", "扬州", "常州", "镇江"],
+    "浙江": ["杭州", "宁波", "温州", "绍兴", "嘉兴", "金华"],
+    "广东": ["广州", "深圳", "珠海", "汕头", "佛山", "潮州"],
+    "甘肃": ["兰州", "敦煌", "张掖", "嘉峪关", "天水"],
+    "新疆": ["乌鲁木齐", "喀纳斯", "伊犁", "吐鲁番", "禾木", "喀什"],
+    "西藏": ["拉萨", "林芝", "日喀则", "纳木错", "珠峰"],
+    "内蒙古": ["呼和浩特", "呼伦贝尔", "鄂尔多斯", "锡林郭勒", "额济纳", "阿拉善"],
+    "宁夏": ["银川", "中卫", "沙坡头", "固原"],
+    "青海": ["西宁", "青海湖", "茶卡", "祁连", "格尔木"],
+    "海南": ["海口", "三亚", "文昌", "万宁", "陵水", "儋州"],
+    "台湾": ["台北", "高雄", "花莲", "台中", "垦丁"],
+    "香港": ["香港"],
+    "澳门": ["澳门"],
+}
+
+# 省份表里用到的全部城市 -> 集合，check_route_city 直接信任（避免高德对县级地名编码过严）
+PROVINCE_CITY_SET = frozenset(
+    city for cities in PROVINCE_CITIES.values() for city in cities
+)
+
+# 省份名后缀（用于识别「山东省」「新疆维吾尔自治区」等写法）
+_PROVINCE_SUFFIXES = ("省", "维吾尔自治区", "壮族自治区", "回族自治区", "自治区", "特别行政区", "市")
 
 # 路线分隔符
 _ROUTE_SEPS = re.compile(r"[-—–→→~·、,，;；/]+|(?:\s*[到至往]\s*)")
@@ -67,6 +116,23 @@ _ROUTE_CITY_ALIASES: dict[str, str] = {
     "额济纳": "额济纳旗",
     "喀纳斯": "布尔津喀纳斯",
     "禾木": "布尔津禾木",
+    # 海南环岛沿线市县（高德对县级地名地理编码过严，直接信任）
+    "文昌": "文昌市",
+    "琼海": "琼海市",
+    "万宁": "万宁市",
+    "陵水": "陵水黎族自治县",
+    "东方": "东方市",
+    "儋州": "儋州市",
+    "临高": "临高县",
+    "乐东": "乐东黎族自治县",
+    "保亭": "保亭黎族苗族自治县",
+    "五指山": "五指山市",
+    "澄迈": "澄迈县",
+    "屯昌": "屯昌县",
+    "定安": "定安县",
+    "琼中": "琼中黎族苗族自治县",
+    "白沙": "白沙黎族自治县",
+    "昌江": "昌江黎族自治县",
 }
 
 
@@ -84,7 +150,11 @@ def check_route_city(raw: str) -> DestinationCheckResult:
     name = (raw or "").strip()
     if not name:
         return DestinationCheckResult(valid=False, message="站点为空")
-    if _trusted_city(name) or name in _ROUTE_CITY_ALIASES:
+    if (
+        _trusted_city(name)
+        or name in _ROUTE_CITY_ALIASES
+        or name in PROVINCE_CITY_SET
+    ):
         return DestinationCheckResult(valid=True, message="", resolved_name=name)
     probe = _ROUTE_CITY_ALIASES.get(name, name)
     amap = get_amap_client()
@@ -105,6 +175,23 @@ def check_route_city(raw: str) -> DestinationCheckResult:
     return DestinationCheckResult(valid=True, message="", resolved_name=resolved)
 
 
+def _normalize_province(raw: str) -> str:
+    """去掉省份后缀，得到规范省份名；非省份原样返回。"""
+    text = (raw or "").strip()
+    for suf in _PROVINCE_SUFFIXES:
+        if text.endswith(suf) and len(text) > len(suf):
+            cand = text[: -len(suf)]
+            if cand in PROVINCE_CITIES:
+                return cand
+    if text in PROVINCE_CITIES:
+        return text
+    return ""
+
+
+def is_province_name(raw: str) -> bool:
+    return bool(_normalize_province(raw))
+
+
 def parse_route(raw: str) -> tuple[list[str], bool]:
     """解析目的地为城市序列。
 
@@ -117,6 +204,10 @@ def parse_route(raw: str) -> tuple[list[str], bool]:
     # 已知环线名
     if text in RING_ROUTES:
         return list(RING_ROUTES[text]), True
+    # 省份名 -> 省内热门城市序列（如「山东」→ 济南·青岛·威海…）
+    prov = _normalize_province(text)
+    if prov:
+        return list(PROVINCE_CITIES[prov]), True
     # 「环线」关键词 + 起点：如「成都环线」→ 补全不了，仍按单城市处理
     # 显式分隔符拆分
     parts = [p for p in _ROUTE_SEPS.split(text) if p.strip()]
@@ -191,10 +282,19 @@ def _geo_matches_input(raw: str, geo) -> bool:
 
 
 def check_destination(raw: str) -> DestinationCheckResult:
-    """校验目的地是否可被高德地理编码识别。"""
+    """校验目的地是否可被高德地理编码识别（省份名直接视为有效）。"""
     name = (raw or "").strip()
     if not name:
         return DestinationCheckResult(valid=False, message="请输入目的地")
+    # 省份名：直接有效（会展开成省内城市路线）
+    prov = _normalize_province(name)
+    if prov:
+        return DestinationCheckResult(
+            valid=True,
+            message="",
+            resolved_name=prov,
+            suggestions=[],
+        )
     if len(name) < 2:
         return DestinationCheckResult(
             valid=False,

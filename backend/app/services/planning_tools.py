@@ -82,6 +82,7 @@ PLANNING_TOOLS: list[dict[str, Any]] = [
             "description": (
                 "已收集足够信息，开始生成行程。至少需要 destination 和日期范围（或天数）。"
                 "在用户确认目的地、天数/日期后再调用，不要过早调用。"
+                "若用户已提到人数或出行方式，请一并填入。"
             ),
             "parameters": {
                 "type": "object",
@@ -92,6 +93,14 @@ PLANNING_TOOLS: list[dict[str, Any]] = [
                     "days": {
                         "type": "integer",
                         "description": "若未给具体日期，可用天数（从今天/明天起算）",
+                    },
+                    "travelers": {
+                        "type": "integer",
+                        "description": "出行人数，如 1/2/4；用户未提时可省略",
+                    },
+                    "transport": {
+                        "type": "string",
+                        "description": "出行方式，如 自驾/高铁/飞机/公共交通/跟团；用户未提时可省略",
                     },
                     "interests": {
                         "type": "array",
@@ -112,17 +121,23 @@ PLANNING_TOOLS: list[dict[str, Any]] = [
 PLANNING_SYSTEM_SUFFIX = """
 
 ---
-**行程规划模式（逐步追问）**
+**行程规划模式（逐步追问，必须用卡片）**
 仅当用户**明确想要生成一份新的行程/攻略**时启用（如「帮我规划/安排/制定/生成 行程/攻略」「X 日游」）。
 - 若用户只是咨询（推荐目的地/景点介绍/餐厅推荐/穿衣/天气/签证/怎么玩/有什么好玩的），直接回答，**不要**调用规划工具，也不要追问。
-- **一次只问一个**问题，一个一个来：无论还缺多少信息（目的地、天数、日期、交通、兴趣…），每个回合只追问**一个**维度；用户回答后，下一个回合再问下一个。**绝对不要**在一个回合里同时问多个问题，**绝对不要**连续调用多个 `ask_user_choice` / `ask_user_date`。追问时用 `ask_user_choice`（可点选项）或 `ask_user_date`（日期选择），不要用普通文字一次抛出好几个问题。
+- **收集任何行程细节时，必须调用 `ask_user_choice` 或 `ask_user_date` 弹出可点卡片，绝对禁止用普通文字提问，绝对禁止把多个问题堆在一条文本里。** 需要问什么就用对应的工具弹卡片，一次只弹一张。
+- **一次只问一个**问题，一个一个来：无论还缺多少信息（目的地、天数、日期、人数、出行方式、兴趣…），每个回合只追问**一个**维度；用户回答后，下一个回合再问下一个。**绝对不要**在一个回合里同时问多个问题，**绝对不要**连续调用多个 `ask_user_choice` / `ask_user_date`。
 1. 用 `ask_user_choice` 给出 2-4 个可点选项（用户点击后会回填输入框，可改可发）
    - 推荐多个目的地 -> style=select_list（列表 + 确认）
-   - 天数、交通、兴趣等 -> style=chips（快捷按钮，点一下回填）
-3. 需要确认 **具体出发日期** 时，用 `ask_user_date` 展示日历选择器
-4. 至少需要 **目的地 + 日期或天数** 才能 `finalize_plan`
-5. 信息足够后调用 `finalize_plan`，系统会自动打开生成页
-6. **绝对不要**在咨询类问题上调用 `finalize_plan` 或跳转生成页
+   - 天数、人数、出行方式、兴趣等 -> style=chips（快捷按钮，点一下回填）
+   - 人数示例：1人 / 2人 / 3-4人 / 5人及以上
+   - 出行方式示例：自驾 / 高铁 / 飞机 / 公共交通 / 跟团
+3. 需要确认 **具体出发日期** 时，用 `ask_user_date` 展示日历选择器。
+   **用户说 "9.3 / 9月3 / 9月三日 / 2026/9/3" 这类日期时，直接视为今年或次年的日期，不要反复追问"是哪一年"**；若不方便确认再弹日历卡片让用户选。
+ 4. 至少需要 **目的地 + 日期或天数** 才能 `finalize_plan`
+ 5. 信息足够后调用 `finalize_plan`，系统会自动打开生成页
+ 6. **绝对不要**在咨询类问题上调用 `finalize_plan` 或跳转生成页
+ 7. 用户说「青甘环线」「西北大环线」「甘南环线」等**知名环线名**时，目的地就是该环线名，直接作为 `finalize_plan` 的 destination（系统会展开成城市路线），**不要追问起点城市、也不要要求选单城市**。
+ 8. 用户说**省份名**（如「山东」「云南」「海南」「四川省」）时，目的地就是该省份名，直接作为 `finalize_plan` 的 destination（系统会自动展开成省内热门城市路线），**不要追问具体城市**；只需按流程问天数/日期/人数等即可。
 """
 
 # 触发规划对话模式：必须明确包含「生成新行程」意图词，避免「推荐个餐厅」「有什么攻略」等咨询误判
@@ -154,6 +169,23 @@ def is_planning_conversation(text: str) -> bool:
     if CONSULT_HINT.search(raw):
         return False
     return bool(PLANNING_TRIGGER.search(raw))
+
+
+# AI 已经主动开口规划（如「我来为您规划一份西宁攻略」）时，
+# 后续用户短回复（「5天」「9.3」）也应保持规划工具可用
+_ASSISTANT_PLANNING_RE = re.compile(
+    r"(?:为|帮|给).{0,16}(?:您|你|用户)?.{0,12}(?:规划|安排|制定|设计|生成).{0,16}(?:行程|攻略)"
+    r"|规划(?:一份|一个|您的|你的|X|N)?.{0,12}(?:行程|攻略)",
+    re.I,
+)
+
+
+def is_planning_assistant_message(text: str) -> bool:
+    """判断 assistant 消息是否已表明正在规划行程（用于保持规划工具可用）。"""
+    raw = (text or "").strip()
+    if len(raw) < 6:
+        return False
+    return bool(_ASSISTANT_PLANNING_RE.search(raw))
 
 
 def _default_dates(days: int = 2) -> tuple[str, str]:
@@ -211,13 +243,26 @@ def execute_planning_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         dest = (args.get("destination") or "").strip()
         if not dest:
             return {"ok": False, "error": "缺少 destination"}
-        from app.services.destination_validator import check_destination
+        from app.services.destination_validator import (
+            check_destination,
+            check_route_city,
+            parse_route,
+        )
 
-        check = check_destination(dest)
-        if not check.valid:
-            return {"ok": False, "error": check.message}
-
-        resolved = check.resolved_name or dest
+        # 路线感知校验：环线名（如「青甘环线」）展开为城市序列逐个校验；
+        # 单城市走原逻辑。resolved 保持原样，便于生成侧 _resolve_route 再次展开。
+        cities, is_route = parse_route(dest)
+        if is_route and len(cities) >= 2:
+            for c in cities:
+                rc = check_route_city(c)
+                if not rc.valid:
+                    return {"ok": False, "error": f"路线中的「{c}」无效：{rc.message}"}
+            resolved = dest
+        else:
+            check = check_destination(dest)
+            if not check.valid:
+                return {"ok": False, "error": check.message}
+            resolved = check.resolved_name or dest
         start = (args.get("start_date") or "").strip()
         end = (args.get("end_date") or "").strip()
         if not start or not end:
@@ -232,18 +277,30 @@ def execute_planning_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(interests, list):
             interests = ["文化", "美食"]
 
-        return {
-            "ok": True,
-            "result": {
-                "action": "navigate_generate",
-                "destination": resolved,
-                "start_date": start,
-                "end_date": end,
-                "interests": interests,
-                "mode": "custom",
-                "auto_submit": True,
-                "chat_hint": (args.get("chat_hint") or "").strip() or f"规划{resolved}行程",
-            },
+        # 人数/出行方式：用户提到才带，避免默认值误导生成
+        travelers = args.get("travelers")
+        try:
+            travelers = max(1, min(int(travelers), 20)) if travelers not in (None, "") else None
+        except (TypeError, ValueError):
+            travelers = None
+        transport = (args.get("transport") or "").strip() or None
+
+        result: dict[str, Any] = {
+            "action": "navigate_generate",
+            "destination": resolved,
+            "start_date": start,
+            "end_date": end,
+            "interests": interests,
+            "mode": "custom",
+            "auto_submit": True,
+            "chat_hint": (args.get("chat_hint") or "").strip() or f"规划{resolved}行程",
         }
+        if is_route and len(cities) >= 2:
+            result["route"] = cities
+        if travelers is not None:
+            result["travelers"] = travelers
+        if transport:
+            result["transport"] = transport
+        return {"ok": True, "result": result}
 
     return {"ok": False, "error": f"未知规划工具: {name}"}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator
@@ -27,6 +28,7 @@ from app.services.planning_tools import (
     PLANNING_TOOLS,
     PLANNING_TOOL_NAMES,
     execute_planning_tool,
+    is_planning_assistant_message,
     is_planning_conversation,
 )
 from app.services.agent_tools import (
@@ -95,6 +97,18 @@ def _last_user_message(messages: list[dict[str, str]]) -> str:
         if msg.get("role") == "user":
             return (msg.get("content") or "").strip()
     return ""
+
+
+# 规划模式下，模型若用纯文本提问（而非调 ask_user_choice/ask_user_date 卡片），
+# 用此正则识别，拦截该文本并提示改用卡片重试一次
+_PLANNING_QUESTION_RE = re.compile(
+    r"[？?]|多少|几天|几位|几号|什么时候|几月|怎么去|出行方式|选择",
+    re.I,
+)
+
+
+def _looks_like_planning_question(text: str) -> bool:
+    return bool(_PLANNING_QUESTION_RE.search(text or ""))
 
 
 def build_system_prompt(
@@ -315,12 +329,19 @@ def chat_stream(
     # 意图门控：仅当用户明确表达行程管理/查看列表意图时才注入行程工具，
     # 避免咨询类问题（推荐/介绍/怎么玩）被 LLM 误调 list_trips 弹出「我的攻略」列表
     mgmt_tools_enabled = agent_enabled and is_trip_management_intent(user_text)
+    # 规划模式：用户明确要新行程，或 AI 已开口规划（如「我来为您规划西宁攻略」）时启用，
+    # 这样后续用户短回复（「5天」「9.3」）也能继续弹卡片工具，而不是退化成纯文本追问
     planning_enabled = not trip_context and (
         is_planning_conversation(user_text)
         or any(
             is_planning_conversation(m.get("content", ""))
             for m in messages
             if m.get("role") == "user"
+        )
+        or any(
+            is_planning_assistant_message(m.get("content", ""))
+            for m in messages
+            if m.get("role") == "assistant"
         )
     )
 
@@ -373,6 +394,7 @@ def chat_stream(
     # Agent 循环：LLM 可能多次调用工具
     # 限制 3 轮，避免自问自答死循环；追问类工具（ask_user_choice/date）后立即停止等待用户回复
     max_rounds = 3
+    planning_nudge_sent = False
     for _round in range(max_rounds):
         body: dict[str, Any] = {
             "model": model,
@@ -439,7 +461,31 @@ def chat_stream(
                 content = delta.get("content", "")
                 if content:
                     content_acc += content
-                    yield {"type": "content", "content": content}
+                    # 规划模式下正文改为缓冲：先判断本轮是「弹卡片」还是「纯文本提问」，
+                    # 若是后者（模型偷懒用文字问），拦截并改用卡片重试
+                    if not planning_enabled:
+                        yield {"type": "content", "content": content}
+
+            # 规划模式兜底：模型用纯文本提问而未调卡片工具 → 拦截文本，提示改用卡片后重试一次
+            if (
+                planning_enabled
+                and not planning_nudge_sent
+                and not tool_calls_acc
+                and _looks_like_planning_question(content_acc)
+            ):
+                planning_nudge_sent = True
+                payload_messages.append({
+                    "role": "user",
+                    "content": (
+                        "请使用 ask_user_choice 或 ask_user_date 工具以可点卡片的形式向我提问，"
+                        "不要用普通文字提问。直接调用对应工具，不要输出文字问题。"
+                    ),
+                })
+                continue
+
+            # 规划模式下把缓冲的正文补发（正常回答 / 卡片前的说明文字）
+            if planning_enabled and content_acc:
+                yield {"type": "content", "content": content_acc}
 
             # 没有 tool_calls → 对话结束
             if not tool_calls_acc:

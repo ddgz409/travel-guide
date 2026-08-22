@@ -10,6 +10,7 @@ export type TripGenerateInput = {
   travelers?: number;
   budgetLevel?: string;
   transport?: string;
+  route?: string[];
   mustInclude?: PoiSearchResult[];
   llm: {
     provider: string;
@@ -52,6 +53,7 @@ export async function submitTripGenerate(
     start_date: input.startDate,
     end_date: input.endDate,
     travelers: input.travelers ?? 2,
+    ...(input.route?.length ? { route: input.route } : {}),
     preferences: {
       interests: input.interests?.length ? input.interests : ["文化", "美食"],
       budget_level: input.budgetLevel ?? "中等",

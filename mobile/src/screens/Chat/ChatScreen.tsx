@@ -190,6 +190,9 @@ export function ChatScreen({ navigation, route }: Props) {
             endDate: action.end_date,
             interests: action.interests,
             chatHint: action.chat_hint,
+            travelers: action.travelers,
+            transport: action.transport,
+            route: action.route,
             llm,
           },
         );
