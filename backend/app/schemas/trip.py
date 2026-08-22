@@ -87,6 +87,7 @@ class DayOut(BaseModel):
     id: str
     day_index: int
     date: date
+    city: str | None = None
     summary: str | None = None
     items: list[ItemOut] = []
 
@@ -132,6 +133,10 @@ class TripGenerateRequest(BaseModel):
     """生成攻略请求。"""
 
     destination: str = Field(min_length=1, max_length=128)
+    route: list[str] | None = Field(
+        default=None,
+        description="多城市路线城市序列（如 ['西宁','茶卡','大柴旦','敦煌']）；单城市为 None",
+    )
     start_date: date
     end_date: date
     travelers: int = Field(default=1, ge=1, le=20)
@@ -187,6 +192,7 @@ class TripOut(BaseModel):
     id: str
     title: str
     destination: str
+    route: list[str] | None = None
     start_date: date
     end_date: date
     travelers: int

@@ -35,7 +35,7 @@ from app.services.generator import GeneratorError, get_generator
 from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
 from app.services.quick_recommend import build_quick_recommend
-from app.services.destination_validator import check_destination
+from app.services.destination_validator import check_destination, parse_route
 from app.services.generation_progress import get_progress
 from app.services.trip_cache import (
     build_cache_key,
@@ -54,6 +54,36 @@ def _require_valid_destination(destination: str) -> None:
     result = check_destination(destination)
     if not result.valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
+
+
+def _resolve_route(destination: str, route: list[str] | None) -> list[str] | None:
+    """解析是否多城市路线。
+
+    优先用显式 route；否则尝试从 destination 字符串解析。
+    返回城市序列（多城市）或 None（单城市）。会校验每个城市。
+    """
+    cities = [c.strip() for c in (route or []) if c and c.strip()]
+    if not cities:
+        parsed, is_route = parse_route(destination)
+        if is_route and len(parsed) >= 2:
+            cities = parsed
+    if not cities:
+        return None
+    # 多次地理编码校验，任一无效则 400
+    for c in cities:
+        r = check_destination(c)
+        if not r.valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"路线中的「{c}」无效：{r.message}",
+            )
+    return cities
+
+
+def _route_title(destination: str, cities: list[str] | None, days_count: int) -> str:
+    if cities and len(cities) >= 2:
+        return f"{'·'.join(cities)} {days_count}日游"
+    return f"{destination}{days_count}日游" if days_count > 1 else f"{destination}之旅"
 
 
 def _trip_or_404(trip_id: str, db: Session, user_id: str | None = None) -> Trip:
@@ -198,11 +228,12 @@ def generate(
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
 
-    _require_valid_destination(payload.destination)
+    cities = _resolve_route(payload.destination, payload.route)
+    if not cities:
+        _require_valid_destination(payload.destination)
 
-    title = f"{payload.destination}之旅"
-    if payload.start_date != payload.end_date:
-        title = f"{payload.destination}{(payload.end_date - payload.start_date).days + 1}日游"
+    days_count = (payload.end_date - payload.start_date).days + 1
+    title = _route_title(payload.destination, cities, days_count)
 
     # 合并 must_include 到 preferences
     preferences = dict(payload.preferences)
@@ -217,7 +248,6 @@ def generate(
             "base_url": (payload.llm.get("base_url") or "").strip() or None,
         }
 
-    days_count = (payload.end_date - payload.start_date).days + 1
     cache_key = build_cache_key(
         destination=payload.destination,
         days_count=days_count,
@@ -243,6 +273,7 @@ def generate(
         user_id=current.id,
         title=title,
         destination=payload.destination,
+        route=cities,
         start_date=payload.start_date,
         end_date=payload.end_date,
         travelers=payload.travelers,
@@ -330,13 +361,14 @@ def guest_generate(
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期不能早于开始日期")
 
-    _require_valid_destination(payload.destination)
+    cities = _resolve_route(payload.destination, payload.route)
+    if not cities:
+        _require_valid_destination(payload.destination)
 
     guest = _ensure_guest_user(db)
 
-    title = f"{payload.destination}之旅"
-    if payload.start_date != payload.end_date:
-        title = f"{payload.destination}{(payload.end_date - payload.start_date).days + 1}日游"
+    days_count = (payload.end_date - payload.start_date).days + 1
+    title = _route_title(payload.destination, cities, days_count)
 
     preferences = dict(payload.preferences)
     if payload.must_include:
@@ -349,7 +381,6 @@ def guest_generate(
             "base_url": (payload.llm.get("base_url") or "").strip() or None,
         }
 
-    days_count = (payload.end_date - payload.start_date).days + 1
     cache_key = build_cache_key(
         destination=payload.destination,
         days_count=days_count,
@@ -375,6 +406,7 @@ def guest_generate(
         user_id=guest.id,
         title=title,
         destination=payload.destination,
+        route=cities,
         start_date=payload.start_date,
         end_date=payload.end_date,
         travelers=payload.travelers,
@@ -398,13 +430,35 @@ def quick_recommend(payload: QuickRecommendRequest):
 
 @router.post("/validate-destination", response_model=ValidateDestinationResponse)
 def validate_destination(payload: ValidateDestinationRequest):
-    """校验目的地是否真实存在（高德地理编码）。"""
-    return check_destination(payload.destination).to_dict()
+    """校验目的地是否真实存在（高德地理编码）；多城市路线会逐个校验。"""
+    return _validate_destination_response(payload.destination)
 
 
 @router.get("/validate-destination", response_model=ValidateDestinationResponse)
 def validate_destination_get(destination: str):
     """校验目的地（GET，兼容旧网关或未部署 POST 路由的环境）。"""
+    return _validate_destination_response(destination)
+
+
+def _validate_destination_response(destination: str) -> dict:
+    """路线敏感的校验：多城市拆开逐个校验，单城市走原逻辑。"""
+    cities, is_route = parse_route(destination)
+    if is_route and len(cities) >= 2:
+        for c in cities:
+            r = check_destination(c)
+            if not r.valid:
+                return {
+                    "valid": False,
+                    "message": f"路线中的「{c}」无效：{r.message}",
+                    "resolved_name": None,
+                    "suggestions": [],
+                }
+        return {
+            "valid": True,
+            "message": "",
+            "resolved_name": destination,
+            "suggestions": [],
+        }
     return check_destination(destination).to_dict()
 
 

@@ -439,7 +439,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           items={dayItems}
           categoryItems={allTripItems}
           destination={trip.destination}
-          title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线`}
+          title={`第 ${currentDay?.day_index ?? activeDay + 1} 天路线${currentDay?.city ? ` · ${currentDay.city}` : ""}`}
           showCategoryChips
           categoryBarTop={categoryBarTop}
           onPoiPress={openPoiDetail}
@@ -480,7 +480,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
                   onPress={() => setActiveDay(i)}
                 >
                   <Text style={[styles.filterLabel, on && styles.filterLabelOn]}>
-                    Day {d.day_index} · {d.date.slice(5)}
+                    Day {d.day_index} · {d.city || d.date.slice(5)}
                   </Text>
                 </Pressable>
               );

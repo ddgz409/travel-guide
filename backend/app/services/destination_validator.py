@@ -1,6 +1,7 @@
 """目的地校验：地理编码 + 模糊推荐，避免无效地名进入生成流程。"""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from difflib import get_close_matches
 
@@ -33,6 +34,46 @@ class DestinationCheckResult:
             "resolved_name": self.resolved_name,
             "suggestions": self.suggestions or [],
         }
+
+
+# 知名环线 / 路线 -> 城市序列（用户输入「青甘环线」等即可展开）
+RING_ROUTES: dict[str, list[str]] = {
+    "青甘环线": ["西宁", "茶卡", "大柴旦", "敦煌", "张掖", "祁连", "西宁"],
+    "甘南环线": ["兰州", "夏河", "扎尕那", "郎木寺", "玛曲", "若尔盖", "兰州"],
+    "川西环线": ["成都", "康定", "新都桥", "稻城", "亚丁", "成都"],
+    "西北大环线": ["西宁", "塔尔寺", "青海湖", "茶卡", "大柴旦", "敦煌", "嘉峪关", "张掖", "祁连", "西宁"],
+    "新疆环线": ["乌鲁木齐", "吐鲁番", "喀纳斯", "禾木", "赛里木湖", "伊宁", "乌鲁木齐"],
+    "云南大环线": ["昆明", "大理", "丽江", "香格里拉", "泸沽湖", "昆明"],
+}
+
+# 路线分隔符
+_ROUTE_SEPS = re.compile(r"[-—–→→~·、,，;；/]+|(?:\s*[到至往]\s*)")
+
+
+def parse_route(raw: str) -> tuple[list[str], bool]:
+    """解析目的地为城市序列。
+
+    返回 (cities, is_route)。若识别为多城市路线，cities 长度 >= 2。
+    单城市原样返回 [raw]。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return [], False
+    # 已知环线名
+    if text in RING_ROUTES:
+        return list(RING_ROUTES[text]), True
+    # 「环线」关键词 + 起点：如「成都环线」→ 补全不了，仍按单城市处理
+    # 显式分隔符拆分
+    parts = [p for p in _ROUTE_SEPS.split(text) if p.strip()]
+    # 去重保序
+    seen: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if p and p not in seen:
+            seen.append(p)
+    if len(seen) >= 2:
+        return seen, True
+    return [text], False
 
 
 def _suggest(raw: str) -> list[str]:

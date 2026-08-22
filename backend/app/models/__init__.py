@@ -55,6 +55,8 @@ class Trip(Base):
     )
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     destination: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 多城市路线的城市序列（如 ["西宁","茶卡","大柴旦","敦煌","张掖"]）；单城市为 None
+    route: Mapped[list | None] = mapped_column(JSON, nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     travelers: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -132,6 +134,8 @@ class Day(Base):
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 当天所在城市（多城市路线用）
+    city: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     trip: Mapped["Trip"] = relationship(back_populates="days")
     items: Mapped[list["Item"]] = relationship(

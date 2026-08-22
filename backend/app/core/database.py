@@ -61,6 +61,13 @@ def ensure_sqlite_columns() -> None:
             alters.append(
                 "ALTER TABLE trips ADD COLUMN share_mode VARCHAR(16) DEFAULT 'read'"
             )
+        if "route" not in cols:
+            alters.append("ALTER TABLE trips ADD COLUMN route JSON")
+
+    if "days" in tables:
+        dcols = {c["name"] for c in inspector.get_columns("days")}
+        if "city" not in dcols:
+            alters.append("ALTER TABLE days ADD COLUMN city VARCHAR(64)")
 
     if "users" in tables:
         ucols = {c["name"] for c in inspector.get_columns("users")}

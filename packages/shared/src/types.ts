@@ -122,6 +122,7 @@ export interface Day {
   id: string;
   day_index: number;
   date: string;
+  city?: string | null;
   summary: string | null;
   items: Item[];
 }
@@ -189,6 +190,7 @@ export interface Trip {
   id: string;
   title: string;
   destination: string;
+  route?: string[] | null;
   start_date: string;
   end_date: string;
   travelers: number;
@@ -241,6 +243,8 @@ export interface PoiSearchResult {
 
 export interface GenerateRequest {
   destination: string;
+  /** 多城市路线城市序列（如 ['西宁','茶卡','大柴旦']）；单城市可不传 */
+  route?: string[] | null;
   start_date: string;
   end_date: string;
   travelers: number;
