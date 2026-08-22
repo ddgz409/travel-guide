@@ -500,7 +500,9 @@ class GuideGenerator:
                 )
                 logger.info(
                     "POI 检索 %s: %d 条 (top评分: %.1f)",
-                    kind, len(pois), pois[0].rating if pois else 0,
+                    kind,
+                    len(pois),
+                    pois[0].rating if pois and pois[0].rating is not None else 0,
                 )
                 return kind, pois
             except AmapError as e:

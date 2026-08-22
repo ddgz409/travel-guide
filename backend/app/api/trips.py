@@ -35,7 +35,7 @@ from app.services.generator import GeneratorError, get_generator
 from app.services.amap_client import POI_TYPES, get_amap_client
 from app.services.pdf_export import export_trip_pdf
 from app.services.quick_recommend import build_quick_recommend
-from app.services.destination_validator import check_destination, parse_route
+from app.services.destination_validator import check_destination, check_route_city, parse_route
 from app.services.generation_progress import get_progress
 from app.services.trip_cache import (
     build_cache_key,
@@ -69,9 +69,9 @@ def _resolve_route(destination: str, route: list[str] | None) -> list[str] | Non
             cities = parsed
     if not cities:
         return None
-    # 多次地理编码校验，任一无效则 400
+    # 逐个宽松校验（信任知名旅游城市 + 别名，避免「茶卡」「敦煌」被误判）
     for c in cities:
-        r = check_destination(c)
+        r = check_route_city(c)
         if not r.valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -445,7 +445,7 @@ def _validate_destination_response(destination: str) -> dict:
     cities, is_route = parse_route(destination)
     if is_route and len(cities) >= 2:
         for c in cities:
-            r = check_destination(c)
+            r = check_route_city(c)
             if not r.valid:
                 return {
                     "valid": False,

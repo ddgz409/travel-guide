@@ -49,6 +49,61 @@ RING_ROUTES: dict[str, list[str]] = {
 # 路线分隔符
 _ROUTE_SEPS = re.compile(r"[-—–→→~·、,，;；/]+|(?:\s*[到至往]\s*)")
 
+# 环线中常见但直接地理编码可能失败的县/镇级站点 -> 可被高德解析的别名
+_ROUTE_CITY_ALIASES: dict[str, str] = {
+    "茶卡": "茶卡盐湖",
+    "大柴旦": "大柴旦镇",
+    "祁连": "祁连县",
+    "卓尔山": "祁连县卓尔山",
+    "鸣沙山": "敦煌鸣沙山",
+    "月牙泉": "敦煌月牙泉",
+    "柴达木": "柴达木盆地",
+    "黑马河": "青海湖黑马河",
+    "若尔盖": "若尔盖县",
+    "郎木寺": "碌曲县郎木寺",
+    "亚丁": "稻城亚丁",
+    "新都桥": "康定市新都桥镇",
+    "泸沽湖": "宁蒗泸沽湖",
+    "额济纳": "额济纳旗",
+    "喀纳斯": "布尔津喀纳斯",
+    "禾木": "布尔津禾木",
+}
+
+
+def _trusted_city(name: str) -> bool:
+    """知名旅游城市直接信任（避免高德对县/镇级地名地理编码过严）。"""
+    return name in COMMON_CITIES
+
+
+def check_route_city(raw: str) -> DestinationCheckResult:
+    """校验环线中的单个城市/站点。
+
+    比 check_destination 更宽松：知名旅游城市或已登记的站点别名直接信任
+    （避免高德对这县级景点只返回州级、匹配失败）；其余才严格地理编码防拼写错误。
+    """
+    name = (raw or "").strip()
+    if not name:
+        return DestinationCheckResult(valid=False, message="站点为空")
+    if _trusted_city(name) or name in _ROUTE_CITY_ALIASES:
+        return DestinationCheckResult(valid=True, message="", resolved_name=name)
+    probe = _ROUTE_CITY_ALIASES.get(name, name)
+    amap = get_amap_client()
+    try:
+        geo = amap.geocode(probe)
+    except AmapError as e:
+        return DestinationCheckResult(
+            valid=False, message=_friendly_amap_message(name, e)
+        )
+    if not _geo_matches_input(name, geo) and not _geo_matches_input(probe, geo):
+        return DestinationCheckResult(
+            valid=False,
+            message=f"未找到「{name}」的准确位置，请核对名称",
+            suggestions=_suggest(name),
+        )
+    resolved = (geo.city or name).strip()
+    resolved = resolved.replace("[]", "").strip() or name
+    return DestinationCheckResult(valid=True, message="", resolved_name=resolved)
+
 
 def parse_route(raw: str) -> tuple[list[str], bool]:
     """解析目的地为城市序列。
