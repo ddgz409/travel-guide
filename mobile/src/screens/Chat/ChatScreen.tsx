@@ -54,6 +54,9 @@ type Msg = {
     kind: "date_picker";
     destination?: string;
     suggestDays: number;
+  } | {
+    kind: "plan_result";
+    action: PlanNavigateAction;
   };
   widgetUsed?: boolean;
 };
@@ -216,6 +219,36 @@ export function ChatScreen({ navigation, route }: Props) {
     ],
   );
 
+  // 生成攻略前二次确认：任何跳转都由用户确认，不自动跳转
+  const generatingPlanRef = useRef(false);
+  const openPlanFromAction = useCallback(
+    (action: PlanAction) => {
+      if (generatingPlanRef.current) return;
+      const days = Math.max(
+        1,
+        Math.round(
+          (new Date(action.end_date).getTime() -
+            new Date(action.start_date).getTime()) /
+            (24 * 3600 * 1000),
+        ) + 1,
+      );
+      const title = `${action.destination} ${days}日攻略`;
+      Alert.alert("确认", `是否生成并打开攻略「${title}」？`, [
+        { text: "取消", style: "cancel" },
+        {
+          text: "生成并打开",
+          onPress: () => {
+            generatingPlanRef.current = true;
+            void startPlanFromAction(action).finally(() => {
+              generatingPlanRef.current = false;
+            });
+          },
+        },
+      ]);
+    },
+    [startPlanFromAction],
+  );
+
   async function send(text?: string, baseMsgs?: Msg[]) {
     const content = (text || input).trim();
     if (!content || loading) return;
@@ -283,10 +316,18 @@ export function ChatScreen({ navigation, route }: Props) {
             if (parsed.type === "action") {
               const actionPayload = parsed.payload;
               if (actionPayload?.action === "navigate_generate") {
-                if (tripId) break;
-                setLoading(false);
-                void startPlanFromAction(actionPayload as PlanAction);
-                return;
+                // 生成后不自动跳转：把规划参数挂在最后一条消息上，
+                // 由用户点击「查看攻略」并二次确认后再生成/打开攻略页
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...msgsWithAI[msgsWithAI.length - 1],
+                  widget: {
+                    kind: "plan_result",
+                    action: actionPayload as PlanNavigateAction,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                reader.cancel();
+                break;
               }
               if (actionPayload?.action === "open_trip") {
                 // 跳转攻略详情前先弹窗确认；聊天流继续，取消则留在当前对话
@@ -438,6 +479,8 @@ export function ChatScreen({ navigation, route }: Props) {
       role: m.role,
       content: m.content,
       reasoning: m.reasoning,
+      // 只持久化「查看攻略」按钮，选择题/日期卡片不复活
+      ...(m.widget?.kind === "plan_result" ? { widget: m.widget } : {}),
     }));
     const title =
       msgs.find((m) => m.role === "user")?.content || "新对话";
@@ -466,6 +509,7 @@ export function ChatScreen({ navigation, route }: Props) {
           role: x.role,
           content: x.content,
           reasoning: x.reasoning,
+          ...(x.widget?.kind === "plan_result" ? { widget: x.widget } : {}),
         })),
         updatedAt: Date.now(),
       });
@@ -659,7 +703,7 @@ export function ChatScreen({ navigation, route }: Props) {
                         selectedSend={selectedCardSend}
                         onPick={pickCard}
                       />
-                    ) : (
+                    ) : item.widget.kind === "date_picker" ? (
                       <ChatDatePickerCard
                         destination={item.widget.destination}
                         suggestDays={item.widget.suggestDays}
@@ -667,6 +711,19 @@ export function ChatScreen({ navigation, route }: Props) {
                         onConfirm={markWidgetAndSend}
                         onSkip={markWidgetAndSend}
                       />
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.planResultBtn,
+                          widgetDisabled && styles.planResultBtnDisabled,
+                        ]}
+                        disabled={widgetDisabled}
+                        onPress={() => openPlanFromAction(item.widget.action)}
+                      >
+                        <Text style={styles.planResultText}>
+                          📋 查看攻略 →
+                        </Text>
+                      </Pressable>
                     )
                   ) : null}
                 </View>

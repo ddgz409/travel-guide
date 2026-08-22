@@ -88,6 +88,17 @@ export const styles = StyleSheet.create({
   },
   msgUserText: { fontSize: 15, color: "#fff", lineHeight: 22 },
   msgAIText: { fontSize: 15, color: colors.ink, lineHeight: 22 },
+  // 规划完成后「查看攻略」入口按钮
+  planResultBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: colors.brand,
+    borderRadius: 22, borderCurve: "continuous",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  planResultBtnDisabled: { opacity: 0.5 },
+  planResultText: { fontSize: 14, color: "#fff", fontWeight: "700" },
   reasoningBox: {
     backgroundColor: "#f5f0e8",
     borderRadius: 20, borderCurve: "continuous",
