@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "2.2.8",
+  "versionCode": 30,
+  "versionName": "3.1.0",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.8：修复共享收藏夹编辑闪退；收藏夹 POI 封面图修复；发布按钮视觉区分",
-  "force": true
+  "notes": "3.1.0：支持多城市路线攻略（如青甘环线，逐城规划）；发布评论不再被键盘遮挡；AI 助手一次只问一个问题；头像支持自定义上传",
+  "force": false
 }
