@@ -66,7 +66,7 @@ const KNOWN_CITY_SET = new Set<string>(
 );
 
 const PLAN_RE =
-  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划)|(?:帮我|请).*(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行|旅游)?|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
+  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划|路线|环线|环岛)|(?:帮我|请).*(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行|旅游)?|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
 
 const TRIP_MGMT_RE =
   /删除|删掉|删了|移除|清除|去掉|取消|不要了|查看|看看|列表|有哪些|我的行程|行程列表|攻略列表|打开|分享|\/share\/|修改|编辑|更新|帖子|收藏夹|发布|发帖|做成清单|转成清单|改成清单|编辑成清单/i;
@@ -155,6 +155,9 @@ function extractCity(text: string): string | null {
   if (m1?.[1] && isKnownCityName(m1[1])) return normalizeCity(m1[1]);
   const m2 = text.match(/([\u4e00-\u9fff]{2,6})(?:市|城)?(?:的)?(?:行程|攻略|旅游)/);
   if (m2?.[1] && isKnownCityName(m2[1])) return normalizeCity(m2[1]);
+  // 环线名（如「青甘环线」「海南环岛」「西北大环线」）
+  const m3 = text.match(/([\u4e00-\u9fff]{2,10}?)(环线|环岛|大环线)/);
+  if (m3?.[1]) return `${m3[1]}${m3[2]}`;
   // 省份名兜底（如「帮我规划山东」）：放在城市之后，具体城市优先
   for (const p of PROVINCES) {
     if (text.includes(p)) return p;
@@ -381,7 +384,10 @@ export function detectPlanIntent(text: string): PlanNavigateAction | null {
   if (isTripManagementIntent(raw)) return null;
   if (!PLAN_RE.test(raw)) return null;
   const destination = extractCity(raw);
-  if (!destination || !isKnownCityName(destination)) return null;
+  if (!destination) return null;
+  // 目的地必须是已知城市 / 省份 / 环线名，否则不跳转
+  const isKnown = isKnownCityName(destination) || PROVINCES.includes(destination as any) || /环线|环岛|大环线/.test(destination);
+  if (!isKnown) return null;
   const { start, end } = parseDates(raw);
   return {
     action: "navigate_generate",

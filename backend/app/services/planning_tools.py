@@ -142,11 +142,14 @@ PLANNING_SYSTEM_SUFFIX = """
 
 # 触发规划对话模式：必须明确包含「生成新行程」意图词，避免「推荐个餐厅」「有什么攻略」等咨询误判
 PLANNING_TRIGGER = re.compile(
-    r"(?:规划|安排|制定|设计|生成|做).*(?:行程|攻略|旅行计划|旅游计划|路线)|"
+    r"(?:规划|安排|制定|设计|生成|做).*(?:行程|攻略|旅行计划|旅游计划|路线|环线|环岛)|"
     r"帮我.*(?:规划|安排|制定|设计|生成|排)|"
     r"(?:一|两|三|四|五|六|七|八|九|\d+)\s*(?:日游|天行程|天旅游|天攻略)",
     re.I,
 )
+
+# 规划动词（用于「规划 + 已知目的地」的宽松命中）
+_PLAN_VERB = re.compile(r"(?:规划|安排|制定|设计|生成|做)", re.I)
 
 # 咨询类关键词：命中则不算规划（即使误中 PLANNING_TRIGGER 也排除）
 CONSULT_HINT = re.compile(
@@ -155,6 +158,19 @@ CONSULT_HINT = re.compile(
     r"怎么去|怎么玩|攻略推荐|哪里.*(?:好吃|好玩|好看)",
     re.I,
 )
+
+
+def _contains_known_destination(raw: str) -> bool:
+    """文本中是否出现已知环线名或省份名（如「青甘环线」「山东」）。"""
+    from app.services.destination_validator import PROVINCE_CITIES, RING_ROUTES
+
+    for name in RING_ROUTES:
+        if name in raw:
+            return True
+    for name in PROVINCE_CITIES:
+        if name in raw:
+            return True
+    return False
 
 
 def is_planning_conversation(text: str) -> bool:
@@ -168,14 +184,17 @@ def is_planning_conversation(text: str) -> bool:
     # 咨询类问题不算规划（避免「推荐个去哪玩」误触发）
     if CONSULT_HINT.search(raw):
         return False
-    return bool(PLANNING_TRIGGER.search(raw))
+    if PLANNING_TRIGGER.search(raw):
+        return True
+    # 「规划/安排 + 已知环线或省份名」也算规划（如「规划青甘环线」「规划山东」）
+    return bool(_PLAN_VERB.search(raw) and _contains_known_destination(raw))
 
 
 # AI 已经主动开口规划（如「我来为您规划一份西宁攻略」）时，
 # 后续用户短回复（「5天」「9.3」）也应保持规划工具可用
 _ASSISTANT_PLANNING_RE = re.compile(
-    r"(?:为|帮|给).{0,16}(?:您|你|用户)?.{0,12}(?:规划|安排|制定|设计|生成).{0,16}(?:行程|攻略)"
-    r"|规划(?:一份|一个|您的|你的|X|N)?.{0,12}(?:行程|攻略)",
+    r"(?:为|帮|给).{0,16}(?:您|你|用户)?.{0,12}(?:规划|安排|制定|设计|生成).{0,16}(?:行程|攻略|环线|环岛)"
+    r"|规划(?:一份|一个|您的|你的|X|N)?.{0,12}(?:行程|攻略|环线|环岛)",
     re.I,
 )
 
@@ -265,13 +284,28 @@ def execute_planning_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             resolved = check.resolved_name or dest
         start = (args.get("start_date") or "").strip()
         end = (args.get("end_date") or "").strip()
-        if not start or not end:
+        if not start and not end:
             days = args.get("days")
             try:
                 d = max(1, min(int(days), 14)) if days else 2
             except (TypeError, ValueError):
                 d = 2
             start, end = _default_dates(d)
+        elif not end:
+            # 只给了出发日期：按天数从 start 推算 end，保留用户选择的日期
+            days = args.get("days")
+            try:
+                d = max(1, min(int(days), 14)) if days else 2
+            except (TypeError, ValueError):
+                d = 2
+            try:
+                start_dt = date.fromisoformat(start)
+            except ValueError:
+                start_dt = None
+            if start_dt is not None:
+                end = (start_dt + timedelta(days=d - 1)).isoformat()
+            else:
+                start, end = _default_dates(d)
 
         interests = args.get("interests") or ["文化", "美食"]
         if not isinstance(interests, list):
