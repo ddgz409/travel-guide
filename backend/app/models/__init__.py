@@ -30,6 +30,8 @@ class User(Base):
     llm_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # 自定义 / OpenAI 兼容端点；预设提供商可为空
     llm_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # 服务器头像（相对路径 /static/avatars/{id}.jpg）；为空则用昵称首字兜底
+    avatar: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )

@@ -1,16 +1,29 @@
 """用户主页与关注关系：查看作者资料、TA 的发帖、关注/取关、粉丝与关注名单。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import io
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_optional_user
 from app.models import SharedCollection, User, UserFollow
-from app.schemas.user_profile import FollowListResponse, UserBrief, UserProfileOut
+from app.schemas.user_profile import (
+    AvatarOut,
+    FollowListResponse,
+    UserBrief,
+    UserProfileOut,
+)
 
 router = APIRouter(prefix="/users", tags=["用户主页"])
+
+_STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
+
+_ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def _get_user(db: Session, user_id: str) -> User:
@@ -61,6 +74,7 @@ def _profile(user: User, db: Session, current: User | None) -> UserProfileOut:
     return UserProfileOut(
         id=user.id,
         username=user.username,
+        avatar=user.avatar,
         follower_count=follower_count,
         following_count=following_count,
         post_count=post_count,
@@ -147,7 +161,7 @@ def list_followers(
     _get_user(db, user_id)
     users = _follow_list(db, user_id, "followers")
     return FollowListResponse(
-        items=[UserBrief(id=u.id, username=u.username) for u in users],
+        items=[UserBrief(id=u.id, username=u.username, avatar=u.avatar) for u in users],
         total=len(users),
     )
 
@@ -162,6 +176,54 @@ def list_following(
     _get_user(db, user_id)
     users = _follow_list(db, user_id, "following")
     return FollowListResponse(
-        items=[UserBrief(id=u.id, username=u.username) for u in users],
+        items=[UserBrief(id=u.id, username=u.username, avatar=u.avatar) for u in users],
         total=len(users),
     )
+
+
+@router.put("/me/avatar", response_model=AvatarOut)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """上传头像（jpg/png/webp，自动缩放为方形）。"""
+    if (file.content_type or "") not in _ALLOWED_AVATAR_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP 图片")
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片不能超过 5MB")
+    if not content:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    try:
+        with Image.open(io.BytesIO(content)) as src:
+            img = src.convert("RGB")
+            img.thumbnail((512, 512))
+    except Exception:
+        raise HTTPException(status_code=400, detail="无法解析该图片文件")
+    avatar_dir = _STATIC_DIR / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    path = avatar_dir / f"{current.id}.jpg"
+    img.save(path, "JPEG", quality=88)
+    rel = f"/static/avatars/{current.id}.jpg"
+    current.avatar = rel
+    db.commit()
+    return AvatarOut(avatar=rel)
+
+
+@router.delete("/me/avatar", status_code=status.HTTP_204_NO_CONTENT)
+def remove_my_avatar(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """删除头像，恢复昵称首字默认头像。"""
+    if current.avatar:
+        rel = current.avatar
+        if rel.startswith("/static/avatars/"):
+            p = _STATIC_DIR / rel.removeprefix("/static/")
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
+        current.avatar = None
+        db.commit()

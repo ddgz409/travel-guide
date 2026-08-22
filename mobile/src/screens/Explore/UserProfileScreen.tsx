@@ -12,7 +12,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CollectionSummary, UserProfile } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../../api/client";
+import { api, absAvatar } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { UserAvatar } from "../../components/UserAvatar";
 import { CollectionCard } from "../../components/CollectionCard";
@@ -122,7 +122,7 @@ export function UserProfileScreen({ navigation, route }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.profileCard}>
-          <UserAvatar name={profile.username} size={72} variant="card" />
+          <UserAvatar name={profile.username} size={72} variant="card" imageUri={absAvatar(profile.avatar)} />
           <Text style={styles.username}>{profile.username}</Text>
           <View style={styles.roleTag}>
             <Text style={styles.roleTagText}>旅行发帖者</Text>

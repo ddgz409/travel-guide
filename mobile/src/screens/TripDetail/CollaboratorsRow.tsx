@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import type { Collaborator } from "@travel-guide/shared";
 import { UserAvatar } from "../../components/UserAvatar";
 import { getAvatarUri, subscribeAvatars } from "../../utils/avatarStore";
+import { absAvatar } from "../../api/client";
 import { styles } from "./styles";
 
 export const CollaboratorsRow = memo(function CollaboratorsRow({
@@ -14,12 +15,16 @@ export const CollaboratorsRow = memo(function CollaboratorsRow({
   const [avatarUris, setAvatarUris] = useState<Record<string, string>>({});
 
   const refreshAvatars = useCallback(async () => {
-    const entries = await Promise.all(
-      collaborators.map(async (c) => [c.user_id, await getAvatarUri(c.user_id)] as const),
-    );
+    // 优先服务器头像（跨设备），无则回退本机
     const next: Record<string, string> = {};
-    for (const [id, uri] of entries) {
-      if (uri) next[id] = uri;
+    for (const c of collaborators) {
+      const server = absAvatar(c.avatar);
+      if (server) {
+        next[c.user_id] = server;
+      } else {
+        const uri = await getAvatarUri(c.user_id);
+        if (uri) next[c.user_id] = uri;
+      }
     }
     setAvatarUris(next);
   }, [collaborators]);

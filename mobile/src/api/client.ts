@@ -14,6 +14,13 @@ export const apiBase = getApiBase().replace(/\/$/, "");
 /** http://host:8000 —— 用于 /health */
 export const serverOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
 
+/** 把后端返回的相对头像路径（/static/avatars/x.jpg）转成绝对 URL */
+export function absAvatar(rel?: string | null): string | null {
+  if (!rel) return null;
+  if (/^https?:\/\//i.test(rel)) return rel;
+  return `${serverOrigin}${rel}`;
+}
+
 export async function getStoredToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
 }

@@ -4,6 +4,7 @@ export interface User {
   id: string;
   username: string;
   created_at: string;
+  avatar?: string | null;
 }
 
 export interface LlmProviderOption {
@@ -212,6 +213,7 @@ export interface Collaborator {
   username: string;
   role: "owner" | "collaborator";
   joined_at?: string | null;
+  avatar?: string | null;
 }
 
 export interface TripListItem {
@@ -413,6 +415,7 @@ export interface CollectionSummary {
   author_display: string;
   /** 真实注册用户作者的 user_id；系统预置/游客帖子为 null */
   author_id?: string | null;
+  author_avatar?: string | null;
   place_count: number;
   subscriber_count: number;
   subscribed: boolean;
@@ -440,6 +443,7 @@ export interface CollectionComment {
   collection_id: string;
   user_id?: string | null;
   username: string;
+  avatar?: string | null;
   content: string;
   created_at: string;
 }
@@ -453,6 +457,7 @@ export interface CommentListResponse {
 export interface UserProfile {
   id: string;
   username: string;
+  avatar?: string | null;
   follower_count: number;
   following_count: number;
   post_count: number;
@@ -464,6 +469,7 @@ export interface UserProfile {
 export interface UserBrief {
   id: string;
   username: string;
+  avatar?: string | null;
 }
 
 export interface FollowListResponse {

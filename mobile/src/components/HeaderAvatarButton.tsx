@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useMainTab } from "../navigation/MainTabContext";
 import { subscribeAvatars } from "../utils/avatarStore";
 import { loadAvatarUri } from "../utils/pickAvatar";
+import { absAvatar } from "../api/client";
 import { HEADER_AVATAR_SIZE } from "../utils/avatarConfig";
 import { UserAvatar } from "./UserAvatar";
 
@@ -17,8 +18,16 @@ export function HeaderAvatarButton() {
   const name = user?.username || (isGuest ? "游客" : "游");
 
   const refresh = useCallback(async () => {
+    // 登录用户优先显示服务器头像
+    if (user?.id) {
+      const server = absAvatar(user.avatar);
+      if (server) {
+        setAvatarUri(server);
+        return;
+      }
+    }
     setAvatarUri(await loadAvatarUri(user?.id, isGuest));
-  }, [user?.id, isGuest]);
+  }, [user?.id, isGuest, user?.avatar]);
 
   useEffect(() => {
     void refresh();

@@ -76,6 +76,10 @@ export function createApiClient(opts: CreateApiClientOptions) {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
     };
+    // FormData 由运行时自动生成 multipart 边界，不能手动指定 Content-Type
+    if (options.body instanceof FormData) {
+      delete headers["Content-Type"];
+    }
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const { timeoutMs = defaultTimeoutMs, ...fetchOpts } = options;
@@ -449,6 +453,21 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<FollowListResponse>(`/users/${id}/followers`),
       following: (id: string) =>
         request<FollowListResponse>(`/users/${id}/following`),
+      uploadAvatar: (uri: string) => {
+        const form = new FormData();
+        // React Native 的 FormData 接受 { uri, name, type }
+        const name = uri.split("/").pop() || "avatar.jpg";
+        const ext = (name.toLowerCase().split(".").pop() || "jpg").split("?")[0];
+        const type =
+          ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+        form.append("file", { uri, name, type } as unknown as Blob);
+        return request<{ avatar: string | null }>(`/users/me/avatar`, {
+          method: "PUT",
+          body: form,
+        });
+      },
+      removeAvatar: () =>
+        request<void>(`/users/me/avatar`, { method: "DELETE" }),
     },
   };
 }

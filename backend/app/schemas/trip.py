@@ -170,6 +170,7 @@ class CollaboratorOut(BaseModel):
     username: str
     role: str = "collaborator"
     joined_at: datetime | None = None
+    avatar: str | None = None
 
 
 class ShareCreateRequest(BaseModel):

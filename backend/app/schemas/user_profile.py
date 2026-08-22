@@ -9,6 +9,7 @@ class UserBrief(BaseModel):
 
     id: str
     username: str
+    avatar: str | None = None
 
 
 class UserProfileOut(BaseModel):
@@ -16,6 +17,7 @@ class UserProfileOut(BaseModel):
 
     id: str
     username: str
+    avatar: str | None = None
     follower_count: int = 0
     following_count: int = 0
     post_count: int = 0
@@ -26,3 +28,9 @@ class UserProfileOut(BaseModel):
 class FollowListResponse(BaseModel):
     items: list[UserBrief]
     total: int
+
+
+class AvatarOut(BaseModel):
+    """头像上传结果。"""
+
+    avatar: str | None = None

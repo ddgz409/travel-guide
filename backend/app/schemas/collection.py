@@ -40,6 +40,7 @@ class CollectionSummary(BaseModel):
     city: str | None = None
     author_display: str
     author_id: str | None = None
+    author_avatar: str | None = None
     place_count: int
     subscriber_count: int
     subscribed: bool = False
@@ -65,6 +66,7 @@ class CommentOut(BaseModel):
     collection_id: str
     user_id: str | None
     username: str
+    avatar: str | None = None
     content: str
     created_at: datetime
 

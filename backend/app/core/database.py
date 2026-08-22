@@ -72,6 +72,8 @@ def ensure_sqlite_columns() -> None:
             alters.append("ALTER TABLE users ADD COLUMN llm_model VARCHAR(128)")
         if "llm_base_url" not in ucols:
             alters.append("ALTER TABLE users ADD COLUMN llm_base_url VARCHAR(512)")
+        if "avatar" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN avatar VARCHAR(512)")
 
     if alters:
         with engine.begin() as conn:

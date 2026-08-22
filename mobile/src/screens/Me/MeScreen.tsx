@@ -7,6 +7,7 @@ import { useMainTab } from "../../navigation/MainTabContext";
 import { UserAvatar } from "../../components/UserAvatar";
 import { SettingsGear } from "../../components/SettingsGear";
 import { AvatarCropSheet } from "../../components/AvatarCropSheet";
+import { api, absAvatar } from "../../api/client";
 import { listCheckIns, subscribeCheckIns, getCheckedPrefectureIds, type CheckInRecord } from "../../utils/checkInStore";
 import { buildFootprintStats } from "../../utils/footprintStats";
 import { subscribeAvatars } from "../../utils/avatarStore";
@@ -43,8 +44,16 @@ export function MeScreen() {
   const avatarUserId = user?.id ?? (isGuest ? guestAvatarUserId() : null);
 
   const refreshAvatar = useCallback(async () => {
+    // 登录用户优先显示服务器头像（跨设备），无则回退本机
+    if (user?.id) {
+      const server = absAvatar(user.avatar);
+      if (server) {
+        setAvatarUri(server);
+        return;
+      }
+    }
     setAvatarUri(await loadAvatarUri(user?.id, isGuest));
-  }, [user?.id, isGuest]);
+  }, [user?.id, isGuest, user?.avatar]);
 
   const load = useCallback(async () => {
     try {
@@ -96,15 +105,27 @@ export function MeScreen() {
   const onConfirmCrop = (crop: AvatarCropRect) => {
     if (!cropUri || !avatarUserId) return;
     setCropBusy(true);
-    void saveAvatarFromSource(avatarUserId, cropUri, crop)
-      .then((uri) => {
-        setAvatarUri(uri);
+    void (async () => {
+      try {
+        const localUri = await saveAvatarFromSource(avatarUserId, cropUri, crop);
+        let display = localUri;
+        // 登录用户同步到服务器，跨设备/被他人可见
+        if (user?.id) {
+          try {
+            const { avatar } = await api.users.uploadAvatar(localUri);
+            display = absAvatar(avatar) ?? localUri;
+          } catch (e) {
+            Alert.alert("头像已保存", "上传到服务器失败，仅本机可见");
+          }
+        }
+        setAvatarUri(display);
         setCropUri(null);
-      })
-      .catch(() => {
+      } catch {
         /* alert in saveAvatarFromSource */
-      })
-      .finally(() => setCropBusy(false));
+      } finally {
+        setCropBusy(false);
+      }
+    })();
   };
 
   const onAvatarLongPress = () => {
@@ -115,7 +136,17 @@ export function MeScreen() {
         text: "恢复",
         style: "destructive",
         onPress: () => {
-          void removeAvatar(user?.id, isGuest).then(() => setAvatarUri(null));
+          void (async () => {
+            await removeAvatar(user?.id, isGuest);
+            if (user?.id) {
+              try {
+                await api.users.removeAvatar();
+              } catch {
+                /* ignore */
+              }
+            }
+            setAvatarUri(null);
+          })();
         },
       },
     ]);

@@ -113,6 +113,7 @@ def _collaborators_payload(trip: Trip, db: Session) -> list[dict]:
                 "username": owner.username,
                 "role": "owner",
                 "joined_at": trip.created_at,
+                "avatar": owner.avatar,
             }
         )
     collabs = db.scalars(
@@ -132,6 +133,7 @@ def _collaborators_payload(trip: Trip, db: Session) -> list[dict]:
                 "username": u.username,
                 "role": "collaborator",
                 "joined_at": c.joined_at,
+                "avatar": u.avatar,
             }
         )
     return rows

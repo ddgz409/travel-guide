@@ -15,7 +15,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CollectionComment, CollectionDetail } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../../api/client";
+import { api, absAvatar } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { PlaceImage } from "../../components/PlaceImage";
 import { UserAvatar } from "../../components/UserAvatar";
@@ -266,7 +266,11 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
         <Text style={styles.emoji}>{detail.emoji}</Text>
         <Text style={styles.title}>{detail.title}</Text>
         <View style={styles.authorRow}>
-          <UserAvatar name={detail.author_display} size={22} />
+          <UserAvatar
+            name={detail.author_display}
+            size={22}
+            imageUri={absAvatar(detail.author_avatar)}
+          />
           {detail.author_id ? (
             <Pressable
               onPress={() =>
@@ -358,7 +362,7 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
         ) : (
           comments.map((c) => (
             <View key={c.id} style={styles.commentRow}>
-              <UserAvatar name={c.username} size={26} />
+              <UserAvatar name={c.username} size={26} imageUri={absAvatar(c.avatar)} />
               <View style={styles.commentBody}>
                 <Text style={styles.commentName}>{c.username}</Text>
                 <Text style={styles.commentContent}>{c.content}</Text>
