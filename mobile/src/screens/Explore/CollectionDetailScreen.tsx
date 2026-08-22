@@ -2,6 +2,8 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -252,7 +254,15 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
         <Text style={styles.emoji}>{detail.emoji}</Text>
         <Text style={styles.title}>{detail.title}</Text>
         <View style={styles.authorRow}>
@@ -362,26 +372,28 @@ export function CollectionDetailScreen({ navigation, route }: Props) {
             </View>
           ))
         )}
-        <View style={styles.commentInputRow}>
-          <TextInput
-            style={styles.commentInput}
-            value={commentText}
-            onChangeText={setCommentText}
-            placeholder="写下你的评论…"
-            placeholderTextColor={colors.muted}
-            multiline
-          />
-          <Pressable
-            style={styles.commentSend}
-            onPress={() => void submitComment()}
-            disabled={commentBusy || !commentText.trim()}
-          >
-            <Text style={styles.commentSendText}>
-              {commentBusy ? "…" : "发送"}
-            </Text>
-          </Pressable>
-        </View>
       </ScrollView>
+
+      <View style={styles.commentFooter}>
+        <TextInput
+          style={styles.commentInput}
+          value={commentText}
+          onChangeText={setCommentText}
+          placeholder="写下你的评论…"
+          placeholderTextColor={colors.muted}
+          multiline
+        />
+        <Pressable
+          style={styles.commentSend}
+          onPress={() => void submitComment()}
+          disabled={commentBusy || !commentText.trim()}
+        >
+          <Text style={styles.commentSendText}>
+            {commentBusy ? "…" : "发送"}
+          </Text>
+        </Pressable>
+      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

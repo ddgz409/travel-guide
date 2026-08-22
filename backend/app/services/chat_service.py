@@ -466,6 +466,21 @@ def chat_stream(
                 logger.info("Agent tool call: %s(%s)", fn_name, fn_args)
                 yield {"type": "tool_call", "tool": fn_name, "args": fn_args}
 
+                # 一次只问一个：同一回合内模型若连续发起多个追问/生成工具，
+                # 只执行第一个，其余直接跳过，避免连环弹出多个问题卡片
+                if awaiting_user_reply and fn_name in PLANNING_TOOL_NAMES:
+                    skip = (
+                        "已向用户提出一个问题并等待回复，请停止继续追问，"
+                        "等用户回答后再问下一个问题。"
+                    )
+                    yield {"type": "tool_result", "tool": fn_name, "result": skip}
+                    payload_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": skip,
+                    })
+                    continue
+
                 if fn_name in PLANNING_TOOL_NAMES:
                     result = execute_planning_tool(fn_name, fn_args)
                     if result.get("ok"):

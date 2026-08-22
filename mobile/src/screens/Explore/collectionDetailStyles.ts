@@ -156,6 +156,18 @@ export const styles = StyleSheet.create({
     gap: 10,
     marginTop: 12,
   },
+  flex: { flex: 1 },
+  commentFooter: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    backgroundColor: colors.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
   commentInput: {
     flex: 1,
     minHeight: 44,
