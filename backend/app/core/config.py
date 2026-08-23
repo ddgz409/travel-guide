@@ -39,11 +39,13 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "zhipu"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = ""  # 空则用提供商默认
-    LLM_MODEL: str = "glm-4"
+    LLM_MODEL: str = "glm-4-flash-250414"
 
     # 各提供商服务器级 Key（用户未自填时回退）
     ZHIPU_API_KEY: str = ""
-    ZHIPU_MODEL: str = "glm-4"
+    ZHIPU_MODEL: str = "glm-4-flash-250414"
+    # 视觉模型（拍照识景 / 看酒店·车票·地图截图）
+    ZHIPU_VISION_MODEL: str = "glm-4.6v-flash"
     DOUBAO_API_KEY: str = ""  # 火山方舟
     MIMO_API_KEY: str = ""  # 小米 MiMo
     DEEPSEEK_API_KEY: str = ""

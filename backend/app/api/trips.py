@@ -19,6 +19,7 @@ from app.core.deps import get_current_user, get_optional_user
 from app.models import Day, Item, Trip, TripCollaborator, User
 from app.schemas import (
     CollaboratorOut,
+    ItemCreate,
     ItemUpdate,
     QuickRecommendRequest,
     QuickRecommendResponse,
@@ -645,6 +646,50 @@ def search_pois(
         raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
 
 
+@router.get("/pois/nearby")
+def nearby_pois(
+    lng: float,
+    lat: float,
+    type: str = "attraction",
+    limit: int = 10,
+):
+    """地图选点：返回点击坐标周边的 POI（按距离排序），供新增地点选择。
+
+    type: attraction / meal / hotel，决定周边搜索类型。
+    """
+    if type not in ("attraction", "meal", "hotel"):
+        raise HTTPException(status_code=400, detail="不支持的 POI 类型")
+    try:
+        amap = get_amap_client()
+        cap = min(max(limit, 1), 30)
+        pois = amap.search_poi_around(
+            location=f"{lng},{lat}",
+            poi_type=POI_TYPES[type],
+            radius=6000,
+            limit=cap,
+            sortrule="distance",
+        )
+        return [
+            {
+                "poi_id": p.id,
+                "name": p.name,
+                "location": {
+                    "lng": p.lng,
+                    "lat": p.lat,
+                    "address": p.address,
+                },
+                "rating": p.rating,
+                "type": p.type,
+                "address": p.address,
+                "tel": p.tel or "",
+                "opentime": p.opentime or "",
+            }
+            for p in pois
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"周边搜索失败: {e}")
+
+
 @router.get("/pois/suggest")
 def suggest_pois(city: str = ""):
     """返回目的地热门必去景点（本地精选 + 高德补全，供搜索框推荐芯片）。"""
@@ -1160,6 +1205,141 @@ def get_day_routes(
     }
 
 
+def _least_crowded_slot(items: list[Item]) -> str:
+    """新增条目缺省时段：选当天最空（不含交通）的时段，平手优先下午。"""
+    counts = {"morning": 0, "afternoon": 0, "evening": 0}
+    for it in items:
+        if it.type != "transport" and it.time_slot in counts:
+            counts[it.time_slot] += 1
+    min_count = min(counts.values())
+    candidates = [s for s, c in counts.items() if c == min_count]
+    for preferred in ("afternoon", "morning", "evening"):
+        if preferred in candidates:
+            return preferred
+    return "afternoon"
+
+
+def _replan_day_transport(day: Day, db: Session, trip: Trip) -> None:
+    """按当前顺序重算当天已勾选且有坐标条目的交通段并写回 transport_to_next。
+
+    复用缓存（终点一致且已有折线）的段不重算；其余并行请求高德，失败段保留旧缓存。
+    """
+    items = list(
+        db.scalars(select(Item).where(Item.day_id == day.id).order_by(Item.seq)).all()
+    )
+    located: list[Item] = []
+    for it in items:
+        if it.selected is False or it.selected == 0:
+            continue
+        loc = it.location or {}
+        if loc.get("lng") is None or loc.get("lat") is None:
+            continue
+        located.append(it)
+
+    if len(located) < 2:
+        # 不足两站：清空无意义的交通缓存
+        for it in items:
+            it.transport_to_next = None
+        db.commit()
+        return
+
+    amap = get_amap_client()
+    city = trip.destination
+    pairs = [(located[i], located[i + 1]) for i in range(len(located) - 1)]
+
+    def _cached_ok(a: Item, b: Item) -> bool:
+        t = a.transport_to_next or {}
+        if not t.get("polyline"):
+            return False
+        to_loc = t.get("to_location") or {}
+        try:
+            if to_loc.get("lng") is not None and abs(
+                float(to_loc["lng"]) - float(b.location["lng"])
+            ) > 1e-3:
+                return False
+            if to_loc.get("lat") is not None and abs(
+                float(to_loc["lat"]) - float(b.location["lat"])
+            ) > 1e-3:
+                return False
+        except (TypeError, ValueError, KeyError):
+            return False
+        return True
+
+    def _plan(a: Item, b: Item) -> dict | None:
+        origin = f"{a.location['lng']},{a.location['lat']}"
+        dest = f"{b.location['lng']},{b.location['lat']}"
+        try:
+            seg = amap.plan_route(origin, dest, mode="transit", city=city)
+        except Exception:
+            seg = None
+        if not seg:
+            return None
+        poly = getattr(seg, "polyline", None) or []
+        schemes = getattr(seg, "schemes", None) or None
+        detail = getattr(seg, "detail", None)
+        distance_m = seg.distance_m
+        duration_s = seg.duration_s
+        if schemes:
+            chosen = schemes[0]
+            poly = chosen.get("polyline") or poly
+            detail = chosen.get("detail") or detail
+            distance_m = int(chosen.get("distance_m") or distance_m)
+            duration_s = int(chosen.get("duration_s") or duration_s)
+        return {
+            "mode": "transit",
+            "distance_m": distance_m,
+            "duration_s": duration_s,
+            "detail": detail,
+            "schemes": schemes,
+            "scheme_index": 0,
+            "polyline": poly,
+            "from_location": {
+                "lng": float(a.location["lng"]),
+                "lat": float(a.location["lat"]),
+                "name": a.name,
+            },
+            "to_location": {
+                "lng": float(b.location["lng"]),
+                "lat": float(b.location["lat"]),
+                "name": b.name,
+            },
+        }
+
+    plan_tasks: list[tuple[int, Item, Item]] = []
+    for i, (a, b) in enumerate(pairs):
+        if not _cached_ok(a, b):
+            plan_tasks.append((i, a, b))
+
+    planned: dict[int, dict | None] = {}
+    if plan_tasks:
+        workers = min(6, max(1, len(plan_tasks)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_plan, a, b): idx for idx, a, b in plan_tasks}
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                try:
+                    planned[idx] = fut.result()
+                except Exception:
+                    planned[idx] = None
+
+    for i, (a, b) in enumerate(pairs):
+        if i not in planned:
+            continue  # 缓存仍有效
+        data = planned[i]
+        if data is None:
+            continue  # 规划失败，保留旧缓存
+        a.transport_to_next = data
+
+    # 清理不再有「下一站」的条目：未勾选/无坐标，或当天的最后一个站点
+    located_ids = {it.id for it in located}
+    for it in items:
+        if it.id not in located_ids:
+            it.transport_to_next = None
+    if located:
+        located[-1].transport_to_next = None
+    db.commit()
+
+
 @router.post("/{trip_id}/items/{item_id}/swap", response_model=TripOut)
 def swap_item_alternative(
     trip_id: str,
@@ -1225,6 +1405,81 @@ def reorder_items(
             raise HTTPException(status_code=400, detail=f"条目 {entry.item_id} 不属于该天")
         item.seq = entry.new_seq
     db.commit()
+    # 按新顺序重算当天交通段（松手后一次性重规划）
+    _replan_day_transport(day, db, trip)
+    db.refresh(trip)
+    return _trip_out(trip, db, current)
+
+
+@router.post("/{trip_id}/days/{day_id}/items", response_model=TripOut)
+def add_day_item(
+    trip_id: str,
+    day_id: str,
+    payload: ItemCreate,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """向某天新增一个地点（地图选点 / 搜索添加），并重算当天路线。"""
+    trip = _require_edit(trip_id, db, current)
+    day = db.get(Day, day_id)
+    if day is None or day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="行程天数不存在")
+
+    existing = db.scalars(
+        select(Item).where(Item.day_id == day.id).order_by(Item.seq)
+    ).all()
+    next_seq = max([it.seq for it in existing], default=-1) + 1
+    time_slot = payload.time_slot or _least_crowded_slot(existing)
+
+    item = Item(
+        day_id=day.id,
+        seq=next_seq,
+        time_slot=time_slot,
+        type=payload.type,
+        name=payload.name,
+        poi_id=payload.poi_id,
+        location=payload.location,
+        description=payload.description,
+        duration_min=payload.duration_min,
+        cost=payload.cost,
+        rating=payload.rating,
+        selected=True,
+        alternatives=[],
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    _replan_day_transport(day, db, trip)
+    db.refresh(trip)
+    return _trip_out(trip, db, current)
+
+
+@router.delete("/{trip_id}/items/{item_id}", response_model=TripOut)
+def delete_day_item(
+    trip_id: str,
+    item_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """真正删除某天的一个地点，并重排剩余条目序号、重算当天路线。"""
+    trip = _require_edit(trip_id, db, current)
+    item = db.get(Item, item_id)
+    if item is None or item.day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    day_id = item.day_id
+    db.delete(item)
+    db.commit()
+
+    day = db.get(Day, day_id)
+    if day is not None:
+        remaining = db.scalars(
+            select(Item).where(Item.day_id == day.id).order_by(Item.seq)
+        ).all()
+        for idx, it in enumerate(remaining):
+            it.seq = idx
+        db.commit()
+        _replan_day_transport(day, db, trip)
     db.refresh(trip)
     return _trip_out(trip, db, current)
 

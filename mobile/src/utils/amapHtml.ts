@@ -28,6 +28,8 @@ export function buildAmapHtml(opts: {
   focusCenter?: boolean;
   /** 分类模式下每屏最多渲染数量，0 表示不限制 */
   viewportLimit?: number;
+  /** 地图选点模式：点击地图回调 mapClick（新增地点用） */
+  pickMode?: boolean;
 }): string {
   const {
     key,
@@ -38,6 +40,7 @@ export function buildAmapHtml(opts: {
     linkMarkers = true,
     focusCenter = false,
     viewportLimit = 0,
+    pickMode = false,
   } = opts;
   const payload = JSON.stringify({
     markers,
@@ -47,6 +50,7 @@ export function buildAmapHtml(opts: {
     linkMarkers: !!linkMarkers,
     focusCenter: !!focusCenter,
     viewportLimit: viewportLimit || 0,
+    pickMode: !!pickMode,
   });
   return `<!DOCTYPE html>
 <html>
@@ -160,6 +164,55 @@ export function buildAmapHtml(opts: {
         var points = [];
         window.__overlays = window.__overlays || [];
         window.__markerEls = [];
+
+        // ---- 地图选点模式（新增地点）：点击地图回调 mapClick ----
+        window.__pickMode = !!data.pickMode;
+        window.__pickMarker = null;
+        window.__pickHandler = null;
+
+        function ensurePickMarker() {
+          if (window.__pickMarker) return;
+          var div = document.createElement('div');
+          div.style.position = 'relative';
+          div.style.width = '38px';
+          div.style.height = '38px';
+          div.innerHTML = '<div style="position:absolute;left:4px;top:4px;width:30px;height:30px;border-radius:50%;background:#e8453c;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.35)"></div>';
+          window.__pickMarker = new AMap.Marker({
+            position: [0, 0],
+            anchor: 'center',
+            content: div,
+            zIndex: 500
+          });
+          window.__pickMarker.setMap(map);
+          window.__pickMarker.hide();
+        }
+
+        function onPickClick(e) {
+          if (!window.__pickMode || !e.lnglat) return;
+          var pos = [e.lnglat.getLng(), e.lnglat.getLat()];
+          ensurePickMarker();
+          window.__pickMarker.setPosition(pos);
+          window.__pickMarker.show();
+          map.setZoomAndCenter(16, pos);
+          post('mapClick', { lng: pos[0], lat: pos[1] });
+        }
+
+        window.setPickMode = function (on) {
+          window.__pickMode = !!on;
+          if (on) {
+            if (!window.__pickHandler) {
+              window.__pickHandler = onPickClick;
+              map.on('click', window.__pickHandler);
+            }
+          } else {
+            if (window.__pickHandler) {
+              map.off('click', window.__pickHandler);
+              window.__pickHandler = null;
+            }
+            if (window.__pickMarker) window.__pickMarker.hide();
+          }
+        };
+        if (data.pickMode) window.setPickMode(true);
 
         function applyMarkerFocus() {
           if (!data.focusCenter || !window.__map || !window.__markerEls.length) return;
@@ -290,6 +343,7 @@ export function buildAmapHtml(opts: {
             var lastMarkerTap = 0;
             function emitMarkerTap(m) {
               var now = Date.now();
+              if (window.__pickMode) return; // 选点模式下点击 marker 不打开详情
               if (now - lastMarkerTap < 350) return;
               lastMarkerTap = now;
               post('markerTap', {

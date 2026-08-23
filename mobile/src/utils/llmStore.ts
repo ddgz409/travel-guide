@@ -22,7 +22,7 @@ export type CustomProvider = {
 
 export const DEFAULT_LOCAL_LLM: LocalLlmConfig = {
   provider: "zhipu",
-  model: "glm-4",
+  model: "glm-4-flash-250414",
   apiKey: "",
   baseUrl: "",
 };
@@ -36,7 +36,7 @@ export const LOCAL_PROVIDERS = [
 ];
 
 export const LOCAL_MODELS: Record<string, string[]> = {
-  zhipu: ["glm-4", "glm-4-flash", "glm-4.7-flash", "glm-5"],
+  zhipu: ["glm-4-flash-250414", "glm-4.7-flash", "glm-4-flash", "glm-4", "glm-5"],
   deepseek: ["deepseek-v4-flash", "deepseek-chat"],
   doubao: ["doubao-seed-1-6", "doubao-1-5-pro-32k"],
   mimo: ["mimo-v2.5-pro", "mimo-v2.5"],
@@ -69,9 +69,10 @@ export async function getAvailableModels(): Promise<
     providerLabel: "智谱 GLM",
     badge: "服务器默认",
     models: [
-      { model: "glm-4", label: "GLM-4" },
-      { model: "glm-4-flash", label: "GLM-4-Flash（免费）" },
+      { model: "glm-4-flash-250414", label: "GLM-4-Flash-250414（免费·默认）" },
       { model: "glm-4.7-flash", label: "GLM-4.7-Flash（免费）" },
+      { model: "glm-4-flash", label: "GLM-4-Flash（免费）" },
+      { model: "glm-4", label: "GLM-4" },
     ],
   });
 

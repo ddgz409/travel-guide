@@ -118,6 +118,19 @@ export interface Item {
   transport_to_next: TransportToNext | null;
 }
 
+/** 向某天新增地点（地图选点 / 搜索添加）的请求体 */
+export interface ItemCreate {
+  name: string;
+  poi_id?: string | null;
+  location?: Location | null;
+  type?: ItemType;
+  time_slot?: TimeSlot | null;
+  description?: string | null;
+  duration_min?: number | null;
+  cost?: number | null;
+  rating?: number | null;
+}
+
 export interface Day {
   id: string;
   day_index: number;
@@ -487,4 +500,14 @@ export interface CollectionCreatePayload {
   emoji?: string;
   city?: string | null;
   places: CollectionPlace[];
+}
+
+/** 拍照识景：照片/截图识别结果 */
+export interface VisionRecognizeResponse {
+  kind: "scenery" | "hotel" | "ticket" | "map" | "food" | "other";
+  title: string;
+  description: string;
+  highlights: string[];
+  tips: string[];
+  raw?: string | null;
 }

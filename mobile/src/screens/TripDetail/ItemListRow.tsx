@@ -1,5 +1,5 @@
 import React, { memo, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import type { Item, TransportToNext } from "@travel-guide/shared";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -43,12 +43,15 @@ export const ItemListRow = memo(function ItemListRow({
   destination,
   hasNextRoute,
   onPoiPress,
+  onDelete,
 }: {
   item: Item;
   tripId: string;
   destination: string;
   hasNextRoute: boolean;
   onPoiPress?: () => void;
+  /** 传入后显示右上角删除按钮（编辑态） */
+  onDelete?: () => void;
 }) {
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -64,6 +67,16 @@ export const ItemListRow = memo(function ItemListRow({
 
   return (
     <View style={[styles.feedCard, !item.selected && styles.itemOff]}>
+      {onDelete ? (
+        <Pressable
+          style={styles.deleteBtn}
+          onPress={onDelete}
+          hitSlop={10}
+          accessibilityLabel={`删除 ${item.name}`}
+        >
+          <Text style={styles.deleteBtnText}>✕</Text>
+        </Pressable>
+      ) : null}
       <PressScale
         onPress={() => {
           if (onPoiPress) {

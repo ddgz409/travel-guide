@@ -33,6 +33,7 @@ import { ChatHistoryScreen } from "./src/screens/Chat/ChatHistoryScreen";
 import { TravelSearchScreen } from "./src/screens/TravelSearch/TravelSearchScreen";
 import { PortalSelectScreen } from "./src/screens/PortalSelect/PortalSelectScreen";
 import { ModelManageScreen } from "./src/screens/ModelManage/ModelManageScreen";
+import { PhotoRecognizeScreen } from "./src/screens/PhotoRecognize/PhotoRecognizeScreen";
 import { CustomTabBar } from "./src/components/CustomTabBar";
 import { MainTabContext, type MainTab } from "./src/navigation/MainTabContext";
 import { colors } from "./src/theme";
@@ -295,6 +296,11 @@ function RootNavigator() {
         name="PortalSelect"
         component={PortalSelectScreen}
         options={{ headerShown: false, ...pushNested }}
+      />
+      <Stack.Screen
+        name="PhotoRecognize"
+        component={PhotoRecognizeScreen}
+        options={{ headerShown: false, ...riseSoft }}
       />
     </Stack.Navigator>
   );

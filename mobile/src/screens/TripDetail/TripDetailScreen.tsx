@@ -15,6 +15,8 @@ import type { GenerateProgressEvent } from "@travel-guide/shared";
 import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
 import type {
+  Item,
+  PoiSearchResult,
   RouteOption,
   Trip,
 } from "@travel-guide/shared";
@@ -25,7 +27,7 @@ import { HeroRouteMap } from "../../components/HeroRouteMap";
 import { SegmentBubbleBar } from "../../components/SegmentBubbleBar";
 import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { PoiDetailSheet } from "../CityDetail/PoiDetailSheet";
-import { FadeSlideIn, FadeSwitch, PressScale } from "../../utils/motion";
+import { FadeSwitch, PressScale } from "../../utils/motion";
 import { getDeviceLocation, peekCachedLocation } from "../../utils/location";
 import type { LatLng } from "../../utils/geo";
 import {
@@ -43,6 +45,8 @@ import { SLOT_LABEL, TYPE_LABEL } from "./constants";
 import { ItemListRow } from "./ItemListRow";
 import { HotelNotesRow } from "./HotelNotesRow";
 import { CollaboratorsRow } from "./CollaboratorsRow";
+import { AddSpotSheet, type PoiAddType } from "./AddSpotSheet";
+import { SortableDayList } from "./SortableDayList";
 import { readGenerateSSE } from "../../utils/sseClient";
 import { TripGeneratingView } from "./TripGeneratingView";
 import { routeOptionLabel } from "./routeLabels";
@@ -77,6 +81,16 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [userLocation, setUserLocation] = useState<LatLng | null>(() =>
     peekCachedLocation(),
   );
+  // 地图选点新增地点
+  const [pickMode, setPickMode] = useState(false);
+  const [addCoords, setAddCoords] = useState<{ lng: number; lat: number } | null>(
+    null,
+  );
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
+  // 编辑态：显示删除按钮
+  const [editingDay, setEditingDay] = useState(false);
+  // 长按拖拽中禁用外层滚动，避免与排序手势冲突
+  const [listScrollEnabled, setListScrollEnabled] = useState(true);
 
   const openPoiDetail = useCallback(
     (base: PoiSheetData) => {
@@ -285,6 +299,10 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const topPad = Math.max(insets.top, 8);
   const filterTop = topPad + 56;
   const categoryBarTop = filterTop + (days.length > 1 ? 48 : 0);
+  const pickBarTop = categoryBarTop + 52;
+  const dayLabel = currentDay
+    ? `第 ${currentDay.day_index} 天${currentDay.city ? ` · ${currentDay.city}` : ""}`
+    : "行程";
 
   async function onShare() {
     if (!trip || !user) {
@@ -364,6 +382,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
     try {
       setTrip(await api.trips.selectRoute(trip.id, routeId));
       setActiveDay(0);
+      setPickMode(false);
     } catch (e) {
       Alert.alert("失败", e instanceof ApiError ? e.message : "切换失败");
     } finally {
@@ -378,6 +397,100 @@ export function TripDetailScreen({ route, navigation }: Props) {
       setTrip(await api.trips.regenerateDay(trip.id, currentDay.day_index));
     } catch (e) {
       Alert.alert("失败", e instanceof ApiError ? e.message : "重新生成失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function startPickMode() {
+    if (!canEdit || !currentDay) return;
+    setPoiSheet(null);
+    setPickMode(true);
+  }
+
+  function cancelPick() {
+    setPickMode(false);
+  }
+
+  const onMapPick = useCallback((lng: number, lat: number) => {
+    setPickMode(false);
+    setAddCoords({ lng, lat });
+    setAddSheetVisible(true);
+  }, []);
+
+  async function addItemPayload(
+    payload: Parameters<typeof api.trips.addItem>[2],
+  ) {
+    if (!trip || !currentDay) return;
+    setAddSheetVisible(false);
+    setAddCoords(null);
+    setActionBusy(true);
+    try {
+      setTrip(await api.trips.addItem(trip.id, currentDay.id, payload));
+    } catch (e) {
+      Alert.alert("添加失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleAddPoi(poi: PoiSearchResult, type: PoiAddType) {
+    await addItemPayload({
+      name: poi.name,
+      poi_id: poi.poi_id,
+      location: poi.location,
+      type,
+      time_slot: null,
+    });
+  }
+
+  async function handleAddCustom(name: string, type: PoiAddType) {
+    if (!addCoords) return;
+    const coords = addCoords;
+    await addItemPayload({
+      name,
+      type,
+      location: { lng: coords.lng, lat: coords.lat, address: "" },
+      time_slot: null,
+    });
+  }
+
+  function confirmDelete(item: Item) {
+    Alert.alert(
+      "删除地点",
+      `确定从当天行程中删除「${item.name}」吗？`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: () => void doDelete(item),
+        },
+      ],
+    );
+  }
+
+  async function doDelete(item: Item) {
+    if (!trip) return;
+    setActionBusy(true);
+    try {
+      setTrip(await api.trips.deleteItem(trip.id, item.id));
+    } catch (e) {
+      Alert.alert("删除失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleReorder(orderedIds: string[]) {
+    if (!trip || !currentDay) return;
+    const items = orderedIds.map((id, seq) => ({ item_id: id, new_seq: seq }));
+    setActionBusy(true);
+    try {
+      setTrip(await api.trips.reorderItems(trip.id, currentDay.id, items));
+    } catch (e) {
+      Alert.alert("排序失败", e instanceof ApiError ? e.message : "操作失败");
+      void load();
     } finally {
       setActionBusy(false);
     }
@@ -443,8 +556,21 @@ export function TripDetailScreen({ route, navigation }: Props) {
           showCategoryChips
           categoryBarTop={categoryBarTop}
           onPoiPress={openPoiDetail}
+          pickMode={pickMode}
+          onMapPick={onMapPick}
         />
       </FadeSwitch>
+
+      {pickMode ? (
+        <View style={[styles.pickBar, { top: pickBarTop }]}>
+          <Text style={styles.pickBarText}>
+            点击地图选择要添加的地点，选好后在此列表确认
+          </Text>
+          <Pressable onPress={cancelPick} hitSlop={10}>
+            <Text style={styles.pickCancelText}>取消</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={[styles.topOverlay, { paddingTop: topPad }]}>
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -477,7 +603,10 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 <Pressable
                   key={d.id}
                   style={[styles.filterChip, on && styles.filterChipOn]}
-                  onPress={() => setActiveDay(i)}
+                  onPress={() => {
+                    setActiveDay(i);
+                    setPickMode(false);
+                  }}
                 >
                   <Text style={[styles.filterLabel, on && styles.filterLabelOn]}>
                     Day {d.day_index} · {d.city || d.date.slice(5)}
@@ -560,6 +689,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.sheetList}
             nestedScrollEnabled
+            scrollEnabled={listScrollEnabled}
           >
             {routeOptions.length > 0 ? (
             <View style={styles.routeSection}>
@@ -578,30 +708,64 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
           <View style={styles.daySection}>
             {canEdit && currentDay ? (
-              <PressScale
-                style={styles.regen}
-                onPress={onRegenDay}
-                disabled={actionBusy}
-              >
-                <Text style={styles.regenText}>
-                  {actionBusy ? "处理中…" : "重新生成当天"}
-                </Text>
-              </PressScale>
+              <View style={styles.dayHead}>
+                <PressScale
+                  style={styles.dayHeadLink}
+                  onPress={onRegenDay}
+                  disabled={actionBusy}
+                >
+                  <Text style={styles.regenText}>
+                    {actionBusy ? "处理中…" : "重新生成当天"}
+                  </Text>
+                </PressScale>
+                <View style={styles.dayHeadSpacer} />
+                <PressScale
+                  style={styles.dayHeadBtn}
+                  onPress={startPickMode}
+                  disabled={actionBusy || pickMode}
+                >
+                  <Text style={styles.dayHeadBtnText}>＋ 添加地点</Text>
+                </PressScale>
+                <PressScale
+                  style={[styles.dayHeadBtn, editingDay && styles.dayHeadBtnOn]}
+                  onPress={() => setEditingDay((v) => !v)}
+                  disabled={actionBusy}
+                >
+                  <Text
+                    style={[
+                      styles.dayHeadBtnText,
+                      editingDay && styles.dayHeadBtnTextOn,
+                    ]}
+                  >
+                    {editingDay ? "完成" : "编辑"}
+                  </Text>
+                </PressScale>
+              </View>
             ) : null}
 
             <Text style={styles.sectionTitle}>
               精选行程 · {selectedItems.length} 个安排
             </Text>
 
+            {canEdit ? (
+              <Text style={styles.dragHint}>
+                {editingDay ? "点击卡片右上角 ✕ 删除 · " : ""}长按景点可上下拖动排序
+              </Text>
+            ) : null}
+
             <FadeSwitch
               switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
             >
-              {dayItems.map((item, i) => {
-                const hasNextRoute = dayItems
-                  .slice(i + 1)
-                  .some((n) => n.selected && hasCoords(n.location));
-                return (
-                  <FadeSlideIn key={item.id} delay={Math.min(i, 6) * 45}>
+              <SortableDayList
+                items={dayItems}
+                canEdit={canEdit}
+                dragDisabled={actionBusy}
+                renderRow={(item) => {
+                  const idx = dayItems.indexOf(item);
+                  const hasNextRoute = dayItems
+                    .slice(idx + 1)
+                    .some((n) => n.selected && hasCoords(n.location));
+                  return (
                     <ItemListRow
                       item={item}
                       tripId={trip.id}
@@ -614,10 +778,17 @@ export function TripDetailScreen({ route, navigation }: Props) {
                           ? () => openPoiDetail(poiSheetFromTripItem(item))
                           : undefined
                       }
+                      onDelete={
+                        canEdit && editingDay && item.type !== "transport"
+                          ? () => void confirmDelete(item)
+                          : undefined
+                      }
                     />
-                  </FadeSlideIn>
-                );
-              })}
+                  );
+                }}
+                onOrderChange={(ids) => void handleReorder(ids)}
+                onDragStateChange={setListScrollEnabled}
+              />
             </FadeSwitch>
 
             <View style={styles.budget}>
@@ -654,6 +825,19 @@ export function TripDetailScreen({ route, navigation }: Props) {
         visible={sharePayload != null}
         payload={sharePayload}
         onClose={() => setSharePayload(null)}
+      />
+      <AddSpotSheet
+        visible={addSheetVisible}
+        coords={addCoords}
+        city={trip.destination}
+        dayLabel={dayLabel}
+        busy={actionBusy}
+        onSelectPoi={(poi, type) => void handleAddPoi(poi, type)}
+        onAddCustom={(name, type) => void handleAddCustom(name, type)}
+        onCancel={() => {
+          setAddSheetVisible(false);
+          setAddCoords(null);
+        }}
       />
       <PoiDetailSheet
         visible={poiSheet != null}

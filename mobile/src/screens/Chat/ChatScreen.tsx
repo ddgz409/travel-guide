@@ -24,6 +24,7 @@ import {
 import { submitTripGenerate } from "../../utils/submitTripGenerate";
 import { ChatFollowUpChoices } from "../../components/ChatFollowUpChoices";
 import { ChatDatePickerCard } from "../../components/ChatDatePickerCard";
+import { pickPhotoUri, takePhotoUri } from "../../utils/pickPhoto";
 import { ApiError } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
@@ -115,6 +116,8 @@ export function ChatScreen({ navigation, route }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
   const initialSentRef = useRef(false);
+  // 免费模型被限流（429）时提示切换更稳定的模型
+  const [rateLimited, setRateLimited] = useState(false);
   // Agent 确认弹窗产生的结果消息（删除成功/取消等），流式更新时会被合并保留
   const agentNoticesRef = useRef<Msg[]>([]);
 
@@ -249,6 +252,32 @@ export function ChatScreen({ navigation, route }: Props) {
     [startPlanFromAction],
   );
 
+  /** 拍照识景：相机按钮弹窗选「拍照 / 相册」，选中后进入识别页 */
+  function openCameraAction() {
+    if (loading) return;
+    Alert.alert(
+      "拍照识景",
+      "拍一张景点 / 美食照片，或选择酒店、车票、地图的截图，AI 帮你识别。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "拍照",
+          onPress: async () => {
+            const uri = await takePhotoUri();
+            if (uri) navigation.navigate("PhotoRecognize", { uri });
+          },
+        },
+        {
+          text: "从相册选择",
+          onPress: async () => {
+            const uri = await pickPhotoUri();
+            if (uri) navigation.navigate("PhotoRecognize", { uri });
+          },
+        },
+      ],
+    );
+  }
+
   async function send(text?: string, baseMsgs?: Msg[]) {
     const content = (text || input).trim();
     if (!content || loading) return;
@@ -260,6 +289,7 @@ export function ChatScreen({ navigation, route }: Props) {
     const updated = [...(baseMsgs ?? msgs), userMsg];
     setMsgs(updated);
     setLoading(true);
+    setRateLimited(false);
     scrollToBottom();
 
     // 规划走服务端逐步追问，不在客户端直接跳转生成页
@@ -421,6 +451,7 @@ export function ChatScreen({ navigation, route }: Props) {
               aiContent += parsed.content;
             } else if (parsed.type === "error") {
               aiContent += parsed.content;
+              if (parsed.rate_limited) setRateLimited(true);
             }
             msgsWithAI[msgsWithAI.length - 1] = {
               role: "assistant",
@@ -739,6 +770,20 @@ export function ChatScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {rateLimited && !smartPlanMode ? (
+        <View style={styles.rateLimitBanner}>
+          <Text style={styles.rateLimitText}>
+            ⚠️ 免费模型暂时繁忙（被限流），建议切换到更稳定的免费模型
+          </Text>
+          <Pressable
+            style={styles.rateLimitBtn}
+            onPress={() => navigation.navigate("ModelManage")}
+          >
+            <Text style={styles.rateLimitBtnText}>切换模型</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {!smartPlanMode ? (
       <View
         style={[
@@ -750,6 +795,14 @@ export function ChatScreen({ navigation, route }: Props) {
           <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
         </Pressable>
         <View style={styles.inputRow}>
+          <Pressable
+            style={[styles.cameraBtn, loading && styles.sendDisabled]}
+            onPress={openCameraAction}
+            disabled={loading}
+            hitSlop={6}
+          >
+            <Text style={styles.cameraBtnText}>📷</Text>
+          </Pressable>
           <TextInput
             style={[
               styles.input,

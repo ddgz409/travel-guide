@@ -54,6 +54,9 @@ type Props = {
   categoryBarTop?: number;
   onMapGestureChange?: (active: boolean) => void;
   onPoiPress?: (poi: PoiSheetData) => void;
+  /** 地图选点模式：开启后点击地图回调 onMapPick */
+  pickMode?: boolean;
+  onMapPick?: (lng: number, lat: number) => void;
 };
 
 function itemMarkers(items: Item[]): MapMarker[] {
@@ -87,6 +90,8 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     categoryBarTop,
     onMapGestureChange,
     onPoiPress,
+    pickMode = false,
+    onMapPick,
   },
   ref,
 ) {
@@ -340,6 +345,11 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   useEffect(() => {
     if (!mapReady || !amapKey) return;
+    inject(`window.setPickMode && window.setPickMode(${!!pickMode})`);
+  }, [mapReady, amapKey, pickMode, inject]);
+
+  useEffect(() => {
+    if (!mapReady || !amapKey) return;
     if (categoryActive && categoryLoading && categoryMarkers.length === 0) {
       return;
     }
@@ -464,6 +474,9 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
                       }
                       if (msg?.type === "markerTap" && msg.payload) {
                         handleMarkerTap(msg.payload);
+                      }
+                      if (msg?.type === "mapClick" && msg.payload) {
+                        onMapPick?.(Number(msg.payload.lng), Number(msg.payload.lat));
                       }
                     } catch {
                       /* ignore */

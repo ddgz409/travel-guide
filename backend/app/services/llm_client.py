@@ -23,7 +23,7 @@ settings = get_settings()
 PROVIDER_PRESETS: dict[str, dict[str, str]] = {
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "model": "glm-4",
+        "model": "glm-4-flash-250414",
         "label": "智谱 GLM",
     },
     "doubao": {
@@ -94,7 +94,7 @@ SUGGESTED_MODELS: dict[str, list[str]] = {
 }
 
 DEFAULT_PROVIDER = "zhipu"
-DEFAULT_MODEL = "glm-4"
+DEFAULT_MODEL = "glm-4-flash-250414"
 
 # 兼容旧测试名
 _PROVIDER_PRESETS = PROVIDER_PRESETS
@@ -229,6 +229,66 @@ class LLMClient:
             raise LLMError(f"{self.label} 调用失败: {e}") from e
 
         return self._parse_json(content)
+
+    def chat_vision(
+        self,
+        image_b64: str,
+        mime: str = "image/jpeg",
+        system_prompt: str = "",
+        user_prompt: str = "",
+        temperature: float = 0.4,
+        max_tokens: int = 2048,
+    ) -> str:
+        """发送图片给多模态视觉模型识别，返回原始文本。
+
+        视觉模型（如 glm-4.6v-flash）不一定支持 response_format，
+        因此不走 chat_json/_call_http，单独构造 image_url 消息并调用。
+        """
+        if not self.available:
+            raise LLMError(
+                f"未配置 {self.label} API key。"
+                f"请在服务器 .env 配置 ZHIPU_API_KEY。"
+            )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{image_b64}"},
+                    },
+                ],
+            },
+        ]
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        logger.info("LLM 视觉请求 provider=%s model=%s", self.provider, self.model)
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                resp = client.post(url, headers=headers, json=body)
+                if resp.status_code >= 400:
+                    raise LLMError(
+                        f"{self.label} HTTP {resp.status_code}: {resp.text[:400]}"
+                    )
+                data = resp.json()
+            return data["choices"][0]["message"]["content"] or ""
+        except LLMError:
+            raise
+        except (KeyError, IndexError, TypeError) as e:
+            raise LLMError(f"{self.label} 响应格式异常: {data!r}") from e
+        except Exception as e:
+            raise LLMError(f"{self.label} 调用失败: {e}") from e
 
     def _call_http_stream(
         self,

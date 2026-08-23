@@ -66,6 +66,20 @@ class ItemUpdate(BaseModel):
     rating: float | None = None
 
 
+class ItemCreate(BaseModel):
+    """向某天新增地点（地图选点 / 搜索添加）。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    poi_id: str | None = None
+    location: dict | None = None
+    type: ItemType = "attraction"
+    time_slot: TimeSlot | None = None
+    description: str | None = None
+    duration_min: int | None = None
+    cost: float | None = None
+    rating: float | None = None
+
+
 class ReorderItem(BaseModel):
     """拖拽排序：条目在新顺序中的位置。"""
 
