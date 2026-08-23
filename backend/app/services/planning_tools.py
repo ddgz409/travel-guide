@@ -211,16 +211,27 @@ def _normalize_destination_alias(text: str) -> str:
     return _DEST_ABBR_TO_FULL.get((text or "").strip(), text)
 
 
+def _is_bare_destination(raw: str) -> bool:
+    """整句就是已知环线/省份/简称（如「青甘环线」「山东」「青甘」）→ 视为要规划。"""
+    from app.services.destination_validator import PROVINCE_CITIES, RING_ROUTES
+
+    s = raw.strip()
+    return s in RING_ROUTES or s in PROVINCE_CITIES or s in _DEST_ABBR_TO_FULL
+
+
 def is_planning_conversation(text: str) -> bool:
     raw = (text or "").strip()
-    if len(raw) < 3:
-        return False
     from app.services.chat_intent import is_trip_management_intent
 
     if is_trip_management_intent(raw):
         return False
     # 咨询类问题不算规划（避免「推荐个去哪玩」误触发）
     if CONSULT_HINT.search(raw):
+        return False
+    # 直接输入已知环线/省份/简称（如「青甘环线」「青甘」「山东」）→ 也要规划，弹卡询问天数/日期/人数等
+    if _is_bare_destination(raw):
+        return True
+    if len(raw) < 3:
         return False
     if PLANNING_TRIGGER.search(raw):
         return True
