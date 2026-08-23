@@ -749,7 +749,9 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
             {canEdit ? (
               <Text style={styles.dragHint}>
-                {editingDay ? "点击卡片右上角 ✕ 删除 · " : ""}长按景点可上下拖动排序
+                {editingDay
+                  ? "点击卡片右上角 ✕ 删除 · 长按景点可上下拖动排序"
+                  : "点「编辑」可删除或长按拖动调整景点顺序"}
               </Text>
             ) : null}
 
@@ -759,7 +761,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
               <SortableDayList
                 items={dayItems}
                 canEdit={canEdit}
-                dragDisabled={actionBusy}
+                dragDisabled={actionBusy || !editingDay}
                 renderRow={(item) => {
                   const idx = dayItems.indexOf(item);
                   const hasNextRoute = dayItems

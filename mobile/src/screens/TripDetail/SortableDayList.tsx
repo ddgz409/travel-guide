@@ -98,7 +98,7 @@ function SortableRow({
   const pan = useMemo(
     () =>
       Gesture.Pan()
-        .activateAfterLongPress(250)
+        .activateAfterLongPress(300)
         .enabled(canEdit && !dragDisabled)
         .onStart(() => {
           const idx = orderIds.value.indexOf(item.id);
