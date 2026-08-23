@@ -61,6 +61,13 @@ def ensure_sqlite_columns() -> None:
             alters.append(
                 "ALTER TABLE trips ADD COLUMN share_mode VARCHAR(16) DEFAULT 'read'"
             )
+        if "route" not in cols:
+            alters.append("ALTER TABLE trips ADD COLUMN route JSON")
+
+    if "days" in tables:
+        dcols = {c["name"] for c in inspector.get_columns("days")}
+        if "city" not in dcols:
+            alters.append("ALTER TABLE days ADD COLUMN city VARCHAR(64)")
 
     if "users" in tables:
         ucols = {c["name"] for c in inspector.get_columns("users")}
@@ -72,6 +79,8 @@ def ensure_sqlite_columns() -> None:
             alters.append("ALTER TABLE users ADD COLUMN llm_model VARCHAR(128)")
         if "llm_base_url" not in ucols:
             alters.append("ALTER TABLE users ADD COLUMN llm_base_url VARCHAR(512)")
+        if "avatar" not in ucols:
+            alters.append("ALTER TABLE users ADD COLUMN avatar VARCHAR(512)")
 
     if alters:
         with engine.begin() as conn:

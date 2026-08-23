@@ -161,7 +161,7 @@ export function ModelManageScreen({ navigation }: Props) {
             <View style={[styles.cardDot, styles.cardDotOn]} />
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>
-                {isDefaultActive ? "智谱 GLM · glm-4" : `${currentLlm.provider} · ${currentLlm.model}`}
+                {isDefaultActive ? "智谱 GLM · glm-4-flash" : `${currentLlm.provider} · ${currentLlm.model}`}
               </Text>
               <Text style={styles.cardSub}>
                 {isDefaultActive ? "服务器默认模型" : "自定义供应商"}
@@ -178,7 +178,7 @@ export function ModelManageScreen({ navigation }: Props) {
           <View style={styles.cardRow}>
             <View style={[styles.cardDot, isDefaultActive ? styles.cardDotOn : styles.cardDotOff]} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>智谱 GLM · glm-4</Text>
+              <Text style={styles.cardTitle}>智谱 GLM · glm-4-flash</Text>
               <Text style={styles.cardSub}>服务器默认（无需 API Key）</Text>
             </View>
             {!isDefaultActive && <Text style={styles.switchBtn}>切换</Text>}
@@ -266,7 +266,7 @@ export function ModelManageScreen({ navigation }: Props) {
           style={styles.input}
           value={model}
           onChangeText={setModel}
-          placeholder="如：glm-4"
+          placeholder="如：glm-4-flash"
           placeholderTextColor={colors.muted}
           autoCapitalize="none"
           autoCorrect={false}

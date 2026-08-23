@@ -1,0 +1,111 @@
+import { StyleSheet } from "react-native";
+import { colors } from "../../theme";
+
+export const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    backgroundColor: colors.card,
+  },
+  backBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  backText: { fontSize: 28, color: colors.ink, lineHeight: 30 },
+  title: { fontSize: 18, fontWeight: "800", color: colors.ink },
+  headerSpacer: { width: 32 },
+
+  actions: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderCurve: "continuous",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  actionTextAlt: { color: colors.brandHot },
+
+  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  preview: {
+    width: "100%",
+    height: 240,
+    borderRadius: 18,
+    borderCurve: "continuous",
+    backgroundColor: colors.bgSurface,
+  },
+  empty: {
+    width: "100%",
+    height: 240,
+    borderRadius: 18,
+    borderCurve: "continuous",
+    backgroundColor: colors.bgSurface,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+
+  loadingBox: { alignItems: "center", paddingVertical: 24 },
+  loadingText: { marginTop: 10, fontSize: 13, color: colors.muted },
+
+  errorBox: {
+    marginTop: 16,
+    borderRadius: 16,
+    borderCurve: "continuous",
+    backgroundColor: "#FDECEA",
+    padding: 16,
+    alignItems: "center",
+  },
+  errorText: { fontSize: 13, color: colors.danger, textAlign: "center", lineHeight: 20 },
+  retryBtn: {
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderCurve: "continuous",
+    backgroundColor: colors.danger,
+  },
+  retryText: { fontSize: 13, color: "#fff", fontWeight: "700" },
+
+  card: {
+    marginTop: 16,
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderCurve: "continuous",
+    padding: 18,
+  },
+  kindRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  kindBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderCurve: "continuous",
+    backgroundColor: colors.brandSoft,
+  },
+  kindText: { fontSize: 12, color: colors.brandHot, fontWeight: "700" },
+  cardTitle: { flex: 1, fontSize: 19, fontWeight: "800", color: colors.ink },
+  desc: { marginTop: 10, fontSize: 14, color: colors.ink, lineHeight: 22 },
+  section: { marginTop: 14 },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.brandHot,
+    marginBottom: 6,
+  },
+  bullet: { fontSize: 13, color: colors.ink, lineHeight: 21 },
+});

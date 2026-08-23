@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "2.2.8",
+  "versionCode": 34,
+  "versionName": "3.1.4",
   "apkUrl": "http://81.71.159.218:8000/static/android/app-release.apk",
-  "notes": "2.2.8：修复共享收藏夹编辑闪退；收藏夹 POI 封面图修复；发布按钮视觉区分",
-  "force": true
+  "notes": "3.1.4：AI 助手默认模型统一为免费 GLM-4-Flash，移除付费 GLM-4 选项避免误选；景点排序改为「编辑」模式下长按拖动，普通浏览滚动不再冲突",
+  "force": false
 }

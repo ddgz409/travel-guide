@@ -38,6 +38,9 @@ backend/data/landmark_cache.json
 # Git worktrees (local isolation)
 .worktrees/
 
+# ZCode tool local state (plans / deploy metadata)
+.zcode/
+
 # OS
 .DS_Store
 Thumbs.db

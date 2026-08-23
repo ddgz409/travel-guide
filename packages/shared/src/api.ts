@@ -9,6 +9,7 @@ import type {
   DayRoutesResult,
   GenerateRequest,
   GenerateProgressEvent,
+  ItemCreate,
   OptimizePlanQueryRequest,
   OptimizePlanQueryResponse,
   AndroidUpdateInfo,
@@ -32,6 +33,7 @@ import type {
   CommentListResponse,
   UserProfile,
   FollowListResponse,
+  VisionRecognizeResponse,
 } from "./types";
 
 export class ApiError extends Error {
@@ -76,6 +78,10 @@ export function createApiClient(opts: CreateApiClientOptions) {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
     };
+    // FormData 由运行时自动生成 multipart 边界，不能手动指定 Content-Type
+    if (options.body instanceof FormData) {
+      delete headers["Content-Type"];
+    }
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const { timeoutMs = defaultTimeoutMs, ...fetchOpts } = options;
@@ -158,6 +164,16 @@ export function createApiClient(opts: CreateApiClientOptions) {
         }
         return request<PoiSearchResult[]>(url);
       },
+      nearbyPois: (
+        lng: number,
+        lat: number,
+        type: "attraction" | "meal" | "hotel" = "attraction",
+        limit = 10,
+      ) =>
+        request<PoiSearchResult[]>(
+          `/trips/pois/nearby?lng=${lng}&lat=${lat}&type=${type}&limit=${limit}`,
+          { timeoutMs: 15000 },
+        ),
       suggestLandmarks: (city: string) =>
         request<{ city: string; landmarks: string[] }>(
           `/trips/pois/suggest?city=${encodeURIComponent(city)}`,
@@ -211,6 +227,17 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<Trip>(`/trips/${tripId}/days/${dayId}/reorder`, {
           method: "PUT",
           body: JSON.stringify({ items }),
+        }),
+      addItem: (tripId: string, dayId: string, payload: ItemCreate) =>
+        request<Trip>(`/trips/${tripId}/days/${dayId}/items`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+          timeoutMs: 60000,
+        }),
+      deleteItem: (tripId: string, itemId: string) =>
+        request<Trip>(`/trips/${tripId}/items/${itemId}`, {
+          method: "DELETE",
+          timeoutMs: 60000,
         }),
       quickRecommend: (destination: string) =>
         request<QuickRecommendResponse>("/trips/quick-recommend", {
@@ -449,6 +476,37 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<FollowListResponse>(`/users/${id}/followers`),
       following: (id: string) =>
         request<FollowListResponse>(`/users/${id}/following`),
+      uploadAvatar: (uri: string) => {
+        const form = new FormData();
+        // React Native 的 FormData 接受 { uri, name, type }
+        const name = uri.split("/").pop() || "avatar.jpg";
+        const ext = (name.toLowerCase().split(".").pop() || "jpg").split("?")[0];
+        const type =
+          ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+        form.append("file", { uri, name, type } as unknown as Blob);
+        return request<{ avatar: string | null }>(`/users/me/avatar`, {
+          method: "PUT",
+          body: form,
+        });
+      },
+      removeAvatar: () =>
+        request<void>(`/users/me/avatar`, { method: "DELETE" }),
+    },
+    vision: {
+      // 拍照识景：上传照片/截图给视觉模型识别
+      recognize: (uri: string) => {
+        const form = new FormData();
+        const name = uri.split("/").pop() || "photo.jpg";
+        const ext = (name.toLowerCase().split(".").pop() || "jpg").split("?")[0];
+        const type =
+          ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+        form.append("file", { uri, name, type } as unknown as Blob);
+        return request<VisionRecognizeResponse>(`/vision/recognize`, {
+          method: "POST",
+          body: form,
+          timeoutMs: 90000, // 视觉识别较慢
+        });
+      },
     },
   };
 }

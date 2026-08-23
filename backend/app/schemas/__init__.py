@@ -10,6 +10,7 @@ from app.schemas.auth import (
 from app.schemas.chat import ChatMessage, ChatRequest
 from app.schemas.trip import (
     DayOut,
+    ItemCreate,
     ItemOut,
     ItemUpdate,
     QuickRecommendCard,
@@ -37,6 +38,7 @@ __all__ = [
     "ChatMessage",
     "ChatRequest",
     "DayOut",
+    "ItemCreate",
     "ItemOut",
     "ItemUpdate",
     "QuickRecommendCard",

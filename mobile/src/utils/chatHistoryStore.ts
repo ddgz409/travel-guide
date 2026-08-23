@@ -1,10 +1,13 @@
 /** AI 对话历史（本地持久化，按用户隔离） */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { PlanNavigateAction } from "./chatIntent";
 
 export type ChatHistoryMsg = {
   role: "user" | "assistant";
   content: string;
   reasoning?: string;
+  /** 只持久化「查看攻略」入口；选择题/日期卡片不持久化 */
+  widget?: { kind: "plan_result"; action: PlanNavigateAction } | null;
 };
 
 export type ChatHistorySession = {

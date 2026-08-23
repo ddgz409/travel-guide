@@ -135,6 +135,29 @@ class GuideGenerator:
         """
         active_llm = llm or self.llm
         trip_id = str(trip.id)
+        cities = list(trip.route or [])
+        if len(cities) >= 2:
+            # 多城市路线（如青甘环线）：按城市分段生成
+            try:
+                self._generate_multi_city(trip, db, active_llm, cities)
+            except GeneratorError as e:
+                logger.warning("攻略生成失败 trip=%s: %s", trip.id, e)
+                trip.status = "failed"
+                trip.error_msg = str(e)[:500]
+                db.commit()
+                clear_progress(trip_id)
+            except Exception as e:
+                logger.exception("攻略生成失败 trip=%s", trip.id)
+                trip.status = "failed"
+                if isinstance(e, AmapError):
+                    from app.services.destination_validator import _friendly_amap_message
+
+                    trip.error_msg = _friendly_amap_message(trip.destination, e)[:500]
+                else:
+                    trip.error_msg = str(e)[:500]
+                db.commit()
+                clear_progress(trip_id)
+            return
         try:
             days_count = (trip.end_date - trip.start_date).days + 1
             if days_count < 1:
@@ -290,6 +313,129 @@ class GuideGenerator:
             db.commit()
             clear_progress(trip_id)
 
+    def _allocate_days(self, cities: list[str], days_count: int) -> list[tuple[str, int]]:
+        """把总天数按顺序均分到各城市；天数不足时只取前面的城市。"""
+        if days_count < 1:
+            days_count = 1
+        n = min(len(cities), days_count)
+        used = cities[:n]
+        base = days_count // n
+        rem = days_count % n
+        alloc: list[tuple[str, int]] = []
+        for i, c in enumerate(used):
+            alloc.append((c, base + (1 if i < rem else 0)))
+        return alloc
+
+    @staticmethod
+    def _transit_item(prev_city: str, city: str) -> dict[str, Any]:
+        return {
+            "time_slot": "morning",
+            "type": "transport",
+            "name": f"前往 {city}",
+            "description": f"从 {prev_city} 乘车前往 {city}，中途可稍作休整、补给。",
+            "duration_min": 240,
+            "cost": 150,
+            "poi_id": None,
+            "location": None,
+            "rating": None,
+            "alternatives": [],
+        }
+
+    @staticmethod
+    def _empty_day(city: str, day_index: int) -> dict[str, Any]:
+        return {
+            "day_index": day_index,
+            "date": "",
+            "city": city,
+            "summary": f"在 {city} 的活动",
+            "items": [],
+        }
+
+    def _generate_multi_city(
+        self,
+        trip: Trip,
+        db: Session,
+        llm: LLMClient | None,
+        cities: list[str],
+    ) -> None:
+        """多城市路线（如青甘环线）生成：按城市分段，每段复用单城市规划。"""
+        trip_id = str(trip.id)
+        days_count = (trip.end_date - trip.start_date).days + 1
+        update_progress(trip_id, phase="geocode", message=f"识别到 {len(cities)} 个城市，开始分段规划…", preview="")
+
+        must_include = (trip.preferences or {}).get("must_include") or []
+        allocations = self._allocate_days(cities, days_count)
+        all_days: list[dict[str, Any]] = []
+        prev_city: str | None = None
+        external_merged: dict[str, list[dict[str, Any]]] = {"xiaohongshu": [], "ctrip": []}
+
+        for city, n_days in allocations:
+            # 每段的地理编码 + POI 池 + 酒店 + 参考
+            try:
+                geo = self.amap.geocode(city)
+            except AmapError as e:
+                from app.services.destination_validator import _friendly_amap_message
+
+                raise GeneratorError(_friendly_amap_message(city, e)) from e
+            update_progress(
+                trip_id, phase="poi", message=f"检索 {city} 景点、美食与住宿…（{n_days} 天）", preview=""
+            )
+            pool = self._fetch_poi_pool(geo, city, must_include)
+            if not pool:
+                raise GeneratorError(f"未找到 {city} 的景点数据")
+            pool, hotel_status, hotel_cands = self._merge_ctrip_hotels(pool, city)
+            external_refs = self._fetch_external_refs(city)
+            external_merged["xiaohongshu"].extend(external_refs.get("xiaohongshu") or [])
+            external_merged["ctrip"].extend(external_refs.get("ctrip") or [])
+
+            # 临时切换 trip.destination 让提示词以当前城市为准
+            saved_dest = trip.destination
+            trip.destination = city
+            try:
+                city_days = self._generate_via_llm(
+                    pool, trip, n_days, [], external_refs, llm=llm
+                )
+            finally:
+                trip.destination = saved_dest
+            city_days = (city_days or [])[:n_days]
+            if not city_days:
+                city_days = [self._empty_day(city, 1)]
+
+            for j, d in enumerate(city_days):
+                items = list(d.get("items") or [])
+                if prev_city is not None and j == 0:
+                    items = [self._transit_item(prev_city, city)] + items
+                d["city"] = city
+                d["items"] = items
+            all_days.extend(city_days)
+            prev_city = city
+
+        # 重排 day_index 与日期
+        for i, d in enumerate(all_days):
+            d["day_index"] = i + 1
+            d["date"] = (trip.start_date + timedelta(days=i)).isoformat()
+
+        update_progress(trip_id, phase="save", message="整理路线方案、预算与地图…", preview="")
+        total = sum(
+            it.get("cost", 0) or 0
+            for d in all_days
+            for it in (d.get("items") or [])
+        )
+        prefs = dict(trip.preferences or {})
+        prefs["route"] = cities
+        prefs["route_options"] = []
+        trip.preferences = prefs
+        trip.external_refs = external_merged
+        trip.title = f"{'·'.join(cities)} {days_count}日游"
+        self._clear_days(trip, db)
+        self._persist(trip, all_days, db)
+        trip.budget_total = float(total) * trip.travelers
+        trip.status = "ready"
+        trip.error_msg = None
+        db.commit()
+        logger.info("攻略 %s 多城市生成完成：%s（%d 天）", trip.id, " -> ".join(cities), days_count)
+        clear_progress(trip_id)
+
     def regenerate_day(
         self,
         trip: Trip,
@@ -354,7 +500,9 @@ class GuideGenerator:
                 )
                 logger.info(
                     "POI 检索 %s: %d 条 (top评分: %.1f)",
-                    kind, len(pois), pois[0].rating if pois else 0,
+                    kind,
+                    len(pois),
+                    pois[0].rating if pois and pois[0].rating is not None else 0,
                 )
                 return kind, pois
             except AmapError as e:
@@ -1387,7 +1535,7 @@ class GuideGenerator:
     def _persist(self, trip: Trip, day_plans: list[dict[str, Any]], db: Session) -> None:
         """持久化全部天与条目，并回填路线规划。"""
         for plan in day_plans:
-            self._persist_day(trip, plan, db, trip.destination)
+            self._persist_day(trip, plan, db, plan.get("city") or trip.destination)
 
     def _persist_day(self, trip: Trip, plan: dict[str, Any], db: Session, city: str = "") -> None:
         """持久化单天及其条目，含路线规划回填。"""
@@ -1398,6 +1546,7 @@ class GuideGenerator:
             day_index=day_index,
             date=day_date,
             summary=plan.get("summary"),
+            city=city or None,
         )
         db.add(day)
         db.flush()  # 拿到 day.id

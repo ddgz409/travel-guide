@@ -292,6 +292,11 @@ def _to_summary(
 ) -> CollectionSummary:
     places = row.places or []
     cover = [CollectionPlaceOut.model_validate(p) for p in places[:3]]
+    author_avatar = None
+    if row.user_id:
+        author_avatar = db.scalar(
+            select(User.avatar).where(User.id == row.user_id)
+        )
     return CollectionSummary(
         id=row.id,
         title=row.title,
@@ -304,6 +309,7 @@ def _to_summary(
         subscriber_count=_subscriber_count(db, row.id),
         subscribed=_is_subscribed(db, row.id, user_id),
         is_owner=bool(user_id and row.user_id == user_id),
+        author_avatar=author_avatar,
         like_count=_like_count(db, row.id),
         liked=_is_liked(db, row.id, user_id),
         comment_count=_comment_count(db, row.id),
@@ -583,6 +589,11 @@ def list_comments(
         .offset(offset)
         .limit(limit)
     ).all()
+    avatars: dict[str, str | None] = {}
+    uids = {c.user_id for c in rows if c.user_id}
+    if uids:
+        for u in db.scalars(select(User).where(User.id.in_(uids))):
+            avatars[u.id] = u.avatar
     return CommentListResponse(
         items=[
             CommentOut(
@@ -590,6 +601,7 @@ def list_comments(
                 collection_id=c.collection_id,
                 user_id=c.user_id,
                 username=c.username or "旅人",
+                avatar=avatars.get(c.user_id) if c.user_id else None,
                 content=c.content,
                 created_at=c.created_at,
             )
@@ -629,6 +641,7 @@ def create_comment(
         collection_id=c.collection_id,
         user_id=c.user_id,
         username=c.username,
+        avatar=user.avatar,
         content=c.content,
         created_at=c.created_at,
     )

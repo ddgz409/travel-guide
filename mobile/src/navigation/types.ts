@@ -71,4 +71,6 @@ export type AppStackParamList = {
       }
     | undefined;
   MySubscriptions: undefined;
+  /** 拍照识景：可选传入已选好的图片 uri（由聊天相机按钮先选图） */
+  PhotoRecognize: { uri?: string } | undefined;
 };

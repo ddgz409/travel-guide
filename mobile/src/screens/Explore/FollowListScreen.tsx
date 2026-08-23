@@ -11,7 +11,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { UserBrief } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../../api/client";
+import { api, absAvatar } from "../../api/client";
 import { UserAvatar } from "../../components/UserAvatar";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
@@ -101,7 +101,7 @@ export function FollowListScreen({ navigation, route }: Props) {
                 style={styles.row}
                 onPress={() => openProfile(u)}
               >
-                <UserAvatar name={u.username} size={40} />
+                <UserAvatar name={u.username} size={40} imageUri={absAvatar(u.avatar)} />
                 <Text style={styles.name}>{u.username}</Text>
                 <Text style={styles.name}>›</Text>
               </Pressable>

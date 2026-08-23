@@ -66,6 +66,20 @@ class ItemUpdate(BaseModel):
     rating: float | None = None
 
 
+class ItemCreate(BaseModel):
+    """向某天新增地点（地图选点 / 搜索添加）。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    poi_id: str | None = None
+    location: dict | None = None
+    type: ItemType = "attraction"
+    time_slot: TimeSlot | None = None
+    description: str | None = None
+    duration_min: int | None = None
+    cost: float | None = None
+    rating: float | None = None
+
+
 class ReorderItem(BaseModel):
     """拖拽排序：条目在新顺序中的位置。"""
 
@@ -87,6 +101,7 @@ class DayOut(BaseModel):
     id: str
     day_index: int
     date: date
+    city: str | None = None
     summary: str | None = None
     items: list[ItemOut] = []
 
@@ -132,6 +147,10 @@ class TripGenerateRequest(BaseModel):
     """生成攻略请求。"""
 
     destination: str = Field(min_length=1, max_length=128)
+    route: list[str] | None = Field(
+        default=None,
+        description="多城市路线城市序列（如 ['西宁','茶卡','大柴旦','敦煌']）；单城市为 None",
+    )
     start_date: date
     end_date: date
     travelers: int = Field(default=1, ge=1, le=20)
@@ -170,6 +189,7 @@ class CollaboratorOut(BaseModel):
     username: str
     role: str = "collaborator"
     joined_at: datetime | None = None
+    avatar: str | None = None
 
 
 class ShareCreateRequest(BaseModel):
@@ -186,6 +206,7 @@ class TripOut(BaseModel):
     id: str
     title: str
     destination: str
+    route: list[str] | None = None
     start_date: date
     end_date: date
     travelers: int

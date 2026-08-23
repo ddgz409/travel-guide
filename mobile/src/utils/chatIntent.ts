@@ -11,6 +11,9 @@ export type PlanNavigateAction = {
   mode: "custom";
   auto_submit: boolean;
   chat_hint: string;
+  travelers?: number;
+  transport?: string;
+  route?: string[];
 };
 
 /** 智能规划：短关键词 → 完整规划草稿 */
@@ -45,15 +48,25 @@ const MAJOR_CITIES = [
   "淮安", "徐州", "盐城", "泰州", "镇江", "宿迁", "顺德", "佛山", "东莞",
 ] as const;
 
+/** 省份名（与后端 destination_validator.PROVINCE_CITIES 对齐）：
+ *  输入省份名即可整省规划，系统会展开成省内热门城市路线。 */
+const PROVINCES = [
+  "山东", "云南", "四川", "湖南", "福建", "江西", "安徽", "贵州", "广西",
+  "河南", "湖北", "陕西", "山西", "河北", "辽宁", "吉林", "黑龙江",
+  "江苏", "浙江", "广东", "甘肃", "新疆", "西藏", "内蒙古", "宁夏", "青海",
+  "海南", "台湾",
+] as const;
+
 const KNOWN_CITY_SET = new Set<string>(
   [
     ...MAJOR_CITIES,
+    ...PROVINCES,
     ...CITIES.map((c) => c.name.replace(/市$/, "")),
   ].map((n) => n.replace(/市$/, "")),
 );
 
 const PLAN_RE =
-  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划)|(?:帮我|请).*(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行|旅游)?|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
+  /(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行计划|旅游计划|路线|环线|环岛)|(?:帮我|请).*(?:规划|安排|制定|设计|生成).*(?:行程|攻略|旅行|旅游)?|(?:一|两|三|四|五|六|七|八|九|\d+)\s*日游/i;
 
 const TRIP_MGMT_RE =
   /删除|删掉|删了|移除|清除|去掉|取消|不要了|查看|看看|列表|有哪些|我的行程|行程列表|攻略列表|打开|分享|\/share\/|修改|编辑|更新|帖子|收藏夹|发布|发帖|做成清单|转成清单|改成清单|编辑成清单/i;
@@ -90,7 +103,14 @@ function iso(d: Date): string {
 }
 
 function normalizeCity(name: string): string {
-  return name.replace(/市$/, "").trim();
+  return name
+    .replace(/市$/, "")
+    .replace(/维吾尔自治区$/, "")
+    .replace(/壮族自治区$/, "")
+    .replace(/回族自治区$/, "")
+    .replace(/自治区$/, "")
+    .replace(/省$/, "")
+    .trim();
 }
 
 export function isKnownCityName(name: string): boolean {
@@ -135,6 +155,13 @@ function extractCity(text: string): string | null {
   if (m1?.[1] && isKnownCityName(m1[1])) return normalizeCity(m1[1]);
   const m2 = text.match(/([\u4e00-\u9fff]{2,6})(?:市|城)?(?:的)?(?:行程|攻略|旅游)/);
   if (m2?.[1] && isKnownCityName(m2[1])) return normalizeCity(m2[1]);
+  // 环线名（如「青甘环线」「海南环岛」「西北大环线」）
+  const m3 = text.match(/([\u4e00-\u9fff]{2,10}?)(环线|环岛|大环线)/);
+  if (m3?.[1]) return `${m3[1]}${m3[2]}`;
+  // 省份名兜底（如「帮我规划山东」）：放在城市之后，具体城市优先
+  for (const p of PROVINCES) {
+    if (text.includes(p)) return p;
+  }
   return null;
 }
 
@@ -357,7 +384,10 @@ export function detectPlanIntent(text: string): PlanNavigateAction | null {
   if (isTripManagementIntent(raw)) return null;
   if (!PLAN_RE.test(raw)) return null;
   const destination = extractCity(raw);
-  if (!destination || !isKnownCityName(destination)) return null;
+  if (!destination) return null;
+  // 目的地必须是已知城市 / 省份 / 环线名，否则不跳转
+  const isKnown = isKnownCityName(destination) || PROVINCES.includes(destination as any) || /环线|环岛|大环线/.test(destination);
+  if (!isKnown) return null;
   const { start, end } = parseDates(raw);
   return {
     action: "navigate_generate",

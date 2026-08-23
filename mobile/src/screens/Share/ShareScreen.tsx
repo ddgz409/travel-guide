@@ -10,7 +10,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import type { Trip } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
-import { api } from "../../api/client";
+import { api, absAvatar } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { DayMap } from "../../components/DayMap/DayMap";
 import { UserAvatar } from "../../components/UserAvatar";
@@ -129,7 +129,7 @@ export function ShareScreen({ navigation, route }: Props) {
           <View style={styles.collabAvatarRow}>
             {collaborators.map((c) => (
               <View key={c.user_id} style={styles.collabAvatarChip}>
-                <UserAvatar name={c.username} size={30} />
+                <UserAvatar name={c.username} size={30} imageUri={absAvatar(c.avatar)} />
                 <Text style={styles.collabAvatarName} numberOfLines={1}>
                   {c.username}
                   {c.role === "owner" ? "（创建者）" : ""}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator
@@ -27,7 +28,9 @@ from app.services.planning_tools import (
     PLANNING_TOOLS,
     PLANNING_TOOL_NAMES,
     execute_planning_tool,
+    is_planning_assistant_message,
     is_planning_conversation,
+    plan_fallback_events,
 )
 from app.services.agent_tools import (
     AGENT_SYSTEM_SUFFIX,
@@ -95,6 +98,18 @@ def _last_user_message(messages: list[dict[str, str]]) -> str:
         if msg.get("role") == "user":
             return (msg.get("content") or "").strip()
     return ""
+
+
+# 规划模式下，模型若用纯文本提问（而非调 ask_user_choice/ask_user_date 卡片），
+# 用此正则识别，拦截该文本并提示改用卡片重试一次
+_PLANNING_QUESTION_RE = re.compile(
+    r"[？?]|多少|几天|几位|几号|什么时候|几月|怎么去|出行方式|选择",
+    re.I,
+)
+
+
+def _looks_like_planning_question(text: str) -> bool:
+    return bool(_PLANNING_QUESTION_RE.search(text or ""))
 
 
 def build_system_prompt(
@@ -278,7 +293,19 @@ def _run_llm_stream(
     with httpx.Client(timeout=90.0) as client:
         with client.stream("POST", url, headers=headers, json=body) as resp:
             if resp.status_code >= 400:
-                yield {"type": "error", "content": f"❌ 请求失败 (HTTP {resp.status_code})"}
+                if resp.status_code == 429:
+                    # 免费模型限流：给客户端标记，便于提示切换更稳定的模型
+                    yield {
+                        "type": "error",
+                        "content": "⚠️ 免费模型暂时繁忙（被限流），请稍后重试，"
+                        "或在「模型管理」切换到更稳定的免费模型 GLM-4-Flash-250414",
+                        "rate_limited": True,
+                    }
+                else:
+                    yield {
+                        "type": "error",
+                        "content": f"❌ 请求失败 (HTTP {resp.status_code})",
+                    }
                 return
             for raw_line in resp.iter_lines():
                 line = raw_line.strip()
@@ -315,12 +342,19 @@ def chat_stream(
     # 意图门控：仅当用户明确表达行程管理/查看列表意图时才注入行程工具，
     # 避免咨询类问题（推荐/介绍/怎么玩）被 LLM 误调 list_trips 弹出「我的攻略」列表
     mgmt_tools_enabled = agent_enabled and is_trip_management_intent(user_text)
+    # 规划模式：用户明确要新行程，或 AI 已开口规划（如「我来为您规划西宁攻略」）时启用，
+    # 这样后续用户短回复（「5天」「9.3」）也能继续弹卡片工具，而不是退化成纯文本追问
     planning_enabled = not trip_context and (
         is_planning_conversation(user_text)
         or any(
             is_planning_conversation(m.get("content", ""))
             for m in messages
             if m.get("role") == "user"
+        )
+        or any(
+            is_planning_assistant_message(m.get("content", ""))
+            for m in messages
+            if m.get("role") == "assistant"
         )
     )
 
@@ -373,11 +407,14 @@ def chat_stream(
     # Agent 循环：LLM 可能多次调用工具
     # 限制 3 轮，避免自问自答死循环；追问类工具（ask_user_choice/date）后立即停止等待用户回复
     max_rounds = 3
+    planning_nudge_sent = False
+    finalized = False  # 已 finalize（navigate_generate）后不再继续追问/回退
     for _round in range(max_rounds):
         body: dict[str, Any] = {
             "model": model,
             "messages": payload_messages,
-            "temperature": 0.7,
+            # 规划模式是"选工具/提取信息"的分类任务，低温更稳定；普通对话保持 0.7
+            "temperature": 0.4 if planning_enabled else 0.7,
             "max_tokens": 2048,
             "stream": True,
         }
@@ -439,10 +476,42 @@ def chat_stream(
                 content = delta.get("content", "")
                 if content:
                     content_acc += content
-                    yield {"type": "content", "content": content}
+                    # 规划模式下正文改为缓冲：先判断本轮是「弹卡片」还是「纯文本提问」，
+                    # 若是后者（模型偷懒用文字问），拦截并改用卡片重试
+                    if not planning_enabled:
+                        yield {"type": "content", "content": content}
+
+            # 规划模式兜底：模型用纯文本提问而未调卡片工具 → 拦截文本，提示改用卡片后重试一次
+            if (
+                planning_enabled
+                and not planning_nudge_sent
+                and not tool_calls_acc
+                and _looks_like_planning_question(content_acc)
+            ):
+                planning_nudge_sent = True
+                payload_messages.append({
+                    "role": "user",
+                    "content": (
+                        "请使用 ask_user_choice 或 ask_user_date 工具以可点卡片的形式向我提问，"
+                        "不要用普通文字提问。直接调用对应工具，不要输出文字问题。"
+                    ),
+                })
+                continue
+
+            # 规划模式下把缓冲的正文补发（正常回答 / 卡片前的说明文字）
+            if planning_enabled and content_acc:
+                yield {"type": "content", "content": content_acc}
 
             # 没有 tool_calls → 对话结束
             if not tool_calls_acc:
+                # 规划模式兜底：LLM 本轮只输出文字（未弹卡、未 finalize）时，
+                # 用确定性规则解析对话中的目的地/天数/人数/交通/日期，
+                # 缺字段就弹对应卡片，齐全就自动 finalize，避免依赖 LLM 自觉。
+                if planning_enabled and not finalized:
+                    fb = plan_fallback_events(payload_messages)
+                    if fb:
+                        for ev in fb:
+                            yield ev
                 return
 
             # 有 tool_calls → 执行工具，把结果追加到 messages，继续下一轮
@@ -453,6 +522,9 @@ def chat_stream(
             # 本轮是否触发了需要用户回复的工具（ask_user_choice / ask_user_date）
             # 如果是，执行完工具后必须停下来等用户回复，不能继续让 LLM 自问自答
             awaiting_user_reply = False
+            # 本轮是否已处理过任一规划工具（finalize/ask_*）：已处理后其余规划工具直接跳过，
+            # 避免同一轮既 finalize 又弹日期/人数卡片等重复弹卡
+            planning_tool_handled = False
 
             for idx in sorted(tool_calls_acc):
                 tc = tool_calls_acc[idx]
@@ -466,7 +538,37 @@ def chat_stream(
                 logger.info("Agent tool call: %s(%s)", fn_name, fn_args)
                 yield {"type": "tool_call", "tool": fn_name, "args": fn_args}
 
+                # 一次只问一个：同一回合内模型若连续发起多个追问/生成工具，
+                # 只执行第一个，其余直接跳过，避免连环弹出多个问题卡片
+                if (awaiting_user_reply or planning_tool_handled) and fn_name in PLANNING_TOOL_NAMES:
+                    skip = (
+                        "已向用户提出一个问题并等待回复（或已处理规划工具），"
+                        "请停止继续追问，等用户回答后再处理下一个问题。"
+                    )
+                    yield {"type": "tool_result", "tool": fn_name, "result": skip}
+                    payload_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": skip,
+                    })
+                    continue
+
                 if fn_name in PLANNING_TOOL_NAMES:
+                    planning_tool_handled = True
+                    # 确定性护栏：五项信息已齐全时，忽略 LLM 的追问工具，直接 finalize
+                    if fn_name != "finalize_plan":
+                        fb = plan_fallback_events(payload_messages)
+                        if fb and fb[0]["payload"].get("action") == "navigate_generate":
+                            finalized = True
+                            yield fb[0]
+                            skip = "信息已齐全，无需再询问，已直接生成行程。"
+                            yield {"type": "tool_result", "tool": fn_name, "result": skip}
+                            payload_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": skip,
+                            })
+                            continue
                     result = execute_planning_tool(fn_name, fn_args)
                     if result.get("ok"):
                         info = result.get("result") or {}
@@ -492,6 +594,7 @@ def chat_stream(
                                 },
                             }
                         elif fn_name == "finalize_plan":
+                            finalized = True
                             yield {"type": "action", "payload": info}
                     if not result.get("ok"):
                         tool_output = f"错误：{result.get('error', '未知错误')}"
@@ -605,6 +708,9 @@ def chat_stream(
 
             # 本轮触发了 ask_user_choice / ask_user_date -> 等用户回复，停止循环
             if awaiting_user_reply:
+                return
+            # 已 finalize -> 停止循环，避免下一轮又弹卡/重复 finalize
+            if finalized:
                 return
 
         except httpx.HTTPError as e:

@@ -4,6 +4,7 @@ export interface User {
   id: string;
   username: string;
   created_at: string;
+  avatar?: string | null;
 }
 
 export interface LlmProviderOption {
@@ -117,10 +118,24 @@ export interface Item {
   transport_to_next: TransportToNext | null;
 }
 
+/** 向某天新增地点（地图选点 / 搜索添加）的请求体 */
+export interface ItemCreate {
+  name: string;
+  poi_id?: string | null;
+  location?: Location | null;
+  type?: ItemType;
+  time_slot?: TimeSlot | null;
+  description?: string | null;
+  duration_min?: number | null;
+  cost?: number | null;
+  rating?: number | null;
+}
+
 export interface Day {
   id: string;
   day_index: number;
   date: string;
+  city?: string | null;
   summary: string | null;
   items: Item[];
 }
@@ -188,6 +203,7 @@ export interface Trip {
   id: string;
   title: string;
   destination: string;
+  route?: string[] | null;
   start_date: string;
   end_date: string;
   travelers: number;
@@ -212,6 +228,7 @@ export interface Collaborator {
   username: string;
   role: "owner" | "collaborator";
   joined_at?: string | null;
+  avatar?: string | null;
 }
 
 export interface TripListItem {
@@ -239,6 +256,8 @@ export interface PoiSearchResult {
 
 export interface GenerateRequest {
   destination: string;
+  /** 多城市路线城市序列（如 ['西宁','茶卡','大柴旦']）；单城市可不传 */
+  route?: string[] | null;
   start_date: string;
   end_date: string;
   travelers: number;
@@ -413,6 +432,7 @@ export interface CollectionSummary {
   author_display: string;
   /** 真实注册用户作者的 user_id；系统预置/游客帖子为 null */
   author_id?: string | null;
+  author_avatar?: string | null;
   place_count: number;
   subscriber_count: number;
   subscribed: boolean;
@@ -440,6 +460,7 @@ export interface CollectionComment {
   collection_id: string;
   user_id?: string | null;
   username: string;
+  avatar?: string | null;
   content: string;
   created_at: string;
 }
@@ -453,6 +474,7 @@ export interface CommentListResponse {
 export interface UserProfile {
   id: string;
   username: string;
+  avatar?: string | null;
   follower_count: number;
   following_count: number;
   post_count: number;
@@ -464,6 +486,7 @@ export interface UserProfile {
 export interface UserBrief {
   id: string;
   username: string;
+  avatar?: string | null;
 }
 
 export interface FollowListResponse {
@@ -477,4 +500,14 @@ export interface CollectionCreatePayload {
   emoji?: string;
   city?: string | null;
   places: CollectionPlace[];
+}
+
+/** 拍照识景：照片/截图识别结果 */
+export interface VisionRecognizeResponse {
+  kind: "scenery" | "hotel" | "ticket" | "map" | "food" | "other";
+  title: string;
+  description: string;
+  highlights: string[];
+  tips: string[];
+  raw?: string | null;
 }

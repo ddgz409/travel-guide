@@ -24,6 +24,7 @@ import {
 import { submitTripGenerate } from "../../utils/submitTripGenerate";
 import { ChatFollowUpChoices } from "../../components/ChatFollowUpChoices";
 import { ChatDatePickerCard } from "../../components/ChatDatePickerCard";
+import { pickPhotoUri, takePhotoUri } from "../../utils/pickPhoto";
 import { ApiError } from "@travel-guide/shared";
 import type { AppStackParamList } from "../../navigation/types";
 import { SmartPlanPanel } from "./SmartPlanPanel";
@@ -54,6 +55,9 @@ type Msg = {
     kind: "date_picker";
     destination?: string;
     suggestDays: number;
+  } | {
+    kind: "plan_result";
+    action: PlanNavigateAction;
   };
   widgetUsed?: boolean;
 };
@@ -112,6 +116,8 @@ export function ChatScreen({ navigation, route }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
   const initialSentRef = useRef(false);
+  // 免费模型被限流（429）时提示切换更稳定的模型
+  const [rateLimited, setRateLimited] = useState(false);
   // Agent 确认弹窗产生的结果消息（删除成功/取消等），流式更新时会被合并保留
   const agentNoticesRef = useRef<Msg[]>([]);
 
@@ -190,6 +196,9 @@ export function ChatScreen({ navigation, route }: Props) {
             endDate: action.end_date,
             interests: action.interests,
             chatHint: action.chat_hint,
+            travelers: action.travelers,
+            transport: action.transport,
+            route: action.route,
             llm,
           },
         );
@@ -213,6 +222,62 @@ export function ChatScreen({ navigation, route }: Props) {
     ],
   );
 
+  // 生成攻略前二次确认：任何跳转都由用户确认，不自动跳转
+  const generatingPlanRef = useRef(false);
+  const openPlanFromAction = useCallback(
+    (action: PlanAction) => {
+      if (generatingPlanRef.current) return;
+      const days = Math.max(
+        1,
+        Math.round(
+          (new Date(action.end_date).getTime() -
+            new Date(action.start_date).getTime()) /
+            (24 * 3600 * 1000),
+        ) + 1,
+      );
+      const title = `${action.destination} ${days}日攻略`;
+      Alert.alert("确认", `是否生成并打开攻略「${title}」？`, [
+        { text: "取消", style: "cancel" },
+        {
+          text: "生成并打开",
+          onPress: () => {
+            generatingPlanRef.current = true;
+            void startPlanFromAction(action).finally(() => {
+              generatingPlanRef.current = false;
+            });
+          },
+        },
+      ]);
+    },
+    [startPlanFromAction],
+  );
+
+  /** 拍照识景：相机按钮弹窗选「拍照 / 相册」，选中后进入识别页 */
+  function openCameraAction() {
+    if (loading) return;
+    Alert.alert(
+      "拍照识景",
+      "拍一张景点 / 美食照片，或选择酒店、车票、地图的截图，AI 帮你识别。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "拍照",
+          onPress: async () => {
+            const uri = await takePhotoUri();
+            if (uri) navigation.navigate("PhotoRecognize", { uri });
+          },
+        },
+        {
+          text: "从相册选择",
+          onPress: async () => {
+            const uri = await pickPhotoUri();
+            if (uri) navigation.navigate("PhotoRecognize", { uri });
+          },
+        },
+      ],
+    );
+  }
+
   async function send(text?: string, baseMsgs?: Msg[]) {
     const content = (text || input).trim();
     if (!content || loading) return;
@@ -224,6 +289,7 @@ export function ChatScreen({ navigation, route }: Props) {
     const updated = [...(baseMsgs ?? msgs), userMsg];
     setMsgs(updated);
     setLoading(true);
+    setRateLimited(false);
     scrollToBottom();
 
     // 规划走服务端逐步追问，不在客户端直接跳转生成页
@@ -280,10 +346,18 @@ export function ChatScreen({ navigation, route }: Props) {
             if (parsed.type === "action") {
               const actionPayload = parsed.payload;
               if (actionPayload?.action === "navigate_generate") {
-                if (tripId) break;
-                setLoading(false);
-                void startPlanFromAction(actionPayload as PlanAction);
-                return;
+                // 生成后不自动跳转：把规划参数挂在最后一条消息上，
+                // 由用户点击「查看攻略」并二次确认后再生成/打开攻略页
+                msgsWithAI[msgsWithAI.length - 1] = {
+                  ...msgsWithAI[msgsWithAI.length - 1],
+                  widget: {
+                    kind: "plan_result",
+                    action: actionPayload as PlanNavigateAction,
+                  },
+                };
+                setMsgs([...msgsWithAI, ...agentNoticesRef.current]);
+                reader.cancel();
+                break;
               }
               if (actionPayload?.action === "open_trip") {
                 // 跳转攻略详情前先弹窗确认；聊天流继续，取消则留在当前对话
@@ -377,6 +451,7 @@ export function ChatScreen({ navigation, route }: Props) {
               aiContent += parsed.content;
             } else if (parsed.type === "error") {
               aiContent += parsed.content;
+              if (parsed.rate_limited) setRateLimited(true);
             }
             msgsWithAI[msgsWithAI.length - 1] = {
               role: "assistant",
@@ -435,6 +510,8 @@ export function ChatScreen({ navigation, route }: Props) {
       role: m.role,
       content: m.content,
       reasoning: m.reasoning,
+      // 只持久化「查看攻略」按钮，选择题/日期卡片不复活
+      ...(m.widget?.kind === "plan_result" ? { widget: m.widget } : {}),
     }));
     const title =
       msgs.find((m) => m.role === "user")?.content || "新对话";
@@ -463,6 +540,7 @@ export function ChatScreen({ navigation, route }: Props) {
           role: x.role,
           content: x.content,
           reasoning: x.reasoning,
+          ...(x.widget?.kind === "plan_result" ? { widget: x.widget } : {}),
         })),
         updatedAt: Date.now(),
       });
@@ -656,7 +734,7 @@ export function ChatScreen({ navigation, route }: Props) {
                         selectedSend={selectedCardSend}
                         onPick={pickCard}
                       />
-                    ) : (
+                    ) : item.widget.kind === "date_picker" ? (
                       <ChatDatePickerCard
                         destination={item.widget.destination}
                         suggestDays={item.widget.suggestDays}
@@ -664,6 +742,19 @@ export function ChatScreen({ navigation, route }: Props) {
                         onConfirm={markWidgetAndSend}
                         onSkip={markWidgetAndSend}
                       />
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.planResultBtn,
+                          widgetDisabled && styles.planResultBtnDisabled,
+                        ]}
+                        disabled={widgetDisabled}
+                        onPress={() => openPlanFromAction(item.widget.action)}
+                      >
+                        <Text style={styles.planResultText}>
+                          📋 查看攻略 →
+                        </Text>
+                      </Pressable>
                     )
                   ) : null}
                 </View>
@@ -679,6 +770,20 @@ export function ChatScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {rateLimited && !smartPlanMode ? (
+        <View style={styles.rateLimitBanner}>
+          <Text style={styles.rateLimitText}>
+            ⚠️ 免费模型暂时繁忙（被限流），建议切换到更稳定的免费模型
+          </Text>
+          <Pressable
+            style={styles.rateLimitBtn}
+            onPress={() => navigation.navigate("ModelManage")}
+          >
+            <Text style={styles.rateLimitBtnText}>切换模型</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {!smartPlanMode ? (
       <View
         style={[
@@ -690,6 +795,14 @@ export function ChatScreen({ navigation, route }: Props) {
           <Text style={styles.modelBtnText}>{curModel.label} ▲</Text>
         </Pressable>
         <View style={styles.inputRow}>
+          <Pressable
+            style={[styles.cameraBtn, loading && styles.sendDisabled]}
+            onPress={openCameraAction}
+            disabled={loading}
+            hitSlop={6}
+          >
+            <Text style={styles.cameraBtnText}>📷</Text>
+          </Pressable>
           <TextInput
             style={[
               styles.input,

@@ -25,6 +25,7 @@ class UserOut(BaseModel):
 
     id: str
     username: str
+    avatar: str | None = None
     created_at: datetime
 
 
