@@ -29,8 +29,8 @@ type ModelGroup = {
 
 const DEFAULT_MODEL: PickedModel = {
   provider: "zhipu",
-  model: "glm-4",
-  label: "GLM-4",
+  model: "glm-4-flash-250414",
+  label: "GLM-4-Flash",
 };
 
 /** 返回当前模型、打开弹窗的方法，以及弹窗 JSX（直接渲染到页面即可） */
