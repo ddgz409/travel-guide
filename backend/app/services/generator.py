@@ -446,20 +446,30 @@ class GuideGenerator:
         """重新生成指定某一天。"""
         active_llm = llm or self.llm
         try:
-            geo = self.amap.geocode(trip.destination)
+            # 以该天所在城市为准（新增城市的天用「重新生成当天」时按新城市生成）
+            old_day = next((d for d in trip.days if d.day_index == day_index), None)
+            city = (old_day.city if old_day and old_day.city else trip.destination) or trip.destination
+
+            geo = self.amap.geocode(city)
             must_include = (trip.preferences or {}).get("must_include") or []
-            pool = self._fetch_poi_pool(geo, trip.destination, must_include)
+            pool = self._fetch_poi_pool(geo, city, must_include)
             if not pool:
-                raise GeneratorError(f"未找到 {trip.destination} 的景点数据")
+                raise GeneratorError(f"未找到 {city} 的景点数据")
 
             web_results: list[dict[str, Any]] = []
-            day_plans = self._generate_via_llm(
-                pool,
-                trip,
-                (trip.end_date - trip.start_date).days + 1,
-                web_results,
-                llm=active_llm,
-            )
+            # 仿多城市分段：临时以当前城市为目的地生成提示词
+            saved_dest = trip.destination
+            trip.destination = city
+            try:
+                day_plans = self._generate_via_llm(
+                    pool,
+                    trip,
+                    (trip.end_date - trip.start_date).days + 1,
+                    web_results,
+                    llm=active_llm,
+                )
+            finally:
+                trip.destination = saved_dest
             target = next((d for d in day_plans if d.get("day_index") == day_index), None)
             if not target:
                 raise GeneratorError(f"未生成第 {day_index} 天的行程")
@@ -468,12 +478,11 @@ class GuideGenerator:
             self._optimize_route_days([target])
 
             # 删除原该天数据
-            old_day = next((d for d in trip.days if d.day_index == day_index), None)
             if old_day:
                 db.delete(old_day)
                 db.flush()
 
-            self._persist_day(trip, target, db, trip.destination)
+            self._persist_day(trip, target, db, city)
             db.commit()
         except Exception as e:
             logger.exception("重新生成第 %d 天失败", day_index)

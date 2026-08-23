@@ -93,6 +93,15 @@ class ReorderRequest(BaseModel):
     items: list[ReorderItem]
 
 
+class CityAddRequest(BaseModel):
+    """向路线新增一个城市（插入为新的一天）。"""
+
+    city: str = Field(min_length=1, max_length=64)
+    position: int = Field(
+        ge=1, description="插入到第几天（1 基）；> 总天数表示末尾追加"
+    )
+
+
 class DayOut(BaseModel):
     """单日行程响应。"""
 

@@ -5,7 +5,7 @@ import re
 import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from math import asin, cos, radians, sin, sqrt
 from urllib.parse import quote
 
@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, get_optional_user
 from app.models import Day, Item, Trip, TripCollaborator, User
 from app.schemas import (
+    CityAddRequest,
     CollaboratorOut,
     ItemCreate,
     ItemUpdate,
@@ -33,7 +34,8 @@ from app.schemas import (
     ValidateDestinationResponse,
 )
 from app.services.generator import GeneratorError, get_generator
-from app.services.amap_client import POI_TYPES, get_amap_client
+from app.services.amap_client import AmapError, POI_TYPES, get_amap_client
+from app.services.destination_landmarks import resolve_landmarks
 from app.services.pdf_export import export_trip_pdf
 from app.services.quick_recommend import build_quick_recommend
 from app.services.destination_validator import check_destination, check_route_city, parse_route
@@ -693,8 +695,6 @@ def nearby_pois(
 @router.get("/pois/suggest")
 def suggest_pois(city: str = ""):
     """返回目的地热门必去景点（本地精选 + 高德补全，供搜索框推荐芯片）。"""
-    from app.services.destination_landmarks import resolve_landmarks
-
     city_s = city.strip()
     if not city_s:
         return {"city": "", "landmarks": []}
@@ -1219,6 +1219,83 @@ def _least_crowded_slot(items: list[Item]) -> str:
     return "afternoon"
 
 
+def _sync_city_transit_items(trip: Trip, db: Session) -> None:
+    """按路线为每个城市段首日同步头部「前往 xx」交通条目。
+
+    添加/删除城市后调用：段首日若存在上一城则保留/修正头部 transport 条目，
+    否则删除多余的头部 transport，保证跨城段展示与路线一致。
+    """
+    if not trip.route:
+        return
+    days = sorted(
+        db.scalars(select(Day).where(Day.trip_id == trip.id)).all(),
+        key=lambda d: d.day_index,
+    )
+    prev_city: str | None = None
+    last_city: str | None = None
+    for day in days:
+        city = (day.city or trip.destination or "").strip()
+        if not city:
+            last_city = None
+            prev_city = None
+            continue
+        first_of_segment = city != last_city
+        items = list(
+            db.scalars(
+                select(Item).where(Item.day_id == day.id).order_by(Item.seq)
+            ).all()
+        )
+        head = None
+        if items:
+            it0 = items[0]
+            loc = it0.location or {}
+            has_coords = loc.get("lng") is not None and loc.get("lat") is not None
+            if it0.type == "transport" and not has_coords:
+                head = it0
+        if first_of_segment:
+            if prev_city:
+                if head is not None:
+                    head.name = f"前往 {city}"
+                    head.description = (
+                        f"从 {prev_city} 乘车前往 {city}，中途可稍作休整、补给。"
+                    )
+                else:
+                    new_head = Item(
+                        day_id=day.id,
+                        seq=0,
+                        time_slot="morning",
+                        type="transport",
+                        name=f"前往 {city}",
+                        description=(
+                            f"从 {prev_city} 乘车前往 {city}，中途可稍作休整、补给。"
+                        ),
+                        duration_min=240,
+                        cost=150,
+                        poi_id=None,
+                        location=None,
+                        rating=None,
+                        selected=True,
+                        alternatives=[],
+                    )
+                    db.add(new_head)
+                    db.flush()
+                    for it in items:
+                        it.seq += 1
+            else:
+                if head is not None:
+                    db.delete(head)
+                    db.flush()
+                    remaining = db.scalars(
+                        select(Item).where(Item.day_id == day.id).order_by(Item.seq)
+                    ).all()
+                    for idx, it in enumerate(remaining):
+                        it.seq = idx
+        last_city = city
+        if first_of_segment:
+            prev_city = city
+    db.commit()
+
+
 def _replan_day_transport(day: Day, db: Session, trip: Trip) -> None:
     """按当前顺序重算当天已勾选且有坐标条目的交通段并写回 transport_to_next。
 
@@ -1244,7 +1321,7 @@ def _replan_day_transport(day: Day, db: Session, trip: Trip) -> None:
         return
 
     amap = get_amap_client()
-    city = trip.destination
+    city = (day.city or trip.destination) or trip.destination
     pairs = [(located[i], located[i + 1]) for i in range(len(located) - 1)]
 
     def _cached_ok(a: Item, b: Item) -> bool:
@@ -1480,6 +1557,238 @@ def delete_day_item(
             it.seq = idx
         db.commit()
         _replan_day_transport(day, db, trip)
+    db.refresh(trip)
+    return _trip_out(trip, db, current)
+
+
+@router.post("/{trip_id}/cities", response_model=TripOut)
+def add_city(
+    trip_id: str,
+    payload: CityAddRequest,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """向路线新增一个城市：插入为新的一天，顺移后续天数并延长行程。
+
+    填充该城市热点景点（本地精选 + 高德补全，确定性可靠，不调 LLM）。
+    """
+    trip = _require_edit(trip_id, db, current)
+    if trip.status != "ready":
+        raise HTTPException(status_code=400, detail="攻略尚未生成完成")
+
+    result = check_route_city(payload.city)
+    if not result.valid:
+        raise HTTPException(status_code=400, detail=result.message or "城市无效")
+    city = (result.resolved_name or payload.city).strip()
+
+    total_days = (trip.end_date - trip.start_date).days + 1
+    position = payload.position
+    if position < 1:
+        raise HTTPException(status_code=400, detail="插入位置无效")
+    if position > total_days:
+        position = total_days + 1  # 末尾追加
+
+    # 更新路线城市序列（单城市→多城市自动补原目的地）
+    route = [c for c in (trip.route or [trip.destination]) if c]
+    route.insert(position - 1, city)
+    trip.route = route
+
+    # 顺移其后所有天
+    days = list(db.scalars(select(Day).where(Day.trip_id == trip.id)).all())
+    for d in days:
+        if d.day_index >= position:
+            d.day_index += 1
+
+    new_day = Day(
+        trip_id=trip.id,
+        day_index=position,
+        date=trip.start_date + timedelta(days=position - 1),
+        city=city,
+        summary=f"在 {city} 的活动",
+    )
+    db.add(new_day)
+    db.flush()
+
+    # 填充该城市热点景点（本地精选 + 高德补全，确定性）
+    amap = get_amap_client()
+    names = resolve_landmarks(city, amap, limit=8)
+
+    def _geo(name: str) -> dict | None:
+        try:
+            g = amap.geocode(name)
+        except AmapError:
+            return None
+        if (
+            g is None
+            or not g.lng
+            or not g.lat
+            or (abs(g.lng) < 0.01 and abs(g.lat) < 0.01)
+        ):
+            return None
+        return {"lng": float(g.lng), "lat": float(g.lat), "name": name}
+
+    coords_map: dict[str, dict | None] = {}
+    if names:
+        workers = min(6, max(1, len(names)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_geo, n): n for n in names}
+            for fut in as_completed(futures):
+                coords_map[futures[fut]] = fut.result()
+
+    slots = ("morning", "afternoon", "evening")
+    seq = 0
+    for i, name in enumerate(names):
+        loc = coords_map.get(name)
+        if not loc:
+            continue
+        db.add(
+            Item(
+                day_id=new_day.id,
+                seq=seq,
+                time_slot=slots[i % len(slots)],
+                type="attraction",
+                name=name,
+                poi_id=None,
+                location=loc,
+                description=None,
+                duration_min=90,
+                cost=0,
+                rating=None,
+                selected=True,
+                alternatives=[],
+            )
+        )
+        seq += 1
+
+    # 头部跨城交通 + 所有天日期重算 + 延长期限
+    _sync_city_transit_items(trip, db)
+    all_days = db.scalars(select(Day).where(Day.trip_id == trip.id)).all()
+    for d in all_days:
+        d.date = trip.start_date + timedelta(days=d.day_index - 1)
+    trip.end_date = trip.end_date + timedelta(days=1)
+
+    # 重算新天及紧随其后一天的交通
+    _replan_day_transport(new_day, db, trip)
+    following = db.scalar(
+        select(Day)
+        .where(Day.trip_id == trip.id, Day.day_index == position + 1)
+        .order_by(Day.day_index)
+    )
+    if following is not None:
+        _replan_day_transport(following, db, trip)
+
+    db.commit()
+    db.refresh(trip)
+    return _trip_out(trip, db, current)
+
+
+@router.delete("/{trip_id}/cities/{city}", response_model=TripOut)
+def delete_city(
+    trip_id: str,
+    city: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """从路线删除一个城市：移除其所有天（含条目），顺移剩余天并缩短行程。
+
+    按城市名删除：同一城市出现多次（如青甘环线起点）会一并移除，UI 需提示。
+    """
+    trip = _require_edit(trip_id, db, current)
+    if trip.status != "ready":
+        raise HTTPException(status_code=400, detail="攻略尚未生成完成")
+
+    city_s = city.strip()
+    if not city_s:
+        raise HTTPException(status_code=400, detail="城市无效")
+    targets = list(
+        db.scalars(
+            select(Day).where(Day.trip_id == trip.id, Day.city == city_s)
+        ).all()
+    )
+    if not targets:
+        raise HTTPException(status_code=404, detail=f"「{city_s}」不在路线中")
+    if len(trip.days or []) - len(targets) < 1:
+        raise HTTPException(status_code=400, detail="至少保留一天行程")
+
+    for d in targets:
+        db.delete(d)  # items 级联删除
+    db.flush()
+
+    # 剩余天重排序号与日期
+    remaining = sorted(
+        db.scalars(select(Day).where(Day.trip_id == trip.id)).all(),
+        key=lambda d: d.day_index,
+    )
+    for i, d in enumerate(remaining, start=1):
+        d.day_index = i
+        d.date = trip.start_date + timedelta(days=i - 1)
+
+    # 从路线移除该城市（重复出现一并移除）
+    route = [c for c in (trip.route or []) if c and c != city_s]
+    trip.route = route or None
+
+    # 缩短期限
+    trip.end_date = trip.end_date - timedelta(days=len(targets))
+
+    # 修正跨城段展示（内部 commit）
+    _sync_city_transit_items(trip, db)
+
+    db.commit()
+    db.refresh(trip)
+    return _trip_out(trip, db, current)
+
+
+@router.post("/{trip_id}/days/{day_id}/replan", response_model=TripOut)
+def replan_day(
+    trip_id: str,
+    day_id: str,
+    current: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """AI 重排当天路线：按坐标最近邻优化景点访问顺序（确定性算法，不调 LLM）。"""
+    trip = _require_edit(trip_id, db, current)
+    day = db.get(Day, day_id)
+    if day is None or day.trip_id != trip.id:
+        raise HTTPException(status_code=404, detail="行程天数不存在")
+
+    items = list(
+        db.scalars(select(Item).where(Item.day_id == day.id).order_by(Item.seq)).all()
+    )
+    transports = [it for it in items if it.type == "transport"]
+    rest = [it for it in items if it.type != "transport"]
+    if len(rest) < 2:
+        db.refresh(trip)
+        return _trip_out(trip, db, current)
+
+    # 序列化为 _optimize_day_visit_order 需要的 dict，并挂回原条目
+    dicts: list[dict] = []
+    for it in rest:
+        d: dict = {
+            "time_slot": it.time_slot or "morning",
+            "type": it.type,
+            "name": it.name,
+            "location": it.location,
+            "duration_min": it.duration_min,
+            "cost": it.cost,
+            "rating": it.rating,
+        }
+        d["_item"] = it
+        dicts.append(d)
+
+    generator = get_generator()
+    ordered = generator._optimize_day_visit_order(dicts)
+
+    # 重写 seq：transport 固定在头部保持原相对顺序，其后按优化结果
+    seq = 0
+    for it in transports:
+        it.seq = seq
+        seq += 1
+    for d in ordered:
+        d["_item"].seq = seq
+        seq += 1
+    db.commit()
+
+    _replan_day_transport(day, db, trip)
     db.refresh(trip)
     return _trip_out(trip, db, current)
 

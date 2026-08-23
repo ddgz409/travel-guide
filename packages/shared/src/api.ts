@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   CityInfo,
   CityInfoStreamEvent,
+  CityAddRequest,
   PlaceImagesResult,
   DayRoutesResult,
   GenerateRequest,
@@ -237,6 +238,22 @@ export function createApiClient(opts: CreateApiClientOptions) {
       deleteItem: (tripId: string, itemId: string) =>
         request<Trip>(`/trips/${tripId}/items/${itemId}`, {
           method: "DELETE",
+          timeoutMs: 60000,
+        }),
+      addCity: (tripId: string, payload: CityAddRequest) =>
+        request<Trip>(`/trips/${tripId}/cities`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+          timeoutMs: 60000,
+        }),
+      deleteCity: (tripId: string, city: string) =>
+        request<Trip>(`/trips/${tripId}/cities/${encodeURIComponent(city)}`, {
+          method: "DELETE",
+          timeoutMs: 60000,
+        }),
+      replanDay: (tripId: string, dayId: string) =>
+        request<Trip>(`/trips/${tripId}/days/${dayId}/replan`, {
+          method: "POST",
           timeoutMs: 60000,
         }),
       quickRecommend: (destination: string) =>

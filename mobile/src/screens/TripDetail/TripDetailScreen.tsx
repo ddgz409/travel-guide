@@ -46,6 +46,7 @@ import { ItemListRow } from "./ItemListRow";
 import { HotelNotesRow } from "./HotelNotesRow";
 import { CollaboratorsRow } from "./CollaboratorsRow";
 import { AddSpotSheet, type PoiAddType } from "./AddSpotSheet";
+import { AddCitySheet } from "./AddCitySheet";
 import { SortableDayList } from "./SortableDayList";
 import { readGenerateSSE } from "../../utils/sseClient";
 import { TripGeneratingView } from "./TripGeneratingView";
@@ -87,6 +88,8 @@ export function TripDetailScreen({ route, navigation }: Props) {
     null,
   );
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+  // 城市管理弹层（添加/删除城市）
+  const [citySheetVisible, setCitySheetVisible] = useState(false);
   // 编辑态：显示删除按钮
   const [editingDay, setEditingDay] = useState(false);
   // 长按拖拽中禁用外层滚动，避免与排序手势冲突
@@ -402,6 +405,64 @@ export function TripDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  async function onReplanDay() {
+    if (!canEdit || !currentDay || !trip) return;
+    setActionBusy(true);
+    try {
+      setTrip(await api.trips.replanDay(trip.id, currentDay.id));
+    } catch (e) {
+      Alert.alert("失败", e instanceof ApiError ? e.message : "重排失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function onAddCity(city: string, position: number) {
+    if (!trip) return;
+    setCitySheetVisible(false);
+    setActionBusy(true);
+    try {
+      const t = await api.trips.addCity(trip.id, { city, position });
+      setTrip(t);
+      const len = t.days?.length || 1;
+      setActiveDay(Math.max(0, Math.min(position - 1, len - 1)));
+    } catch (e) {
+      Alert.alert("添加失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function confirmDeleteCity(city: string) {
+    Alert.alert(
+      "删除城市",
+      `确定从路线中移除「${city}」吗？该城市出现的所有天都会被删除。`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: () => void doDeleteCity(city),
+        },
+      ],
+    );
+  }
+
+  async function doDeleteCity(city: string) {
+    if (!trip) return;
+    setActionBusy(true);
+    try {
+      const t = await api.trips.deleteCity(trip.id, city);
+      setTrip(t);
+      const len = t.days?.length || 1;
+      setActiveDay((prev) => Math.min(prev, len - 1));
+    } catch (e) {
+      Alert.alert("删除失败", e instanceof ApiError ? e.message : "操作失败");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   function startPickMode() {
     if (!canEdit || !currentDay) return;
     setPoiSheet(null);
@@ -588,6 +649,15 @@ export function TripDetailScreen({ route, navigation }: Props) {
               : ""}
           </Text>
         </View>
+        {canEdit ? (
+          <PressScale
+            style={styles.shareHeadBtn}
+            onPress={() => setCitySheetVisible(true)}
+            disabled={actionBusy}
+          >
+            <Text style={styles.shareHeadText}>＋ 城市</Text>
+          </PressScale>
+        ) : null}
       </View>
 
       {days.length > 1 ? (
@@ -718,6 +788,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
                     {actionBusy ? "处理中…" : "重新生成当天"}
                   </Text>
                 </PressScale>
+                <PressScale
+                  style={styles.dayHeadLink}
+                  onPress={onReplanDay}
+                  disabled={actionBusy}
+                >
+                  <Text style={styles.regenText}>AI 重新规划</Text>
+                </PressScale>
                 <View style={styles.dayHeadSpacer} />
                 <PressScale
                   style={styles.dayHeadBtn}
@@ -840,6 +917,14 @@ export function TripDetailScreen({ route, navigation }: Props) {
           setAddSheetVisible(false);
           setAddCoords(null);
         }}
+      />
+      <AddCitySheet
+        visible={citySheetVisible}
+        trip={trip}
+        busy={actionBusy}
+        onAddCity={(city, position) => void onAddCity(city, position)}
+        onDeleteCity={(city) => confirmDeleteCity(city)}
+        onCancel={() => setCitySheetVisible(false)}
       />
       <PoiDetailSheet
         visible={poiSheet != null}

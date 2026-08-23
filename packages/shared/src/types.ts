@@ -140,6 +140,13 @@ export interface Day {
   items: Item[];
 }
 
+/** 向路线新增城市的请求体 */
+export interface CityAddRequest {
+  city: string;
+  /** 插入到第几天（1 基）；> 总天数表示末尾追加 */
+  position: number;
+}
+
 export type ExternalSource = "xiaohongshu" | "ctrip";
 
 export interface ExternalTip {
