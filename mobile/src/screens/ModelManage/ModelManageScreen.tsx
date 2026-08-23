@@ -266,7 +266,7 @@ export function ModelManageScreen({ navigation }: Props) {
           style={styles.input}
           value={model}
           onChangeText={setModel}
-          placeholder="如：glm-4"
+          placeholder="如：glm-4-flash"
           placeholderTextColor={colors.muted}
           autoCapitalize="none"
           autoCorrect={false}

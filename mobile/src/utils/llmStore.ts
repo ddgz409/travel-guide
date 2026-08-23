@@ -72,7 +72,6 @@ export async function getAvailableModels(): Promise<
       { model: "glm-4-flash-250414", label: "GLM-4-Flash-250414（免费·默认）" },
       { model: "glm-4.7-flash", label: "GLM-4.7-Flash（免费）" },
       { model: "glm-4-flash", label: "GLM-4-Flash（免费）" },
-      { model: "glm-4", label: "GLM-4" },
     ],
   });
 
