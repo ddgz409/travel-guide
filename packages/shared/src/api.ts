@@ -35,6 +35,10 @@ import type {
   UserProfile,
   FollowListResponse,
   VisionRecognizeResponse,
+  TripMember,
+  Expense,
+  ExpenseInput,
+  SettlementData,
 } from "./types";
 
 export class ApiError extends Error {
@@ -360,6 +364,45 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<GenerateProgressEvent>(`/trips/${tripId}/progress`, {
           timeoutMs: 8000,
         }),
+      /** AA 分账：同行人 / 记账 / 结算 */
+      split: {
+        members: (tripId: string) =>
+          request<TripMember[]>(`/trips/${tripId}/split/members`),
+        addMember: (tripId: string, name: string) =>
+          request<TripMember>(`/trips/${tripId}/split/members`, {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          }),
+        renameMember: (tripId: string, memberId: string, name: string) =>
+          request<TripMember>(
+            `/trips/${tripId}/split/members/${encodeURIComponent(memberId)}`,
+            { method: "PATCH", body: JSON.stringify({ name }) },
+          ),
+        removeMember: (tripId: string, memberId: string) =>
+          request<void>(
+            `/trips/${tripId}/split/members/${encodeURIComponent(memberId)}`,
+            { method: "DELETE" },
+          ),
+        expenses: (tripId: string) =>
+          request<Expense[]>(`/trips/${tripId}/split/expenses`),
+        addExpense: (tripId: string, input: ExpenseInput) =>
+          request<Expense>(`/trips/${tripId}/split/expenses`, {
+            method: "POST",
+            body: JSON.stringify(input),
+          }),
+        updateExpense: (tripId: string, expenseId: string, input: ExpenseInput) =>
+          request<Expense>(
+            `/trips/${tripId}/split/expenses/${encodeURIComponent(expenseId)}`,
+            { method: "PUT", body: JSON.stringify(input) },
+          ),
+        removeExpense: (tripId: string, expenseId: string) =>
+          request<void>(
+            `/trips/${tripId}/split/expenses/${encodeURIComponent(expenseId)}`,
+            { method: "DELETE" },
+          ),
+        settlement: (tripId: string) =>
+          request<SettlementData>(`/trips/${tripId}/split/settlement`),
+      },
     },
     chat: {
       /**

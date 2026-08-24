@@ -5,7 +5,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Date
 
@@ -316,3 +316,73 @@ class CollectionComment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp(), nullable=False
     )
+
+
+class TripSplitMember(Base):
+    """AA 分账：同行人。"""
+
+    __tablename__ = "trip_split_members"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#4CAF50", nullable=False)
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+
+class TripSplitExpense(Base):
+    """AA 分账：一笔消费。"""
+
+    __tablename__ = "trip_split_expenses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    paid_by_member_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("trip_split_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+    paid_by_member: Mapped["TripSplitMember"] = relationship(foreign_keys=[paid_by_member_id])
+
+    shares: Mapped[list["TripSplitExpenseShare"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+
+
+class TripSplitExpenseShare(Base):
+    """AA 分账：消费的分摊明细（amount 为空表示均摊）。"""
+
+    __tablename__ = "trip_split_expense_shares"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    expense_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("trip_split_expenses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("trip_split_members.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)

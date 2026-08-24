@@ -522,3 +522,79 @@ export interface VisionRecognizeResponse {
   tips: string[];
   raw?: string | null;
 }
+
+/* ================= AA 分账（多人旅行记账结算） ================= */
+
+/** 同行人 */
+export interface TripMember {
+  id: string;
+  /** 关联的登录用户；手动添加的同伴为 null */
+  user_id: string | null;
+  name: string;
+  /** 头像圆点颜色（色板值） */
+  color: string;
+  /** 是否行程创建者 */
+  is_owner: boolean;
+}
+
+/** 一笔账的分摊明细（服务端联表返回，带成员展示信息） */
+export interface ExpenseSplit {
+  member_id: string;
+  /** null 表示按均摊计算该成员份额 */
+  amount: number | null;
+  member_name: string;
+  color: string;
+}
+
+/** 记账入参里的分摊项（无需展示字段） */
+export interface ExpenseSplitInput {
+  member_id: string;
+  /** null 表示按均摊计算该成员份额 */
+  amount: number | null;
+}
+
+/** 一笔消费记录（paid_by_* / member_name / color 由服务端联表返回，便于展示） */
+export interface Expense {
+  id: string;
+  title: string;
+  amount: number;
+  paid_by_member_id: string;
+  paid_at?: string | null;
+  paid_by_name: string;
+  paid_by_color: string;
+  splits: ExpenseSplit[];
+}
+
+/** 新建/编辑一笔消费的入参 */
+export interface ExpenseInput {
+  title: string;
+  amount: number;
+  paid_by_member_id: string;
+  paid_at: string | null;
+  splits: ExpenseSplitInput[];
+}
+
+/** 单个成员的结余：正 = 别人欠 TA，负 = TA 欠别人 */
+export interface SettlementBalance {
+  member_id: string;
+  name: string;
+  color: string;
+  balance: number;
+}
+
+/** 一条「谁转给谁」的转账建议 */
+export interface SettlementFlow {
+  from_member_id: string;
+  from_name: string;
+  from_color: string;
+  to_member_id: string;
+  to_name: string;
+  to_color: string;
+  amount: number;
+}
+
+/** 结算方案：各成员结余 + 最少转账流 */
+export interface SettlementData {
+  balances: SettlementBalance[];
+  flows: SettlementFlow[];
+}

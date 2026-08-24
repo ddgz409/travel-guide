@@ -7,6 +7,7 @@ from app.api import (
     chat,
     collections,
     destination,
+    split,
     trips,
     users,
     vision,
@@ -21,3 +22,4 @@ api_router.include_router(app_update.router)
 api_router.include_router(collections.router)
 api_router.include_router(users.router)
 api_router.include_router(vision.router)
+api_router.include_router(split.router)
