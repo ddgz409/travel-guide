@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 34, borderCurve: "continuous",
+    borderTopLeftRadius: 34,
     borderTopRightRadius: 34, borderCurve: "continuous",
     ...cardShadow,
     shadowOffset: { width: 0, height: -2 },

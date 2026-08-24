@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
   panel: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 30, borderCurve: "continuous",
+    borderTopLeftRadius: 30,
     borderTopRightRadius: 30, borderCurve: "continuous",
     paddingHorizontal: 20,
     paddingVertical: 16,

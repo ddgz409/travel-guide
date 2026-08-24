@@ -2,7 +2,7 @@ import { DESTINATIONS } from "../Explore/content";
 import { landmarksFor } from "../../data/landmarks";
 import type { CityInfo } from "@travel-guide/shared";
 
-export type ExploreCategory = "spots" | "foods" | "hotels";
+export type ExploreCategory = "spots" | "foods" | "hotels" | "humanities";
 
 export const CATEGORIES: Array<{
   key: ExploreCategory;
@@ -58,6 +58,7 @@ export function buildLocalCityPreview(city: string): CityInfo | null {
       name,
       desc: "本地特色美食",
     })),
+    humanities: [],
   };
 }
 
@@ -150,6 +151,7 @@ export function xhsCategoryKeyword(city: string, category: ExploreCategory): str
   const dest = city.trim() || "旅游";
   if (category === "foods") return `${dest} 美食推荐`;
   if (category === "hotels") return `${dest} 住宿推荐`;
+  if (category === "humanities") return `${dest} 人文打卡`;
   return `${dest} 必去景点`;
 }
 
@@ -163,5 +165,6 @@ export function xhsItemKeyword(
   const poi = name.trim();
   if (category === "foods") return `${dest} ${poi}`;
   if (category === "hotels") return `${dest} ${poi} 酒店`;
+  if (category === "humanities") return `${dest} ${poi} 人文`;
   return `${dest} ${poi} 攻略`;
 }

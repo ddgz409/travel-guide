@@ -3,7 +3,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { CityInfo } from "@travel-guide/shared";
 
-const PREFIX = "city_info:v2:";
+// v3：城市信息结构升级（美食改菜名、景点/人文全量），弃用旧版稀疏缓存
+const PREFIX = "city_info:v3:";
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type Entry = { at: number; data: CityInfo };

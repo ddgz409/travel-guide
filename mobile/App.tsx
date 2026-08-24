@@ -70,6 +70,11 @@ const CityDetailScreen = lazy(() =>
     default: m.CityDetailScreen,
   })),
 );
+const CityGuideScreen = lazy(() =>
+  import("./src/screens/CityGuide/CityGuideScreen").then((m) => ({
+    default: m.CityGuideScreen,
+  })),
+);
 const CheckInMapFullScreen = lazy(() =>
   import("./src/screens/CheckInMap/CheckInMapFullScreen").then((m) => ({
     default: m.CheckInMapFullScreen,
@@ -266,6 +271,11 @@ function RootNavigator() {
         name="CityDetail"
         component={CityDetailScreen}
         options={{ headerShown: false, ...pushNative }}
+      />
+      <Stack.Screen
+        name="CityGuide"
+        component={CityGuideScreen}
+        options={{ headerShown: false, animation: "slide_from_right" }}
       />
       <Stack.Screen
         name="TripDetail"

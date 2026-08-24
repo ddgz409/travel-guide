@@ -1,0 +1,126 @@
+import { StyleSheet } from "react-native";
+import { cardShadow, colors } from "../../theme";
+
+export const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backText: {
+    fontSize: 24,
+    color: colors.ink,
+    fontWeight: "300",
+    marginTop: -2,
+  },
+  titleWrap: { flex: 1, alignItems: "center" },
+  title: { fontSize: 17, fontWeight: "800", color: colors.ink },
+  subtitle: { fontSize: 11, color: colors.muted, marginTop: 1 },
+  spacer: { width: 40 },
+
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  tabLabel: { fontSize: 15, color: colors.muted, fontWeight: "600" },
+  tabLabelOn: { color: colors.ink, fontWeight: "800" },
+  tabIndicator: {
+    marginTop: 6,
+    height: 3,
+    width: 22,
+    borderRadius: 2,
+    backgroundColor: "transparent",
+  },
+  tabIndicatorOn: { backgroundColor: colors.brand },
+
+  content: { flex: 1 },
+  list: { padding: 16, gap: 12 },
+  column: { gap: 12 },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: 22,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    ...cardShadow,
+  },
+  cardImageWrap: {
+    width: "100%",
+    aspectRatio: 1,
+    backgroundColor: colors.brandSoft,
+  },
+  cardImage: { width: "100%", height: "100%" },
+  cardName: {
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.ink,
+  },
+
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
+  emptyText: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  retryBtn: {
+    marginTop: 20,
+    backgroundColor: colors.brand,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 22,
+    borderCurve: "continuous",
+  },
+  retryText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+
+  skelGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 16,
+    gap: 12,
+  },
+  skelCard: {
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    ...cardShadow,
+  },
+  skelImg: { width: "100%", aspectRatio: 1, backgroundColor: "#e5e7eb" },
+  skelLine: {
+    marginHorizontal: 10,
+    marginTop: 11,
+    marginBottom: 15,
+    height: 12,
+    width: "55%",
+    borderRadius: 16,
+    borderCurve: "continuous",
+    backgroundColor: "#e5e7eb",
+  },
+});

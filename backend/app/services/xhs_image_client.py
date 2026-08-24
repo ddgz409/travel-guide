@@ -56,6 +56,8 @@ def _search_keyword(city: str, name: str, kind: str = "") -> str:
         return f"{city} {name} 美食"
     if kind == "spots":
         return f"{city} {name} 景点"
+    if kind == "humanities":
+        return f"{city} {name} 人文"
     return f"{city} {name}"
 
 

@@ -12,6 +12,8 @@ export type AppStackParamList = {
   Trips: undefined;
   Explore: undefined;
   CityDetail: { city: string };
+  /** 热门目的地：景点/美食/人文 Tab + 两列网格详情页 */
+  CityGuide: { city: string };
   TripDetail: { tripId: string };
   TripItemDetail: { tripId: string; itemId: string };
   Generate:

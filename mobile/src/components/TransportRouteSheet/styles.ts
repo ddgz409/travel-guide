@@ -37,7 +37,7 @@ export const styles = StyleSheet.create({
   sheet: {
     maxHeight: "92%",
     backgroundColor: "#fff",
-    borderTopLeftRadius: 28, borderCurve: "continuous",
+    borderTopLeftRadius: 28,
     borderTopRightRadius: 28, borderCurve: "continuous",
     overflow: "hidden",
   },
