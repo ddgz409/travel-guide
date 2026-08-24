@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { VisionRecognizeResponse } from "@travel-guide/shared";
+import { ApiError } from "@travel-guide/shared";
 import { api } from "../../api/client";
 import { colors } from "../../theme";
 import type { AppStackParamList } from "../../navigation/types";
@@ -43,7 +44,17 @@ export function PhotoRecognizeScreen({ navigation, route }: Props) {
       const res = await api.vision.recognize(u);
       setResult(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "识别失败，请稍后重试");
+      if (e instanceof ApiError) {
+        if (e.status === 404) {
+          setError("识别功能尚未部署到服务器（后端需更新），请稍后重试");
+        } else if (e.status === 0) {
+          setError("无法连接服务器：请确认后端已启动，且手机能访问服务器地址");
+        } else {
+          setError(e.message);
+        }
+      } else {
+        setError(e instanceof Error ? e.message : "识别失败，请稍后重试");
+      }
     } finally {
       setLoading(false);
     }

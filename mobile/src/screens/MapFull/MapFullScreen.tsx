@@ -18,10 +18,17 @@ import { styles } from "./styles";
 type Props = NativeStackScreenProps<AppStackParamList, "MapFull">;
 
 export function MapFullScreen({ route }: Props) {
-  const { title, markers, polyline, userLocation } = route.params;
+  const { title, markers, polyline, polylines, userLocation } = route.params;
   const amapKey = getAmapJsKey();
   const webRef = useRef<WebView>(null);
   const mapReadyRef = useRef(false);
+
+  // 多段折线优先；旧调用方只传单条 polyline 时退化为一组
+  const groups = useMemo(() => {
+    if (polylines && polylines.length)
+      return polylines.filter((g) => g && g.length > 1);
+    return polyline && polyline.length > 1 ? [polyline] : [];
+  }, [polylines, polyline]);
 
   const html = useMemo(() => {
     if (!amapKey) return "";
@@ -29,12 +36,12 @@ export function MapFullScreen({ route }: Props) {
     return buildAmapHtml({
       key: amapKey,
       markers: markers || [],
-      polyline: polyline || [],
+      polylines: groups,
       interactive: true,
       userLocation: userLocation ?? null,
       linkMarkers: false,
     });
-  }, [amapKey, markers, polyline, userLocation]);
+  }, [amapKey, markers, groups, userLocation]);
 
   const inject = useCallback((js: string) => {
     webRef.current?.injectJavaScript(`${js}; true;`);

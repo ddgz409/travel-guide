@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Trip } from "@travel-guide/shared";
 import { HeroRouteMap } from "../../components/HeroRouteMap";
 import { colors } from "../../theme";
+import { routeModeForTrip } from "../../utils/routeMode";
 import { DraggableBottomSheet } from "../CityDetail/DraggableBottomSheet";
 import { styles } from "./styles";
 
@@ -65,6 +66,7 @@ export function TripGeneratingView({
           title={`${trip.destination} 路线规划`}
           showCategoryChips
           categoryBarTop={topPad + 56}
+          routeMode={routeModeForTrip(trip)}
         />
       </View>
 

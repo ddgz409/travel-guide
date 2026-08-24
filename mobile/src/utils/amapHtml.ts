@@ -18,6 +18,8 @@ export function buildAmapHtml(opts: {
   key: string;
   markers: MapMarker[];
   polyline?: number[][];
+  /** 多段折线：无路线数据的段之间断开（优先于 polyline） */
+  polylines?: number[][][];
   /** 预览关闭拖拽/缩放，避免与页面滚动冲突 */
   interactive?: boolean;
   /** 用户定位点 */
@@ -35,6 +37,7 @@ export function buildAmapHtml(opts: {
     key,
     markers,
     polyline = [],
+    polylines = [],
     interactive = true,
     userLocation = null,
     linkMarkers = true,
@@ -45,6 +48,7 @@ export function buildAmapHtml(opts: {
   const payload = JSON.stringify({
     markers,
     polyline,
+    polylines,
     interactive: !!interactive,
     userLocation,
     linkMarkers: !!linkMarkers,
@@ -136,6 +140,13 @@ export function buildAmapHtml(opts: {
       window.__userLocPos = null;
       window.__allMarkers = markers.slice();
       window.__polyline = polyline.slice();
+      // 多段折线优先；否则由单条折线退化而来
+      window.__polylines =
+        data.polylines && data.polylines.length
+          ? data.polylines.filter(function (g) { return g && g.length > 1; })
+          : window.__polyline.length
+            ? [window.__polyline]
+            : [];
 
       function post(type, payload) {
         try {
@@ -371,8 +382,12 @@ export function buildAmapHtml(opts: {
             window.__overlays.push(mk);
             if (data.focusCenter) window.__markerEls.push({ pos: pos, el: div });
           });
-          var routeLine = window.__polyline || polyline;
-          if (routeLine.length > 1) {
+          // 多段折线：无真实路线数据的段之间保持断开，不画直线
+          var routeLines = (window.__polylines && window.__polylines.length)
+            ? window.__polylines
+            : (window.__polyline && window.__polyline.length > 1 ? [window.__polyline] : []);
+          routeLines.forEach(function (routeLine) {
+            if (!routeLine || routeLine.length < 2) return;
             var pl = new AMap.Polyline({
               map: map,
               path: routeLine.map(function (p) { return [p[0], p[1]]; }),
@@ -381,17 +396,7 @@ export function buildAmapHtml(opts: {
               strokeOpacity: data.focusCenter ? 0.25 : 0.9
             });
             window.__overlays.push(pl);
-          } else if (points.length > 1 && data.linkMarkers && !data.focusCenter) {
-            var dl = new AMap.Polyline({
-              map: map,
-              path: points,
-              strokeColor: '#1a66ff',
-              strokeWeight: 4,
-              strokeOpacity: 0.75,
-              strokeStyle: 'dashed'
-            });
-            window.__overlays.push(dl);
-          }
+          });
           if (points.length) {
             if (data.focusCenter) {
               if (source.length > 1 && !window.__didCenterCategory) {
@@ -551,7 +556,16 @@ export function buildAmapHtml(opts: {
       window.updateMapData = function (nextMarkers, nextPolyline, linkMarkers, focusCenter, viewportLimit) {
         if (!window.__map || !window.AMap || !window.__redraw) return;
         window.__allMarkers = (nextMarkers || []).slice();
-        window.__polyline = (nextPolyline || []).slice();
+        // 兼容两种入参：number[][]（单条折线，旧版）或 number[][][]（多条折线，
+        // 用于无路线数据的段之间断开、不画直线）
+        var np = nextPolyline || [];
+        if (np.length && np[0] && typeof np[0][0] === 'number') {
+          window.__polyline = np.slice();
+          window.__polylines = window.__polyline.length ? [window.__polyline] : [];
+        } else {
+          window.__polylines = np.filter(function (g) { return g && g.length > 1; });
+          window.__polyline = window.__polylines[0] || [];
+        }
         polyline = window.__polyline;
         data.linkMarkers = linkMarkers !== false;
         if (typeof focusCenter === 'boolean') data.focusCenter = focusCenter;

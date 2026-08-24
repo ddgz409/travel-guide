@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { Item } from "@travel-guide/shared";
 import { api } from "../../api/client";
+import type { RouteMode } from "../../utils/routeMode";
 import { colors } from "../../theme";
 
 type Props = {
@@ -10,10 +11,12 @@ type Props = {
   items: Item[];
   height?: number;
   title?: string;
+  /** 路线规划模式（transit/walking/driving），按攻略交通偏好传入 */
+  routeMode?: RouteMode;
 };
 
 /** Web 预览：不加载 react-native-maps（会崩），只展示点位列表 */
-export function DayMap({ tripId, dayId, items, height = 260 }: Props) {
+export function DayMap({ tripId, dayId, items, height = 260, routeMode = "transit" }: Props) {
   const [loading, setLoading] = useState(false);
   const [meta, setMeta] = useState<string | null>(null);
 
@@ -27,7 +30,7 @@ export function DayMap({ tripId, dayId, items, height = 260 }: Props) {
     (async () => {
       setLoading(true);
       try {
-        const data = await api.trips.getDayRoutes(tripId, dayId, "transit");
+        const data = await api.trips.getDayRoutes(tripId, dayId, routeMode);
         if (cancelled) return;
         setMeta(
           `${data.segment_count ?? data.segments.length} 段 · ${(
@@ -43,7 +46,7 @@ export function DayMap({ tripId, dayId, items, height = 260 }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [tripId, dayId, markers.length]);
+  }, [tripId, dayId, routeMode, markers.length]);
 
   return (
     <View style={[styles.box, { height }]}>

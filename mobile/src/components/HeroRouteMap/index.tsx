@@ -19,7 +19,12 @@ import { landmarksFor } from "../../data/landmarks";
 import type { AppStackParamList } from "../../navigation/types";
 import type { ExploreCategory } from "../../screens/CityDetail/helpers";
 import { buildAmapHtml, type MapMarker } from "../../utils/amapHtml";
-import { peekCachedAccuracy, peekCachedLocation } from "../../utils/location";
+import {
+  peekCachedAccuracy,
+  peekCachedLocation,
+} from "../../utils/location";
+import type { RouteMode } from "../../utils/routeMode";
+import { routeModeForTrip } from "../../utils/routeMode";
 import {
   poiSheetFromMarker,
   type PoiSheetData,
@@ -57,6 +62,8 @@ type Props = {
   /** 地图选点模式：开启后点击地图回调 onMapPick */
   pickMode?: boolean;
   onMapPick?: (lng: number, lat: number) => void;
+  /** 路线规划模式（transit/walking/driving）；调用方按攻略交通偏好传入，缺省公交 */
+  routeMode?: RouteMode;
 };
 
 function itemMarkers(items: Item[]): MapMarker[] {
@@ -72,6 +79,26 @@ function itemMarkers(items: Item[]): MapMarker[] {
       itemId: m.id,
       icon: String(i + 1),
     }));
+}
+
+/**
+ * 相邻两站之间只认真实路线折线（transport_to_next.polyline）；
+ * 缺数据的段直接断开成多段，绝不画 A→B 直线兜底。
+ */
+function polylinesFromItems(source: Item[]): number[][][] {
+  const groups: number[][][] = [];
+  let cur: number[][] = [];
+  for (let i = 0; i < source.length - 1; i++) {
+    const poly = source[i].transport_to_next?.polyline;
+    if (poly && poly.length >= 2) {
+      cur = cur.length ? cur.concat(poly.slice(1)) : poly.map((p) => p);
+      continue;
+    }
+    if (cur.length >= 2) groups.push(cur);
+    cur = [];
+  }
+  if (cur.length >= 2) groups.push(cur);
+  return groups;
 }
 
 export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function HeroRouteMap(
@@ -92,6 +119,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     onPoiPress,
     pickMode = false,
     onMapPick,
+    routeMode: routeModeProp,
   },
   ref,
 ) {
@@ -103,7 +131,8 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   const [mapReady, setMapReady] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
   const [categoryLoading, setCategoryLoading] = useState(false);
-  const [polyline, setPolyline] = useState<number[][]>([]);
+  /** 多段折线：无真实路线数据的段之间保持断开 */
+  const [routePolylines, setRoutePolylines] = useState<number[][][]>([]);
   const [category, setCategory] = useState<MapCategoryFilter>("all");
   const [categoryMarkers, setCategoryMarkers] = useState<MapMarker[]>([]);
   const lastCategoryMarkersRef = useRef<MapMarker[]>([]);
@@ -264,7 +293,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
 
   useEffect(() => {
     if (categoryActive) {
-      setPolyline([]);
+      setRoutePolylines([]);
       return;
     }
 
@@ -272,49 +301,29 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
       (it) =>
         it.selected && it.location?.lng != null && it.location?.lat != null,
     );
-    if (!tripId || !dayId || sourceItems.length < 2) {
-      const cached = sourceItems
-        .slice(0, -1)
-        .flatMap((m, i) => {
-          const poly = m.transport_to_next?.polyline;
-          if (poly && poly.length >= 2) {
-            return i === 0 ? poly : poly.slice(1);
-          }
-          const next = sourceItems[i + 1];
-          if (!next?.location) return [];
-          const a = [m.location!.lng, m.location!.lat];
-          const b = [next.location.lng, next.location.lat];
-          return i === 0 ? [a, b] : [b];
-        });
-      setPolyline(cached.length >= 2 ? cached : []);
-      return;
-    }
+    // 先用条目自带折线立即渲染；无路线数据的段保持断开，不画直线
+    setRoutePolylines(polylinesFromItems(sourceItems));
 
-    const cached = sourceItems
-      .slice(0, -1)
-      .flatMap((m, i) => {
-        const poly = m.transport_to_next?.polyline;
-        if (poly && poly.length >= 2) {
-          return i === 0 ? poly : poly.slice(1);
-        }
-        const next = sourceItems[i + 1];
-        const a = [m.location!.lng, m.location!.lat];
-        const b = [next.location!.lng, next.location!.lat];
-        return i === 0 ? [a, b] : [b];
-      });
-    if (cached.length >= 2) setPolyline(cached);
+    if (!tripId || !dayId || sourceItems.length < 2) return;
 
     let cancelled = false;
     void (async () => {
       setRouteLoading(true);
       try {
-        const data = await api.trips.getDayRoutes(tripId, dayId, "transit");
+        const data = await api.trips.getDayRoutes(
+          tripId,
+          dayId,
+          routeModeProp || "transit",
+        );
         if (cancelled) return;
-        const pts =
-          data.polyline && data.polyline.length
-            ? data.polyline
-            : data.segments.flatMap((s) => s.polyline || []);
-        if (pts.length >= 2) setPolyline(pts);
+        // 只保留真实规划段；mode=direct 是后端无数据时的直线兜底，不画
+        const groups = (data.segments || [])
+          .filter(
+            (s) =>
+              s.mode !== "direct" && s.polyline && s.polyline.length >= 2,
+          )
+          .map((s) => s.polyline);
+        setRoutePolylines(groups);
       } catch {
         /* keep cached */
       } finally {
@@ -324,7 +333,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     return () => {
       cancelled = true;
     };
-  }, [tripId, dayId, markerKey, routeItems, categoryActive]);
+  }, [tripId, dayId, markerKey, routeItems, categoryActive, routeModeProp]);
 
   const bootHtml = useMemo(() => {
     if (!amapKey) return "";
@@ -354,7 +363,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
       return;
     }
     const payload = JSON.stringify(mapMarkers.slice(0, MAX_CATEGORY_MARKERS));
-    const line = JSON.stringify(polyline);
+    const line = JSON.stringify(routePolylines);
     const linkMarkers = !categoryActive;
     const focusCenter = categoryActive;
     const viewportLimit = categoryActive ? VIEWPORT_MARKER_LIMIT : 0;
@@ -365,7 +374,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     mapReady,
     amapKey,
     mapMarkers,
-    polyline,
+    routePolylines,
     markerKey,
     categoryActive,
     categoryLoading,
@@ -379,7 +388,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     navigation.navigate("MapFull", {
       title: title || statusTitle || destination || "地图",
       markers: mapMarkers,
-      polyline: categoryActive ? [] : polyline,
+      polylines: categoryActive ? [] : routePolylines,
       userLocation: cached
         ? { ...cached, accuracy: peekCachedAccuracy() }
         : undefined,

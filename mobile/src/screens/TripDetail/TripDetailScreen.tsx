@@ -9,6 +9,10 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+} from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { GenerateProgressEvent } from "@travel-guide/shared";
@@ -49,6 +53,7 @@ import { AddSpotSheet, type PoiAddType } from "./AddSpotSheet";
 import { AddCitySheet } from "./AddCitySheet";
 import { SortableDayList } from "./SortableDayList";
 import { readGenerateSSE } from "../../utils/sseClient";
+import { routeModeForTrip } from "../../utils/routeMode";
 import { TripGeneratingView } from "./TripGeneratingView";
 import { routeOptionLabel } from "./routeLabels";
 import { styles } from "./styles";
@@ -94,6 +99,9 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [editingDay, setEditingDay] = useState(false);
   // 长按拖拽中禁用外层滚动，避免与排序手势冲突
   const [listScrollEnabled, setListScrollEnabled] = useState(true);
+  // 外层竖向 ScrollView 的原生手势：行内拖拽 Pan 与其 blocksExternalGesture，
+  // 避免编辑模式启用大量长按拖拽手势时与原生滚动死锁（页面卡死）。
+  const sheetScrollGesture = useMemo(() => Gesture.Native(), []);
 
   const openPoiDetail = useCallback(
     (base: PoiSheetData) => {
@@ -619,6 +627,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           onPoiPress={openPoiDetail}
           pickMode={pickMode}
           onMapPick={onMapPick}
+          routeMode={routeModeForTrip(trip)}
         />
       </FadeSwitch>
 
@@ -754,13 +763,14 @@ export function TripDetailScreen({ route, navigation }: Props) {
             ) : null}
           </View>
 
-          <ScrollView
-            style={styles.sheetScroll}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.sheetList}
-            nestedScrollEnabled
-            scrollEnabled={listScrollEnabled}
-          >
+          <GestureDetector gesture={sheetScrollGesture}>
+            <ScrollView
+              style={styles.sheetScroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.sheetList}
+              nestedScrollEnabled
+              scrollEnabled={listScrollEnabled}
+            >
             {routeOptions.length > 0 ? (
             <View style={styles.routeSection}>
               <Text style={styles.sectionTitle}>路线方案</Text>
@@ -839,6 +849,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 items={dayItems}
                 canEdit={canEdit}
                 dragDisabled={actionBusy || !editingDay}
+                scrollGesture={sheetScrollGesture}
                 renderRow={(item) => {
                   const idx = dayItems.indexOf(item);
                   const hasNextRoute = dayItems
@@ -897,7 +908,8 @@ export function TripDetailScreen({ route, navigation }: Props) {
             candidates={trip.hotel_candidates}
             refs={trip.external_refs}
           />
-        </ScrollView>
+          </ScrollView>
+          </GestureDetector>
         </View>
       </DraggableBottomSheet>
       <ShareChoiceSheet

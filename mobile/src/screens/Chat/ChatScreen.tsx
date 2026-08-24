@@ -83,6 +83,9 @@ const QUICK = [
 const INPUT_MIN_H = 48;
 const INPUT_MAX_H_RATIO = 0.32;
 const INPUT_MAX_H_CAP = 220;
+// SSE 空闲看门狗：这么久没收到任何数据就断开并提示（规划模式后端整轮缓冲，
+// 免费模型+联网检索一轮可能较慢，取 75s 兜底）
+const AI_IDLE_TIMEOUT_MS = 75_000;
 
 export function ChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
@@ -297,6 +300,37 @@ export function ChatScreen({ navigation, route }: Props) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     agentNoticesRef.current = [];
+    // 空闲看门狗：上游长时间（AI_IDLE_TIMEOUT_MS）没有任何数据就主动断开，
+    // 避免裸流挂死导致「卡住」且无法恢复
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let idleFired = false;
+    const armIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleFired = true;
+        try {
+          ctrl.abort();
+        } catch {
+          /* ignore */
+        }
+      }, AI_IDLE_TIMEOUT_MS);
+    };
+    armIdleTimer();
+
+    /** 移除末尾尚未写入任何内容/组件的空气泡（发送时预插入的占位消息） */
+    const stripTrailingEmptyAI = (list: Msg[]): Msg[] => {
+      const out = [...list];
+      while (
+        out.length > 0 &&
+        out[out.length - 1].role === "assistant" &&
+        !out[out.length - 1].content.trim() &&
+        !out[out.length - 1].reasoning &&
+        !out[out.length - 1].widget
+      ) {
+        out.pop();
+      }
+      return out;
+    };
 
     try {
       const llmOverride: {
@@ -312,7 +346,8 @@ export function ChatScreen({ navigation, route }: Props) {
       };
       if (curModel.apiKey) llmOverride.api_key = curModel.apiKey;
       if (curModel.baseUrl) llmOverride.base_url = curModel.baseUrl;
-      const res = await api.chat.stream(updated, llmOverride, tripId);
+      const res = await api.chat.stream(updated, llmOverride, tripId, ctrl.signal);
+      armIdleTimer();
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("不支持流式读取");
@@ -328,6 +363,7 @@ export function ChatScreen({ navigation, route }: Props) {
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
+        armIdleTimer();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -453,7 +489,11 @@ export function ChatScreen({ navigation, route }: Props) {
               aiContent += parsed.content;
               if (parsed.rate_limited) setRateLimited(true);
             }
+            // 兜底更新：必须保留已有字段（尤其 widget）。
+            // 否则 action(show_choices/show_date_picker) 之后到达的 tool_result
+            // 会把刚挂上的问题卡片抹掉，表现为「AI 说完话就卡住、不弹卡」。
             msgsWithAI[msgsWithAI.length - 1] = {
+              ...msgsWithAI[msgsWithAI.length - 1],
               role: "assistant",
               content: aiContent,
               reasoning: aiReasoning || undefined,
@@ -464,10 +504,38 @@ export function ChatScreen({ navigation, route }: Props) {
           }
         }
       }
+      // 流正常结束：清掉从未写入内容的空气泡占位，避免残留空白气泡
+      setMsgs((prev) => stripTrailingEmptyAI(prev));
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : "请求失败";
-      setMsgs((prev) => [...prev, { role: "assistant", content: `❌ ${errMsg}` }]);
+      const aborted =
+        e instanceof Error &&
+        (e.name === "AbortError" || e.message === "Aborted");
+      if (aborted && !idleFired) {
+        // 用户主动点「停」：保留已收到的部分内容即可，不追加错误提示
+        setMsgs((prev) => stripTrailingEmptyAI(prev));
+      } else if (aborted && idleFired) {
+        // 空闲看门狗触发：上游长时间无响应
+        setMsgs((prev) => {
+          const kept = stripTrailingEmptyAI(prev);
+          return [
+            ...kept,
+            {
+              role: "assistant",
+              content:
+                "⏱️ AI 长时间没有响应，已自动断开。请重试，或在「模型管理」切换更稳定的模型。",
+            },
+          ];
+        });
+      } else {
+        const errMsg = e instanceof Error ? e.message : "请求失败";
+        // 出错时把末尾空气泡替换成错误提示，而不是再追加一条（避免空白气泡残留）
+        setMsgs((prev) => {
+          const kept = stripTrailingEmptyAI(prev);
+          return [...kept, { role: "assistant", content: `❌ ${errMsg}` }];
+        });
+      }
     } finally {
+      if (idleTimer) clearTimeout(idleTimer);
       setLoading(false);
       abortRef.current = null;
     }
@@ -490,9 +558,19 @@ export function ChatScreen({ navigation, route }: Props) {
     void (async () => {
       const sess = await getChatSession(userKey, sid);
       if (alive && sess && sess.msgs.length > 0) {
-        setMsgs(sess.msgs as Msg[]);
-        agentNoticesRef.current = [];
-        scrollToBottom();
+        // 过滤历史里的空白 AI 气泡（旧版本流式失败遗留的占位消息）
+        const cleaned = (sess.msgs as Msg[]).filter(
+          (m) =>
+            m.role === "user" ||
+            (m.content || "").trim() ||
+            m.reasoning ||
+            m.widget,
+        );
+        if (cleaned.length > 0) {
+          setMsgs(cleaned);
+          agentNoticesRef.current = [];
+          scrollToBottom();
+        }
       }
     })();
     return () => {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
@@ -83,9 +84,15 @@ export function AddCitySheet({
     >
       <View style={styles.addRoot}>
         <Pressable style={styles.addBackdrop} onPress={onCancel} />
-        <View
-          style={[styles.addSheet, { paddingBottom: Math.max(insets.bottom, 12) }]}
-        >
+        {/* 键盘避让：statusBarTranslucent 的 Modal 在 Android 上不会触发
+            adjustResize，必须手动把面板顶到键盘上方（iOS 同样需要 padding） */}
+        <KeyboardAvoidingView behavior="padding" style={styles.addKavWrap}>
+          <View
+            style={[
+              styles.addSheet,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+          >
           <View style={styles.addHead}>
             <View style={styles.addHeadMain}>
               <Text style={styles.addTitle}>管理城市</Text>
@@ -141,7 +148,37 @@ export function AddCitySheet({
             >
               {groups.length === 0 ? (
                 <View style={styles.cityEmpty}>
-                  <Text style={styles.cityEmptyText}>未找到匹配的城市</Text>
+                  {filter.trim().length >= 2 ? (
+                    <>
+                      <Text style={styles.cityEmptyText}>
+                        本地列表未收录该城市，可直接添加：
+                      </Text>
+                      <Pressable
+                        style={[
+                          styles.cityChip,
+                          selectedCity === filter.trim() && styles.cityChipOn,
+                        ]}
+                        onPress={() =>
+                          setSelectedCity(
+                            selectedCity === filter.trim() ? null : filter.trim(),
+                          )
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.cityChipText,
+                            selectedCity === filter.trim() &&
+                              styles.cityChipTextOn,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          添加「{filter.trim()}」
+                        </Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <Text style={styles.cityEmptyText}>未找到匹配的城市</Text>
+                  )}
                 </View>
               ) : (
                 groups.map(([letter, cities]) => (
@@ -230,7 +267,8 @@ export function AddCitySheet({
               {busy ? "处理中…" : "确认添加"}
             </Text>
           </Pressable>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

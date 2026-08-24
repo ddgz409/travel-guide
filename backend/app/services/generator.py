@@ -1584,7 +1584,15 @@ class GuideGenerator:
                 except (TypeError, ValueError):
                     dist_m = 0
                 if dist_m > 0:
-                    if dist_m <= WALK_MAX_DISTANCE_M:
+                    # 交通偏好为自驾时全程按驾车估算，不再退回公交
+                    prefer_drive = (
+                        ((trip.preferences or {}).get("transport") or "").strip()
+                        == "自驾"
+                    )
+                    if prefer_drive:
+                        duration_s = max(180, int(dist_m / 8.0))  # 驾车粗估 ~30km/h
+                        mode = "driving"
+                    elif dist_m <= WALK_MAX_DISTANCE_M:
                         duration_s = max(60, int(dist_m / 1.2))  # ~1.2 m/s 步行
                         mode = "walking"
                     else:

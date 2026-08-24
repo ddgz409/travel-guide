@@ -655,15 +655,17 @@ export const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "transparent",
   },
-  addSheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 26,
-    borderCurve: "continuous",
-    borderTopRightRadius: 26,
-    maxHeight: "72%",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
+    addSheet: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 26,
+      borderCurve: "continuous",
+      borderTopRightRadius: 26,
+      maxHeight: "72%",
+      paddingHorizontal: 20,
+      paddingTop: 16,
+    },
+    /** 包住弹层的键盘避让容器：键盘弹出时把整个面板顶到键盘上方 */
+    addKavWrap: { flex: 1, justifyContent: "flex-end" },
   addHead: {
     flexDirection: "row",
     alignItems: "flex-start",

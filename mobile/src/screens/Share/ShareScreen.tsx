@@ -13,6 +13,7 @@ import { ApiError } from "@travel-guide/shared";
 import { api, absAvatar } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { DayMap } from "../../components/DayMap/DayMap";
+import { routeModeForTrip } from "../../utils/routeMode";
 import { UserAvatar } from "../../components/UserAvatar";
 import { colors } from "../../theme";
 import { PressScale } from "../../utils/motion";
@@ -199,7 +200,12 @@ export function ShareScreen({ navigation, route }: Props) {
       {day ? (
         <View style={{ marginTop: 16 }}>
           <Text style={styles.mapTitle}>地图</Text>
-          <DayMap tripId={trip.id} dayId={day.id} items={items} />
+          <DayMap
+            tripId={trip.id}
+            dayId={day.id}
+            items={items}
+            routeMode={routeModeForTrip(trip)}
+          />
         </View>
       ) : null}
     </ScrollView>

@@ -51,6 +51,21 @@ router = APIRouter(prefix="/trips", tags=["攻略"])
 # 游客攻略挂在这个虚拟用户下
 GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
 
+# 交通偏好 → 高德路线规划模式的映射
+_TRANSPORT_MODE_ORDER: dict[str, list[str]] = {
+    "自驾": ["driving", "walking"],
+    "步行": ["walking"],
+    "公共交通": ["transit", "walking"],
+    # 混合：公交优先、自驾兜底
+    "混合": ["transit", "driving", "walking"],
+}
+
+
+def _preferred_route_modes(trip: Trip) -> list[str]:
+    """按攻略的交通偏好返回候选规划模式（依次尝试）。"""
+    t = ((trip.preferences or {}).get("transport") or "").strip()
+    return _TRANSPORT_MODE_ORDER.get(t, _TRANSPORT_MODE_ORDER["公共交通"])
+
 
 def _require_valid_destination(destination: str) -> None:
     """无效地名直接 400，避免创建 generating 行程后再失败。"""
@@ -1020,18 +1035,21 @@ def _haversine_m_loc(a: dict, b: dict) -> float:
 def get_day_routes(
     trip_id: str,
     day_id: str,
-    mode: str = "transit",
+    mode: str | None = None,
     current: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """规划当天全部景点间路线（逐段串联成完整一日线）。
 
     优先复用条目上已缓存的 transport_to_next；其余段并行请求高德，降低卡顿。
+    mode 缺省时跟随攻略的交通偏好（自驾→driving 等）。
     """
     trip = _trip_for_viewer(trip_id, db, current)
     day = db.get(Day, day_id)
     if day is None or day.trip_id != trip.id:
         raise HTTPException(status_code=404, detail="日程不存在")
+    if mode is None:
+        mode = _preferred_route_modes(trip)[0]
     if mode not in ("walking", "transit", "driving"):
         raise HTTPException(status_code=400, detail="不支持的交通方式")
 
@@ -1345,25 +1363,52 @@ def _replan_day_transport(day: Day, db: Session, trip: Trip) -> None:
     def _plan(a: Item, b: Item) -> dict | None:
         origin = f"{a.location['lng']},{a.location['lat']}"
         dest = f"{b.location['lng']},{b.location['lat']}"
-        try:
-            seg = amap.plan_route(origin, dest, mode="transit", city=city)
-        except Exception:
-            seg = None
-        if not seg:
+        seg = None
+        used_mode = None
+        schemes = None
+        detail = None
+        distance_m = 0
+        duration_s = 0
+        poly: list = []
+        # 按攻略交通偏好依次尝试（自驾→driving 等），不再固定 transit
+        for m in _preferred_route_modes(trip):
+            try:
+                if m == "transit":
+                    candidate = amap.plan_route(
+                        origin, dest, mode="transit", city=city
+                    )
+                else:
+                    candidate = amap.plan_route(origin, dest, mode=m)
+            except Exception:
+                candidate = None
+            if not candidate:
+                continue
+            c_poly = getattr(candidate, "polyline", None) or []
+            c_schemes = getattr(candidate, "schemes", None) or None
+            if c_schemes:
+                chosen = c_schemes[0]
+                c_poly = chosen.get("polyline") or c_poly
+                detail = chosen.get("detail") or getattr(candidate, "detail", None)
+                distance_m = int(chosen.get("distance_m") or candidate.distance_m)
+                duration_s = int(chosen.get("duration_s") or candidate.duration_s)
+            else:
+                detail = getattr(candidate, "detail", None)
+                distance_m = candidate.distance_m
+                duration_s = candidate.duration_s
+            if len(c_poly) < 2 and m != "transit":
+                # 无折线的模式对地图没用，继续尝试下一种
+                continue
+            if len(c_poly) < 2:
+                continue
+            seg = candidate
+            used_mode = m
+            schemes = c_schemes
+            poly = c_poly
+            break
+        if not seg or not used_mode:
             return None
-        poly = getattr(seg, "polyline", None) or []
-        schemes = getattr(seg, "schemes", None) or None
-        detail = getattr(seg, "detail", None)
-        distance_m = seg.distance_m
-        duration_s = seg.duration_s
-        if schemes:
-            chosen = schemes[0]
-            poly = chosen.get("polyline") or poly
-            detail = chosen.get("detail") or detail
-            distance_m = int(chosen.get("distance_m") or distance_m)
-            duration_s = int(chosen.get("duration_s") or duration_s)
         return {
-            "mode": "transit",
+            "mode": used_mode,
             "distance_m": distance_m,
             "duration_s": duration_s,
             "detail": detail,

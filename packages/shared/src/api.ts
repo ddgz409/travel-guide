@@ -370,6 +370,7 @@ export function createApiClient(opts: CreateApiClientOptions) {
         messages: ChatMessage[],
         llm?: ChatLlmOverride | null,
         tripId?: string | null,
+        signal?: AbortSignal,
       ): Promise<Response> => {
         const token = await tokenStore.getToken();
         const headers: Record<string, string> = {
@@ -384,6 +385,8 @@ export function createApiClient(opts: CreateApiClientOptions) {
             llm: llm || null,
             trip_id: tripId || null,
           }),
+          // 支持取消：「停止生成」按钮与超时看门狗都靠它
+          signal,
         });
       },
       optimizePlanQuery: (

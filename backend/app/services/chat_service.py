@@ -489,6 +489,11 @@ def chat_stream(
                 and _looks_like_planning_question(content_acc)
             ):
                 planning_nudge_sent = True
+                # 先把本轮已生成的文字补发给前端再重试，
+                # 否则这段内容被静默丢弃，用户面对空气泡干等一整轮（看起来像卡死）
+                if content_acc:
+                    yield {"type": "content", "content": content_acc}
+                    content_acc = ""
                 payload_messages.append({
                     "role": "user",
                     "content": (
@@ -570,6 +575,22 @@ def chat_stream(
                             })
                             continue
                     result = execute_planning_tool(fn_name, fn_args)
+                    if not result.get("ok"):
+                        tool_output = f"错误：{result.get('error', '未知错误')}"
+                    else:
+                        tool_output = json.dumps(
+                            result["result"], ensure_ascii=False, default=str
+                        )
+                    # 注意顺序：先发 tool_result，再发 action(弹卡)。
+                    # 旧版前端收到每条事件都会整体重绘最后一条消息且不保留 widget，
+                    # 若 action 先发、tool_result 后发，刚弹出的追问卡片会被抹掉，
+                    # 表现为「AI 说完『了解基本信息』就卡住、不弹选项/日期卡片」。
+                    yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
+                    payload_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tool_output,
+                    })
                     if result.get("ok"):
                         info = result.get("result") or {}
                         if fn_name == "ask_user_choice":
@@ -596,18 +617,6 @@ def chat_stream(
                         elif fn_name == "finalize_plan":
                             finalized = True
                             yield {"type": "action", "payload": info}
-                    if not result.get("ok"):
-                        tool_output = f"错误：{result.get('error', '未知错误')}"
-                    else:
-                        tool_output = json.dumps(
-                            result["result"], ensure_ascii=False, default=str
-                        )
-                    yield {"type": "tool_result", "tool": fn_name, "result": tool_output}
-                    payload_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": tool_output,
-                    })
                     continue
 
                 # 危险操作：不执行，发确认事件让前端弹窗，结果由前端走 REST 完成

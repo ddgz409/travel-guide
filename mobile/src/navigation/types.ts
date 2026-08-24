@@ -37,6 +37,8 @@ export type AppStackParamList = {
   MapFull: {
     title?: string;
     markers: Array<{ lng: number; lat: number; name: string }>;
+    /** 多段折线：无路线数据的段之间断开（优先于 polyline） */
+    polylines?: number[][][];
     polyline?: number[][];
     userLocation?: { lng: number; lat: number; accuracy?: number };
   };

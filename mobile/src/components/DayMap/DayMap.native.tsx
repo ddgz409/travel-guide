@@ -15,6 +15,7 @@ import { buildAmapHtml } from "../../utils/amapHtml";
 import { getAmapJsKey } from "../../api/config";
 import { peekCachedAccuracy, peekCachedLocation } from "../../utils/location";
 import type { AppStackParamList } from "../../navigation/types";
+import type { RouteMode } from "../../utils/routeMode";
 import { colors } from "../../theme";
 
 type Props = {
@@ -23,6 +24,8 @@ type Props = {
   items: Item[];
   height?: number;
   title?: string;
+  /** 路线规划模式（transit/walking/driving），按攻略交通偏好传入 */
+  routeMode?: RouteMode;
 };
 
 export function DayMap({
@@ -31,12 +34,13 @@ export function DayMap({
   items,
   height = 260,
   title,
+  routeMode = "transit",
 }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const [mode] = useState("transit");
   const [loading, setLoading] = useState(false);
-  const [polyline, setPolyline] = useState<number[][]>([]);
+  /** 多段折线：无真实路线数据的段之间保持断开 */
+  const [routePolylines, setRoutePolylines] = useState<number[][][]>([]);
   const amapKey = getAmapJsKey();
 
   const markers = useMemo(
@@ -65,35 +69,38 @@ export function DayMap({
 
   useEffect(() => {
     if (!dayId || markers.length < 2) {
-      setPolyline([]);
+      setRoutePolylines([]);
       return;
     }
-    // 先用条目自带折线拼一条，地图立刻能画；后台再拉完整规划
-    const cached = markers
-      .slice(0, -1)
-      .flatMap((m, i) => {
-        const poly = m.transport_to_next?.polyline;
-        if (poly && poly.length >= 2) {
-          return i === 0 ? poly : poly.slice(1);
-        }
-        const next = markers[i + 1];
-        const a = [m.location!.lng, m.location!.lat];
-        const b = [next.location!.lng, next.location!.lat];
-        return i === 0 ? [a, b] : [b];
-      });
-    if (cached.length >= 2) setPolyline(cached);
+    // 先用条目自带折线立即渲染；缺数据的段断开，不画直线
+    const cached: number[][][] = [];
+    let cur: number[][] = [];
+    markers.slice(0, -1).forEach((m) => {
+      const poly = m.transport_to_next?.polyline;
+      if (poly && poly.length >= 2) {
+        cur = cur.length ? cur.concat(poly.slice(1)) : poly;
+        return;
+      }
+      if (cur.length >= 2) cached.push(cur);
+      cur = [];
+    });
+    if (cur.length >= 2) cached.push(cur);
+    setRoutePolylines(cached);
 
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const data = await api.trips.getDayRoutes(tripId, dayId, mode);
+        const data = await api.trips.getDayRoutes(tripId, dayId, routeMode);
         if (cancelled) return;
-        const pts =
-          data.polyline && data.polyline.length
-            ? data.polyline
-            : data.segments.flatMap((s) => s.polyline || []);
-        if (pts.length >= 2) setPolyline(pts);
+        // 只保留真实规划段；mode=direct 是后端无数据时的直线兜底，不画
+        const groups = (data.segments || [])
+          .filter(
+            (s) =>
+              s.mode !== "direct" && s.polyline && s.polyline.length >= 2,
+          )
+          .map((s) => s.polyline);
+        setRoutePolylines(groups);
       } catch {
         /* keep cached */
       } finally {
@@ -105,7 +112,7 @@ export function DayMap({
     };
     // markerKey 稳定时不因 items 引用变化重复请求
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId, dayId, mode, markerKey]);
+  }, [tripId, dayId, routeMode, markerKey]);
 
   function openFull() {
     if (!mapMarkers.length) return;
@@ -113,7 +120,7 @@ export function DayMap({
     navigation.navigate("MapFull", {
       title: title || "当日路线地图",
       markers: mapMarkers,
-      polyline,
+      polylines: routePolylines,
       userLocation: cached
         ? { ...cached, accuracy: peekCachedAccuracy() }
         : undefined,
@@ -142,7 +149,7 @@ export function DayMap({
   const html = buildAmapHtml({
     key: amapKey,
     markers: mapMarkers,
-    polyline,
+    polylines: routePolylines,
     interactive: false,
   });
 
