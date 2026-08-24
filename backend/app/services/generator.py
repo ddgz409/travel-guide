@@ -49,6 +49,13 @@ SYSTEM_PROMPT = """你是一位经验丰富的旅行规划师。请根据提供�
 7. 同一区域的景点安排在同一天；**同一天内按地理位置就近串联，以总交通时间最短为准**，避免折返绕路
 8. 为每个条目提供简短描述和实用贴士，合理估算 cost（元）
 9. 住宿：三条路线尽量共用同一家靠前酒店；全程同一家
+
+自驾/长途大环线补充规则（多日跨城行程必须遵守）：
+A. 单日核心景点（type=attraction）不超过 2-3 个；当天若含 250km 以上长途车程，只安排 1-2 个顺路景点，把时间留给赶路和休息，不要堆景点
+B. 最后一天是返程日：只安排返程途中的顺路停留（观景台、服务区级别），严禁重复前面任何一天已出现的景点或城市，不要「回程再玩一遍」
+C. 全程去重：每个景点在一条路线中只能出现一次，禁止任何形式的复制粘贴
+D. 当日车程超过 200km 时，在该日 summary 开头注明预计距离（如「车程约 340km」），让用户对强度有预期
+E. 候选数据里标注「封闭」「暂停开放」「季节性关闭」的景点不要排进行程；确有必要经过的降级为「路边远眺」并写进贴士提醒用户
 10. 必须返回 JSON 对象，格式如下：
 {
   "routes": [
@@ -1100,6 +1107,7 @@ class GuideGenerator:
                     for item in d.get("items") or []:
                         self._validate_and_enrich(item, pool, trip.destination)
                 self._ensure_meals_per_day(days, pool)
+                self._dedupe_cross_day(days)
                 routes.append(
                     {
                         "id": r.get("id") or meta_id,
@@ -1117,6 +1125,7 @@ class GuideGenerator:
                 for item in d.get("items") or []:
                     self._validate_and_enrich(item, pool, trip.destination)
             self._ensure_meals_per_day(days, pool)
+            self._dedupe_cross_day(days)
             routes.append(
                 {
                     "id": "classic",
@@ -1137,6 +1146,35 @@ class GuideGenerator:
                     continue
                 routes.append(fb)
         return routes
+
+    @staticmethod
+    def _dedupe_cross_day(days: list[dict[str, Any]]) -> None:
+        """跨天景点去重兜底（LLM 复制粘贴 bug 防线）。
+
+        同名景点整条路线只保留首次出现，后续出现直接删除；
+        餐饮/住宿不去重。返程日重复游玩塔尔寺、青海湖这类
+        「AI 通病」在此被硬性拦截。
+        """
+        seen: set[str] = set()
+        removed: list[str] = []
+        for d in days:
+            kept: list[dict[str, Any]] = []
+            for item in d.get("items") or []:
+                if item.get("type") != "attraction":
+                    kept.append(item)
+                    continue
+                key = str(item.get("name") or "").strip().lower()
+                if not key:
+                    kept.append(item)
+                    continue
+                if key in seen:
+                    removed.append(key)
+                    continue
+                seen.add(key)
+                kept.append(item)
+            d["items"] = kept
+        if removed:
+            logger.warning("跨天重复景点已自动移除: %s", ", ".join(removed))
 
     @staticmethod
     def _meal_item(p: Poi, slot: str, description: str, cost: int = 80) -> dict[str, Any]:
