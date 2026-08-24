@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Modal, Pressable, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import type { Expense, ExpenseInput, TripMember } from "@travel-guide/shared";
 import { styles, modalStyles } from "./styles";
 import { MemberDot } from "./MemberDot";
@@ -65,7 +72,10 @@ export function ExpenseSheet({
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={modalStyles.sheet}>
+        {/* 键盘避让：Modal 在 Android 上不触发 adjustResize，必须手动顶起，
+            否则键盘会盖住金额/标题输入框 */}
+        <KeyboardAvoidingView behavior="padding">
+          <View style={modalStyles.sheet}>
           <View style={modalStyles.grabber} />
           <Text style={modalStyles.sheetTitle}>
             {initial ? "编辑这笔" : "记一笔"}
@@ -140,7 +150,8 @@ export function ExpenseSheet({
               <Text style={modalStyles.saveText}>{saving ? "保存中…" : "保存"}</Text>
             </Pressable>
           </View>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
