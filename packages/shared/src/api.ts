@@ -556,20 +556,16 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<void>(`/users/me/avatar`, { method: "DELETE" }),
     },
     vision: {
-      // 拍照识景：上传照片/截图给视觉模型识别
-      recognize: (uri: string) => {
-        const form = new FormData();
-        const name = uri.split("/").pop() || "photo.jpg";
-        const ext = (name.toLowerCase().split(".").pop() || "jpg").split("?")[0];
-        const type =
-          ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-        form.append("file", { uri, name, type } as unknown as Blob);
-        return request<VisionRecognizeResponse>(`/vision/recognize`, {
+      // 拍照识景：客户端把图片读成 base64 后走普通 JSON 上传。
+      // 不再用 RN 原生 multipart FormData —— 部分机型上原生层读取文件
+      // 失败会直接抛错（表现为「无法连接服务器」，请求根本没发出）；
+      // JSON 通道与 App 其他接口完全一致，可靠性相同。
+      recognizeBase64: (base64: string) =>
+        request<VisionRecognizeResponse>(`/vision/recognize-base64`, {
           method: "POST",
-          body: form,
+          body: JSON.stringify({ image: base64 }),
           timeoutMs: 90000, // 视觉识别较慢
-        });
-      },
+        }),
     },
   };
 }

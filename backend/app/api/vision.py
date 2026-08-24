@@ -8,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
+from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.deps import get_optional_user
@@ -58,6 +59,39 @@ async def recognize(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="图片内容为空")
+    return _recognize_bytes(content, user)
+
+
+class RecognizeB64In(BaseModel):
+    """base64 图片入参：兼容纯 base64 与 data URL 前缀。"""
+
+    image: str
+
+
+@router.post("/recognize-base64", response_model=VisionRecognizeResponse)
+async def recognize_base64(
+    payload: RecognizeB64In,
+    user: User | None = Depends(get_optional_user),
+):
+    """JSON 通道识别：客户端把图片读成 base64 直接 POST，绕开 RN 原生
+    multipart FormData 在部分机型上的上传失败问题。"""
+    b64 = (payload.image or "").strip()
+    if not b64:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    if "," in b64[:80] and b64[:5].lower() == "data:":
+        b64 = b64.split(",", 1)[1]
+    import base64 as _b64mod
+
+    try:
+        content = _b64mod.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="base64 解码失败")
+    if not content:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    return _recognize_bytes(content, user)
+
+
+def _recognize_bytes(content: bytes, user: User | None) -> VisionRecognizeResponse:
     if len(content) > _MAX_SIZE:
         raise HTTPException(status_code=400, detail="图片不能超过 8MB")
     try:

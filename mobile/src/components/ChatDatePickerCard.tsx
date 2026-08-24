@@ -4,6 +4,7 @@ import { colors } from "../theme";
 
 type Props = {
   destination?: string;
+  /** 后端建议的天数，用于预选区间 */
   suggestDays?: number;
   disabled?: boolean;
   onConfirm: (send: string) => void;
@@ -31,7 +32,11 @@ function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1, 12, 0, 0, 0);
 }
 
-/** 规划追问：日历 / 灵活天数选择 */
+/**
+ * 规划追问日历：点击两下选择出发 / 返程区间。
+ * 第一次点击 = 出发日；第二次点击 = 返程日（早于出发则重新开始选）；
+ * 已有完整区间时再点击 = 重新选择新的出发日。
+ */
 export function ChatDatePickerCard({
   destination,
   suggestDays = 3,
@@ -45,17 +50,18 @@ export function ChatDatePickerCard({
     return d;
   }, []);
 
-  const [tab, setTab] = useState<"fixed" | "flex">("fixed");
-  const [viewMonth, setViewMonth] = useState(() => startOfMonth(today));
-  const [selected, setSelected] = useState<Date>(() => addDays(today, 1));
-  const [flexDays, setFlexDays] = useState(Math.max(2, Math.min(suggestDays, 14)));
+  // 预选：明天出发，按后端建议天数给出一整段区间，可直接确认也可重选
+  const initialStart = useMemo(() => addDays(today, 1), [today]);
+  const initialEnd = useMemo(
+    () => addDays(initialStart, Math.max(2, Math.min(suggestDays, 14)) - 1),
+    [initialStart, suggestDays],
+  );
 
-  const days = Math.max(2, Math.min(suggestDays, 14));
-  const flexOptions = useMemo(() => {
-    const base = [2, 3, 5, 7];
-    if (!base.includes(days)) base.unshift(days);
-    return [...new Set(base)].sort((a, b) => a - b).slice(0, 4);
-  }, [days]);
+  const [viewMonth, setViewMonth] = useState(() => startOfMonth(today));
+  const [range, setRange] = useState<{ s: Date; e: Date } | null>({
+    s: initialStart,
+    e: initialEnd,
+  });
 
   const monthLabel = `${viewMonth.getFullYear()}年${viewMonth.getMonth() + 1}月`;
 
@@ -75,6 +81,13 @@ export function ChatDatePickerCard({
     return out;
   }, [viewMonth]);
 
+  const nights =
+    range && range.e.getTime() >= range.s.getTime()
+      ? Math.round((range.e.getTime() - range.s.getTime()) / 86400000)
+      : 0;
+  const totalDays = nights + 1;
+  const pickingEnd = range != null && range.s.getTime() === range.e.getTime();
+
   function prevMonth() {
     setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1, 12, 0, 0, 0));
   }
@@ -83,113 +96,91 @@ export function ChatDatePickerCard({
     setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1, 12, 0, 0, 0));
   }
 
-  function handleConfirm() {
-    if (tab === "flex") {
-      const dest = destination ? `去${destination}` : "";
-      onConfirm(`我想${dest}玩 ${flexDays} 天，日期灵活`.replace(/\s+/g, " ").trim());
+  function handleTapDay(cell: Date) {
+    if (!range || (range.s.getTime() !== range.e.getTime())) {
+      // 没有选择或已有完整区间：本次点击作为新的出发日
+      setViewMonth(startOfMonth(cell));
+      setRange({ s: cell, e: cell });
       return;
     }
-    const end = addDays(selected, days - 1);
+    // 正在等返程日
+    if (cell.getTime() < range.s.getTime()) {
+      // 点了更早的日期：视为新的出发日
+      setRange({ s: cell, e: cell });
+      return;
+    }
+    setRange({ s: range.s, e: cell });
+  }
+
+  function handleConfirm() {
+    if (!range || pickingEnd) return;
     const dest = destination ? `去${destination}` : "";
     onConfirm(
-      `我想 ${iso(selected)} 出发${dest ? ` ${dest}` : ""}，玩 ${days} 天（到 ${iso(end)}）`,
+      `我想 ${iso(range.s)} 出发${dest ? ` ${dest}` : ""}，玩 ${totalDays} 天（到 ${iso(range.e)}）`,
     );
+  }
+
+  function dayStyle(cell: Date) {
+    if (!range) return null;
+    const t = cell.getTime();
+    const s = range.s.getTime();
+    const e = range.e.getTime();
+    if (t === s || t === e) return styles.dayEndpoint;
+    if (t > s && t < e) return styles.dayInRange;
+    return null;
   }
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.tabs}>
-        <Pressable
-          style={[styles.tab, tab === "fixed" && styles.tabActive]}
-          onPress={() => setTab("fixed")}
-          disabled={disabled}
-        >
-          <Text style={[styles.tabText, tab === "fixed" && styles.tabTextActive]}>
-            具体日期
-          </Text>
+      <View style={styles.monthRow}>
+        <Pressable onPress={prevMonth} hitSlop={8} disabled={disabled}>
+          <Text style={styles.nav}>‹</Text>
         </Pressable>
-        <Pressable
-          style={[styles.tab, tab === "flex" && styles.tabActive]}
-          onPress={() => setTab("flex")}
-          disabled={disabled}
-        >
-          <Text style={[styles.tabText, tab === "flex" && styles.tabTextActive]}>
-            灵活的天数
-          </Text>
+        <Text style={styles.monthLabel}>{monthLabel}</Text>
+        <Pressable onPress={nextMonth} hitSlop={8} disabled={disabled}>
+          <Text style={styles.nav}>›</Text>
         </Pressable>
       </View>
-
-      {tab === "fixed" ? (
-        <>
-          <View style={styles.monthRow}>
-            <Pressable onPress={prevMonth} hitSlop={8} disabled={disabled}>
-              <Text style={styles.nav}>‹</Text>
-            </Pressable>
-            <Text style={styles.monthLabel}>{monthLabel}</Text>
-            <Pressable onPress={nextMonth} hitSlop={8} disabled={disabled}>
-              <Text style={styles.nav}>›</Text>
-            </Pressable>
-          </View>
-          <View style={styles.weekRow}>
-            {WEEK.map((w) => (
-              <Text key={w} style={styles.weekCell}>
-                {w}
-              </Text>
-            ))}
-          </View>
-          <View style={styles.grid}>
-            {cells.map((cell, i) => {
-              if (!cell) return <View key={`e-${i}`} style={styles.dayCell} />;
-              const past = cell.getTime() < today.getTime();
-              const active =
-                iso(cell) === iso(selected) && cell.getTime() >= today.getTime();
-              return (
-                <Pressable
-                  key={iso(cell)}
-                  style={[
-                    styles.dayCell,
-                    active && styles.dayActive,
-                    past && styles.dayPast,
-                  ]}
-                  disabled={disabled || past}
-                  onPress={() => setSelected(cell)}
-                >
-                  <Text
-                    style={[
-                      styles.dayText,
-                      active && styles.dayTextActive,
-                      past && styles.dayTextPast,
-                    ]}
-                  >
-                    {cell.getDate()}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={styles.hint}>建议行程 {days} 天</Text>
-        </>
-      ) : (
-        <View style={styles.flexRow}>
-          {flexOptions.map((d) => (
+      <View style={styles.weekRow}>
+        {WEEK.map((w) => (
+          <Text key={w} style={styles.weekCell}>
+            {w}
+          </Text>
+        ))}
+      </View>
+      <View style={styles.grid}>
+        {cells.map((cell, i) => {
+          if (!cell) return <View key={`e-${i}`} style={styles.dayCell} />;
+          const past = cell.getTime() < today.getTime();
+          const kind = past ? null : dayStyle(cell);
+          return (
             <Pressable
-              key={d}
-              style={[styles.flexChip, flexDays === d && styles.flexChipActive]}
-              disabled={disabled}
-              onPress={() => setFlexDays(d)}
+              key={iso(cell)}
+              style={[styles.dayCell, kind]}
+              disabled={disabled || past}
+              onPress={() => handleTapDay(cell)}
             >
               <Text
                 style={[
-                  styles.flexChipText,
-                  flexDays === d && styles.flexChipTextActive,
+                  styles.dayText,
+                  kind === styles.dayEndpoint && styles.dayTextEndpoint,
+                  past && styles.dayTextPast,
                 ]}
               >
-                {d} 天
+                {cell.getDate()}
               </Text>
             </Pressable>
-          ))}
-        </View>
-      )}
+          );
+        })}
+      </View>
+
+      <Text style={styles.hint}>
+        {!range
+          ? "点一下选出发日，再点一下选返程日"
+          : pickingEnd
+            ? `出发 ${range.s.getMonth() + 1}月${range.s.getDate()}日 · 请再点返程日期`
+            : `${range.s.getMonth() + 1}月${range.s.getDate()}日 – ${range.e.getMonth() + 1}月${range.e.getDate()}日 · 共 ${totalDays} 天 ${nights} 晚`}
+      </Text>
 
       <View style={styles.actions}>
         <Pressable
@@ -200,11 +191,16 @@ export function ChatDatePickerCard({
           <Text style={styles.skipText}>暂不设置</Text>
         </Pressable>
         <Pressable
-          style={[styles.confirmBtn, disabled && styles.disabled]}
-          disabled={disabled}
+          style={[
+            styles.confirmBtn,
+            (disabled || !range || pickingEnd) && styles.disabled,
+          ]}
+          disabled={disabled || !range || pickingEnd}
           onPress={handleConfirm}
         >
-          <Text style={styles.confirmText}>确认</Text>
+          <Text style={styles.confirmText}>
+            确认{range && !pickingEnd ? `（${totalDays} 天 ${nights} 晚）` : ""}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -221,24 +217,6 @@ const styles = StyleSheet.create({
     borderCurve: "continuous",
     padding: 12,
   },
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: "#eee",
-    borderRadius: 12,
-    borderCurve: "continuous",
-    padding: 3,
-    marginBottom: 10,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderCurve: "continuous",
-    alignItems: "center",
-  },
-  tabActive: { backgroundColor: colors.card },
-  tabText: { fontSize: 13, color: colors.muted, fontWeight: "600" },
-  tabTextActive: { color: colors.ink, fontWeight: "700" },
   monthRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -262,31 +240,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  dayActive: {
+  dayEndpoint: {
     backgroundColor: colors.ink,
     borderRadius: 999,
   },
+  dayInRange: {
+    backgroundColor: colors.brandSoft ?? "#eee",
+  },
   dayPast: { opacity: 0.3 },
   dayText: { fontSize: 14, color: colors.ink },
-  dayTextActive: { color: "#fff", fontWeight: "700" },
+  dayTextEndpoint: { color: "#fff", fontWeight: "700" },
   dayTextPast: { color: colors.muted },
   hint: { fontSize: 12, color: colors.muted, marginTop: 6, textAlign: "center" },
-  flexRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingVertical: 8 },
-  flexChip: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 20,
-    borderCurve: "continuous",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: colors.card,
-  },
-  flexChipActive: {
-    borderColor: colors.ink,
-    backgroundColor: colors.ink,
-  },
-  flexChipText: { fontSize: 14, color: colors.ink, fontWeight: "600" },
-  flexChipTextActive: { color: "#fff" },
   actions: { flexDirection: "row", gap: 8, marginTop: 12 },
   skipBtn: {
     flex: 1,

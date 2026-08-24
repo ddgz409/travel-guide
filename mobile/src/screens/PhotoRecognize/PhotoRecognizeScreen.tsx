@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as FileSystem from "expo-file-system/legacy";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { VisionRecognizeResponse } from "@travel-guide/shared";
 import { ApiError } from "@travel-guide/shared";
@@ -41,14 +42,26 @@ export function PhotoRecognizeScreen({ navigation, route }: Props) {
     setError(null);
     setResult(null);
     try {
-      const res = await api.vision.recognize(u);
+      // 把本地图片读成 base64，走普通 JSON 接口上传（与其他接口同通道）
+      let b64: string;
+      try {
+        b64 = await FileSystem.readAsStringAsync(u, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } catch (readErr) {
+        throw new ApiError(
+          `无法读取图片文件(${readErr instanceof Error ? readErr.message : readErr})`,
+          0,
+        );
+      }
+      const res = await api.vision.recognizeBase64(b64);
       setResult(res);
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.status === 404) {
           setError("识别功能尚未部署到服务器（后端需更新），请稍后重试");
         } else if (e.status === 0) {
-          setError("无法连接服务器：请确认后端已启动，且手机能访问服务器地址");
+          setError(e.message || "无法连接服务器：请确认后端已启动，且手机能访问服务器地址");
         } else {
           setError(e.message);
         }
