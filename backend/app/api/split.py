@@ -128,6 +128,56 @@ def _ensure_owner_member(db: Session, trip: Trip) -> None:
     db.commit()
 
 
+def _ensure_user_member(db: Session, trip: Trip, user: User | None) -> None:
+    """把当前登录用户关联进同行人列表，保证界面上的「我」与登录账号一致。
+
+    - 已有关联成员：什么都不做；
+    - 是行程主人但占位成员挂在别的账号（如游客账号）名下：改挂到当前账号；
+    - 否则（主人无行 / 协作者访问）：新增一条关联成员。
+    """
+    if user is None:
+        return
+    existing = db.scalar(
+        select(TripSplitMember).where(
+            TripSplitMember.trip_id == trip.id,
+            TripSplitMember.user_id == user.id,
+        )
+    )
+    if existing:
+        return
+    members = _list_members(db, trip.id)
+    display_name = (user.username or "我")[:64]
+    if trip.user_id == user.id:
+        owner_row = next((m for m in members if m.is_owner), None)
+        if owner_row is not None:
+            owner_row.user_id = user.id
+            owner_row.name = display_name
+            db.commit()
+            return
+        db.add(
+            TripSplitMember(
+                trip_id=trip.id,
+                user_id=user.id,
+                name=display_name,
+                color=PALETTE[0],
+                is_owner=True,
+            )
+        )
+        db.commit()
+        return
+    # 协作者/其他可查看的登录用户：自动加入分账
+    db.add(
+        TripSplitMember(
+            trip_id=trip.id,
+            user_id=user.id,
+            name=display_name,
+            color=PALETTE[len(members) % len(PALETTE)],
+            is_owner=False,
+        )
+    )
+    db.commit()
+
+
 def _member_payload(m: TripSplitMember) -> dict[str, Any]:
     return {
         "id": m.id,
@@ -185,6 +235,7 @@ def list_members(
     """同行人列表（首次访问自动登记行程创建者）。"""
     trip = _trip_for_viewer(trip_id, db, user)
     _ensure_owner_member(db, trip)
+    _ensure_user_member(db, trip, user)
     return [_member_payload(m) for m in _list_members(db, trip.id)]
 
 
@@ -301,6 +352,7 @@ def list_expenses(
 ):
     trip = _trip_for_viewer(trip_id, db, user)
     _ensure_owner_member(db, trip)
+    _ensure_user_member(db, trip, user)
     return [_expense_payload(db, e) for e in _load_expenses(db, trip.id)]
 
 
@@ -365,6 +417,7 @@ def settlement(
     """结算：各成员结余 + 最少转账流（贪心法）。"""
     trip = _trip_for_viewer(trip_id, db, user)
     _ensure_owner_member(db, trip)
+    _ensure_user_member(db, trip, user)
 
     members = _list_members(db, trip.id)
     info = {m.id: m for m in members}

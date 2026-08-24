@@ -146,7 +146,15 @@ export function AddCitySheet({
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {groups.length === 0 ? (
+              {filter.trim().length === 0 ? (
+                // 未输入关键字时不展示全量列表（避免长列表把下方内容顶出屏幕），
+                // 等用户输入后再做补全
+                <View style={styles.cityEmpty}>
+                  <Text style={styles.cityEmptyText}>
+                    输入城市名关键字搜索；未收录的地名也可直接添加
+                  </Text>
+                </View>
+              ) : groups.length === 0 ? (
                 <View style={styles.cityEmpty}>
                   {filter.trim().length >= 2 ? (
                     <>

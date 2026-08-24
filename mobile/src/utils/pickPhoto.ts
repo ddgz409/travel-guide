@@ -2,7 +2,12 @@ import { Alert, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Paths } from "expo-file-system";
-import { copyAsync } from "expo-file-system/legacy";
+import {
+  copyAsync,
+  readAsStringAsync,
+  writeAsStringAsync,
+  EncodingType,
+} from "expo-file-system/legacy";
 
 /** 上传用：最长边超过此值才压缩，避免小图被放大 */
 const UPLOAD_MAX_EDGE = 1600;
@@ -15,27 +20,51 @@ function getImageSize(uri: string): Promise<{ width: number; height: number }> {
   });
 }
 
-function isContentUri(uri: string): boolean {
-  return /^content:\/\//i.test(uri);
+function isFileUri(uri: string): boolean {
+  return /^file:\/\//i.test(uri);
 }
 
-/** 将任意 URI（含 content://）拷贝到应用缓存，返回 file:// 路径，供 FormData 上传 */
-async function copyToCacheFile(uri: string): Promise<string> {
-  const dest = `${Paths.cache.uri}upload-${Date.now()}-${Math.round(
+function errBrief(e: unknown): string {
+  if (e instanceof Error) return e.message.slice(0, 60) || e.name;
+  return String(e).slice(0, 60);
+}
+
+function newCachePath(tag: string): string {
+  return `${Paths.cache.uri}${tag}-${Date.now()}-${Math.round(
     Math.random() * 1e6,
   )}.jpg`;
+}
+
+/** 将任意 URI（含 content://、file://）拷贝到应用缓存，返回 file:// 路径 */
+async function copyToCacheFile(uri: string): Promise<string> {
+  const dest = newCachePath("upload");
   await copyAsync({ from: uri, to: dest });
   return dest;
 }
 
 /**
- * 上传前预处理：压缩到最长边 ≤1600px 的 JPEG，并转为 file:// 缓存路径。
- * 好处：① 体积小、上传快；② 避开 content:// 等相册 URI 在 RN FormData
- * 上传时读取失败导致的「无法连接服务器」；③ 后端处理更快。
- * 压缩失败时也绝不回退到 content://（否则仍会触发「无法连接服务器」），
- * 而是用文件系统把原图拷成 file:// 缓存文件后再上传。
+ * 兜底方案：通过 base64 中转把任意可读 URI 落成缓存里的 file:// 文件。
+ * ContentResolver 能读的（content://、加密目录等）这里都能读。
+ */
+async function base64ToCacheFile(uri: string): Promise<string> {
+  const b64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+  const dest = newCachePath("upload-b64");
+  await writeAsStringAsync(dest, b64, { encoding: EncodingType.Base64 });
+  return dest;
+}
+
+/**
+ * 上传前预处理：压缩到最长边 ≤1600px 的 JPEG，并保证最终拿到 file:// 路径。
+ *
+ * 三层策略（任一成功即可上传）：
+ *   ① ImageManipulator 压缩转码（首选，体积最小）；
+ *   ② 文件系统 copy 到缓存；
+ *   ③ base64 读出再写入缓存。
+ * 全部失败时抛出带诊断信息的错误，绝不把 content:// 等不可直接上传的
+ * URI 交给 FormData（否则原生层读取失败，表现为「无法连接服务器」）。
  */
 async function prepareUploadImage(uri: string): Promise<string> {
+  let e1: unknown = null;
   try {
     const { width, height } = await getImageSize(uri);
     const maxEdge = Math.max(width, height);
@@ -53,17 +82,24 @@ async function prepareUploadImage(uri: string): Promise<string> {
       compress: UPLOAD_QUALITY,
       format: ImageManipulator.SaveFormat.JPEG,
     });
-    return processed.uri;
-  } catch {
-    // 压缩/取尺寸失败（如 HEIC、超大图）：绝不回退 content://，改成拷贝到缓存
-    if (isContentUri(uri)) {
-      try {
-        return await copyToCacheFile(uri);
-      } catch {
-        return uri;
-      }
+    if (!isFileUri(processed.uri)) {
+      // 极少数情况下库可能返回远程/特殊 URI，仍需落地成本地文件
+      return await base64ToCacheFile(processed.uri);
     }
-    return uri;
+    return processed.uri;
+  } catch (e) {
+    e1 = e;
+  }
+  try {
+    return await copyToCacheFile(uri);
+  } catch (e2) {
+    try {
+      return await base64ToCacheFile(uri);
+    } catch (e3) {
+      throw new Error(
+        `图片读取失败(${errBrief(e1)} | ${errBrief(e2)} | ${errBrief(e3)})，请换一张图片试试`,
+      );
+    }
   }
 }
 
@@ -79,7 +115,12 @@ export async function takePhotoUri(): Promise<string | null> {
     quality: 0.85,
   });
   if (result.canceled || !result.assets[0]?.uri) return null;
-  return prepareUploadImage(result.assets[0].uri);
+  try {
+    return await prepareUploadImage(result.assets[0].uri);
+  } catch (e) {
+    Alert.alert("图片处理失败", e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
 /** 拍照识景：相册选图，返回预处理后的图片 uri；拒绝权限或取消返回 null */
@@ -94,5 +135,10 @@ export async function pickPhotoUri(): Promise<string | null> {
     quality: 0.85,
   });
   if (result.canceled || !result.assets[0]?.uri) return null;
-  return prepareUploadImage(result.assets[0].uri);
+  try {
+    return await prepareUploadImage(result.assets[0].uri);
+  } catch (e) {
+    Alert.alert("图片处理失败", e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
