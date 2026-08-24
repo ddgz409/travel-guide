@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 GUEST_USER_ID = "00000000-0000-0000-0000-000000000000"
 
-router = APIRouter(prefix="/trips", tags=["AA分账"])
+router = APIRouter(tags=["AA分账"])
 
 # 成员头像圆点色板
 PALETTE = [
@@ -318,7 +318,7 @@ def add_expense(
     db.add(expense)
     db.commit()
     db.refresh(expense)
-    return _expense_payload(expense)
+    return _expense_payload(db, expense)
 
 
 @router.put("/trips/{trip_id}/split/expenses/{expense_id}")
