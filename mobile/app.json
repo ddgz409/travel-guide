@@ -1,9 +1,9 @@
-{
+﻿{
   "expo": {
     "name": "知径",
     "slug": "travel-guide",
     "owner": "ddgz409",
-    "version": "3.1.6",
+    "version": "3.1.7",
     "scheme": "zhijing",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.travelguide.app",
-      "versionCode": 36,
+      "versionCode": 37,
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
