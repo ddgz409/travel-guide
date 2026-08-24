@@ -5,10 +5,12 @@ import {
   Image,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { VisionRecognizeResponse } from "@travel-guide/shared";
@@ -36,6 +38,45 @@ export function PhotoRecognizeScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<VisionRecognizeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  /** 识别结果的纯文本（复制用） */
+  const resultText = result
+    ? [
+        `【图片识别】${result.title || "未知地点"}（${KIND_LABELS[result.kind]}）`,
+        result.description,
+        result.highlights.length ? `亮点：${result.highlights.join("；")}` : "",
+        result.tips.length ? `提示：${result.tips.join("；")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  /** 发给 AI 助手的行程规划请求（预填输入框，用户确认后发送） */
+  function sendToAssistant() {
+    if (!result) return;
+    const dest = result.title ? `「${result.title}」` : "";
+    const info = [
+      result.description,
+      result.highlights.length ? `亮点：${result.highlights.join("；")}` : "",
+      result.tips.length ? `信息：${result.tips.join("；")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    navigation.navigate("Chat", {
+      prefillMessage: `我想去${dest}玩，请根据下面的信息帮我安排一份行程攻略：\n${info}`,
+    });
+  }
+
+  async function copyText() {
+    try {
+      await Clipboard.setStringAsync(resultText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      Alert.alert("复制失败", "请长按文字手动复制");
+    }
+  }
 
   const recognize = useCallback(async (u: string) => {
     setLoading(true);
@@ -191,9 +232,53 @@ export function PhotoRecognizeScreen({ navigation, route }: Props) {
                 ))}
               </View>
             ) : null}
+            <View style={localStyles.actionRow}>
+              <Pressable style={localStyles.copyBtn} onPress={copyText}>
+                <Text style={localStyles.copyText}>
+                  {copied ? "已复制 ✓" : "复制文字"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  localStyles.planBtn,
+                  result.kind === "other" && localStyles.planBtnMuted,
+                ]}
+                onPress={sendToAssistant}
+              >
+                <Text style={localStyles.planText}>发给 AI 助手安排行程</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
       </ScrollView>
     </View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+  copyBtn: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  copyText: { fontSize: 13, color: colors.ink, fontWeight: "600" },
+  planBtn: {
+    flex: 1,
+    backgroundColor: colors.brand,
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  planBtnMuted: { opacity: 0.85 },
+  planText: { fontSize: 13, color: "#fff", fontWeight: "700" },
+});

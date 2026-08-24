@@ -102,6 +102,25 @@ export function TripDetailScreen({ route, navigation }: Props) {
   // 外层竖向 ScrollView 的原生手势：行内拖拽 Pan 与其 blocksExternalGesture，
   // 避免编辑模式启用大量长按拖拽手势时与原生滚动死锁（页面卡死）。
   const sheetScrollGesture = useMemo(() => Gesture.Native(), []);
+  // 排序自动滚动：记录列表滚动位置与容器屏幕范围
+  const sheetListRef = useRef<ScrollView>(null);
+  const sheetOffsetY = useRef(0);
+  const sheetWindowRef = useRef<{ top: number; height: number } | null>(null);
+  const measureSheetWindow = useCallback(() => {
+    // RN 的 ScrollView 实例运行时带 measureInWindow（类型层未暴露，做安全收窄）
+    const node = sheetListRef.current as unknown as {
+      measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void;
+    } | null;
+    node?.measureInWindow?.((_x, y, _w, h) => {
+      sheetWindowRef.current = { top: y, height: h };
+    });
+  }, []);
+  const autoScrollStep = useCallback((dy: number) => {
+    sheetListRef.current?.scrollTo({
+      y: Math.max(0, sheetOffsetY.current + dy),
+      animated: false,
+    });
+  }, []);
 
   const openPoiDetail = useCallback(
     (base: PoiSheetData) => {
@@ -778,11 +797,16 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
           <GestureDetector gesture={sheetScrollGesture}>
             <ScrollView
+              ref={sheetListRef}
               style={styles.sheetScroll}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.sheetList}
               nestedScrollEnabled
               scrollEnabled={listScrollEnabled}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                sheetOffsetY.current = e.nativeEvent.contentOffset.y;
+              }}
             >
             {routeOptions.length > 0 ? (
             <View style={styles.routeSection}>
@@ -863,6 +887,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 canEdit={canEdit}
                 dragDisabled={actionBusy || !editingDay}
                 scrollGesture={sheetScrollGesture}
+                getScrollWindow={() => {
+                  // 容器在窗口中的位置拖拽期间不变；每次开拖刷新一次，
+                  // 返回上一帧的缓存值（异步测量下一帧生效）
+                  measureSheetWindow();
+                  return sheetWindowRef.current;
+                }}
+                onAutoScroll={autoScrollStep}
                 renderRow={(item) => {
                   const idx = dayItems.indexOf(item);
                   const hasNextRoute = dayItems
