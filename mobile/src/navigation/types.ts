@@ -11,6 +11,14 @@ export type AppStackParamList = {
   CityDetail: { city: string };
   TripDetail: { tripId: string };
   TripItemDetail: { tripId: string; itemId: string };
+  Settlement: {
+    tripId: string;
+    title?: string;
+    startDate?: string;
+    endDate?: string;
+  };
+  SettlementExpenses: { tripId: string };
+  SettlementFlows: { tripId: string };
   Generate:
     | {
         destination?: string;
