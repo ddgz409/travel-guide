@@ -80,6 +80,21 @@ const CheckInMapFullScreen = lazy(() =>
     default: m.CheckInMapFullScreen,
   })),
 );
+const SettlementScreen = lazy(() =>
+  import("./src/screens/Settlement/SettlementScreen").then((m) => ({
+    default: m.SettlementScreen,
+  })),
+);
+const ExpensesScreen = lazy(() =>
+  import("./src/screens/Settlement/ExpensesScreen").then((m) => ({
+    default: m.ExpensesScreen,
+  })),
+);
+const FlowsScreen = lazy(() =>
+  import("./src/screens/Settlement/FlowsScreen").then((m) => ({
+    default: m.FlowsScreen,
+  })),
+);
 
 const navigationTheme = {
   ...DefaultTheme,
@@ -286,6 +301,21 @@ function RootNavigator() {
         name="TripItemDetail"
         component={TripItemDetailScreen}
         options={{ title: "安排详情", ...pushNested }}
+      />
+      <Stack.Screen
+        name="Settlement"
+        component={SettlementScreen}
+        options={{ headerShown: false, ...pushNested }}
+      />
+      <Stack.Screen
+        name="SettlementExpenses"
+        component={ExpensesScreen}
+        options={{ headerShown: false, ...pushNested }}
+      />
+      <Stack.Screen
+        name="SettlementFlows"
+        component={FlowsScreen}
+        options={{ headerShown: false, ...pushNested }}
       />
       <Stack.Screen
         name="Generate"

@@ -751,6 +751,19 @@ export function TripDetailScreen({ route, navigation }: Props) {
             >
               <Text style={[styles.actionText, { color: "#fff" }]}>一键发帖</Text>
             </PressScale>
+            <PressScale
+              style={styles.actionBtn}
+              onPress={() =>
+                navigation.push("Settlement", {
+                  tripId: trip.id,
+                  title: trip.title,
+                  startDate: trip.start_date,
+                  endDate: trip.end_date,
+                })
+              }
+            >
+              <Text style={styles.actionText}>AA 分账</Text>
+            </PressScale>
             {trip.share_token ? (
               <PressScale
                 style={styles.actionBtn}
