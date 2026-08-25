@@ -578,14 +578,12 @@ export function TripDetailScreen({ route, navigation }: Props) {
   async function handleReorder(orderedIds: string[]) {
     if (!trip || !currentDay) return;
     const items = orderedIds.map((id, seq) => ({ item_id: id, new_seq: seq }));
-    setActionBusy(true);
+    // 乐观更新：本地顺序已即时生效（同一批对象引用，零重渲染白屏），
+    // 接口仅后台静默保存；失败才提示并回拉
     try {
-      setTrip(await api.trips.reorderItems(trip.id, currentDay.id, items));
-    } catch (e) {
-      Alert.alert("排序失败", e instanceof ApiError ? e.message : "操作失败");
-      void load();
-    } finally {
-      setActionBusy(false);
+      await api.trips.reorderItems(trip.id, currentDay.id, items);
+    } catch {
+      Alert.alert("排序保存失败", "网络异常，顺序可能未同步到云端");
     }
   }
 

@@ -56,6 +56,7 @@ class GeoResult:
     city: str | None = None
     adcode: str | None = None  # 区域编码，可用于天气查询
     formatted: str | None = None
+    district: str | None = None  # 区县名（县级市时 city 为州名/空，靠它匹配）
     level: str | None = None
 
 
@@ -230,7 +231,9 @@ class AmapClient:
             lat=float(lat),
             city=g.get("city") or None,
             adcode=g.get("adcode") or None,
-            formatted=g.get("formatted") or None,
+            # 注意：高德返回字段是 formatted_address（不是 formatted）
+            formatted=g.get("formatted_address") or None,
+            district=(g.get("district") or None) if isinstance(g.get("district"), str) else None,
             level=g.get("level") or None,
         )
 

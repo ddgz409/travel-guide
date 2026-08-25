@@ -97,7 +97,6 @@ const SortableRow = memo(function SortableRow({
   activeIndex,
   visualFrom,
   dragTy,
-  fingerBase,
   targetIndex,
   orderIds,
   heights,
@@ -119,7 +118,6 @@ const SortableRow = memo(function SortableRow({
   activeIndex: SharedValue<number>;
   visualFrom: SharedValue<number>;
   dragTy: SharedValue<number>;
-  fingerBase: SharedValue<number>;
   targetIndex: SharedValue<number>;
   orderIds: SharedValue<OrderIds>;
   heights: SharedValue<Record<string, number>>;
@@ -176,7 +174,6 @@ const SortableRow = memo(function SortableRow({
         visualFrom.value = idx;
         targetIndex.value = idx;
         dragTy.value = 0;
-        fingerBase.value = 0;
         runOnJS(onDragBegin)();
         runOnJS(hapticTick)();
       })
@@ -187,15 +184,13 @@ const SortableRow = memo(function SortableRow({
         const hs = heights.value;
         const t = computeTarget(from, e.translationY, ids, hs);
         if (t !== targetIndex.value) {
-          // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出，
-          // 这里只需更新目标序号与磁吸基准
+          // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出
           targetIndex.value = t;
-          fingerBase.value = e.translationY;
           runOnJS(hapticTick)();
         }
-        // 1:1 跟手：目标槽位位移 + 基准内手指微调
-        const disp = slotDisplacement(from, t, ids, hs);
-        dragTy.value = disp + (e.translationY - fingerBase.value);
+        // 完全跟手：卡片严格按手指原始位移移动，零跳变；
+        // 其他行瞬时让位形成最终排列预览
+        dragTy.value = e.translationY;
         // 边缘自动滚动
         const win = scrollWindow.value;
         if (win) {
@@ -248,7 +243,6 @@ const SortableRow = memo(function SortableRow({
     activeIndex,
     visualFrom,
     dragTy,
-    fingerBase,
     targetIndex,
     orderIds,
     heights,
@@ -365,7 +359,6 @@ export function SortableDayList({
   const activeIndex = useSharedValue(-1);
   const visualFrom = useSharedValue(-1);
   const dragTy = useSharedValue(0);
-  const fingerBase = useSharedValue(0);
   const targetIndex = useSharedValue(-1);
   const orderIds = useSharedValue<OrderIds>(items.map((it) => it.id));
   const heights = useSharedValue<Record<string, number>>({});
@@ -386,7 +379,6 @@ export function SortableDayList({
       visualFrom.value = -1;
       targetIndex.value = -1;
       dragTy.value = 0;
-      fingerBase.value = 0;
       stopAutoScroll();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -491,7 +483,6 @@ export function SortableDayList({
           activeIndex={activeIndex}
           visualFrom={visualFrom}
           dragTy={dragTy}
-          fingerBase={fingerBase}
           targetIndex={targetIndex}
           orderIds={orderIds}
           heights={heights}

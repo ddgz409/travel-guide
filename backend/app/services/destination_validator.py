@@ -170,6 +170,10 @@ def check_route_city(raw: str) -> DestinationCheckResult:
             message=f"未找到「{name}」的准确位置，请核对名称",
             suggestions=_suggest(name),
         )
+    # 县级市：city 字段是州名，优先保留用户输入的原名
+    dist = (getattr(geo, "district", "") or "").replace("[]", "").strip()
+    if dist and _normalize_place(name) in _normalize_place(dist):
+        return DestinationCheckResult(valid=True, message="", resolved_name=name)
     resolved = (geo.city or name).strip()
     resolved = resolved.replace("[]", "").strip() or name
     return DestinationCheckResult(valid=True, message="", resolved_name=resolved)
@@ -263,12 +267,17 @@ def _normalize_place(s: str) -> str:
 
 
 def _geo_matches_input(raw: str, geo) -> bool:
-    """避免高德把生造地名漂移到无关城市。"""
+    """避免高德把生造地名漂移到无关城市。
+
+    县级市（如德令哈）高德 city 字段返回州名或空，因此
+    city / district / formatted 三处都参与匹配。
+    """
     needle = _normalize_place(raw)
     if len(needle) < 2:
         return False
     haystacks = [
         _normalize_place(geo.city or ""),
+        _normalize_place(getattr(geo, "district", "") or ""),
         _normalize_place(geo.formatted or ""),
     ]
     for hay in haystacks:
@@ -278,6 +287,9 @@ def _geo_matches_input(raw: str, geo) -> bool:
             return True
         if len(needle) >= 2 and hay[:2] == needle[:2]:
             return True
+    # 兜底：区县级结果直接信任（level=区县/兴趣点 说明高德精确解析到了该地名）
+    if (getattr(geo, "level", "") or "") in ("区县", "县"):
+        return True
     return False
 
 
@@ -328,6 +340,10 @@ def check_destination(raw: str) -> DestinationCheckResult:
         resolved = name
     # 去掉高德返回的空数组字符串
     resolved = resolved.replace("[]", "").strip() or name
+    # 县级市：city 是州名时保留用户输入（如「德令哈」不该变成海西州）
+    dist = (getattr(geo, "district", "") or "").replace("[]", "").strip()
+    if dist and _normalize_place(name) in _normalize_place(dist):
+        resolved = name
 
     return DestinationCheckResult(
         valid=True,
