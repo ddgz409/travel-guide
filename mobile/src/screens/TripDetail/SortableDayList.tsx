@@ -14,6 +14,7 @@ import {
 } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -24,6 +25,8 @@ import type { Item } from "@travel-guide/shared";
 /** 行卡片之间固定间距（与 ItemListRow feedCard 的 marginBottom 一致） */
 const ROW_GAP = 12;
 
+/** 邻居弹开：被越过时快速让位 */
+const PUSH_SPRING = { damping: 22, stiffness: 380, mass: 0.9 };
 /** 松手落位：Q弹 */
 const DROP_SPRING = { damping: 16, stiffness: 300, mass: 0.9 };
 /** 长按激活时长 */
@@ -133,6 +136,31 @@ const SortableRow = memo(function SortableRow({
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
 
+  /** 本行让位量：由 reaction 在换位瞬间起一次 spring（弹开动画） */
+  const myShift = useSharedValue(0);
+
+  // 换位瞬间计算本行应让出的位移并起弹簧；提交/复位后弹回 0。
+  // reaction 只在依赖变化时触发一次，不存在逐帧重启问题。
+  useAnimatedReaction(
+    () => {
+      const ids = orderIds.value;
+      const idx = ids.indexOf(item.id);
+      const from = visualFrom.value;
+      const to = targetIndex.value;
+      if (idx < 0 || from < 0 || to < 0 || to === from) return 0;
+      if (idx === from) return 0; // 被拖拽行走 dragTy
+      const hFrom = heights.value[ids[from]] || 0;
+      if (from < to && idx > from && idx <= to) return -hFrom;
+      if (from > to && idx >= to && idx < from) return hFrom;
+      return 0;
+    },
+    (sh, prev) => {
+      if (sh !== prev) {
+        myShift.value = withSpring(sh, PUSH_SPRING);
+      }
+    },
+  );
+
   const animatedStyle = useAnimatedStyle(() => {
     const ids = orderIds.value;
     const idx = ids.indexOf(item.id);
@@ -147,16 +175,8 @@ const SortableRow = memo(function SortableRow({
         elevation: 12,
       };
     }
-    // 被越过的行：瞬时让位（纯数值，无动画对象 → 零重启、零递归）
-    let sh = 0;
-    const to = targetIndex.value;
-    if (to >= 0 && to !== from) {
-      const hFrom = heights.value[ids[from]] || 0;
-      if (from < to && idx > from && idx <= to) sh = -hFrom;
-      else if (from > to && idx >= to && idx < from) sh = hFrom;
-    }
     return {
-      transform: [{ translateY: sh }, { scale: sh === 0 ? 1 : 0.985 }],
+      transform: [{ translateY: myShift.value }],
       zIndex: 0,
     };
   });
@@ -213,23 +233,17 @@ const SortableRow = memo(function SortableRow({
         const from = activeIndex.value;
         const to = targetIndex.value;
         if (from < 0) return;
-        activeIndex.value = -1; // 先解锁，杜绝后续卡死
+        // 全部同步复位：不留落位弹簧与让位量的叠加窗口（此前
+        // 「移动一次后卡片消失/空白」就是两者叠加把卡片推出两格）
+        activeIndex.value = -1;
+        visualFrom.value = -1;
+        targetIndex.value = -1;
+        dragTy.value = 0;
         if (to >= 0 && to !== from) {
           const ids = orderIds.value.slice();
           const [moved] = ids.splice(from, 1);
           ids.splice(to, 0, moved);
-          const exact = slotDisplacement(from, to, orderIds.value, heights.value);
-          // 落位弹簧回调只复位标记，绝不回写自身动画值（防递归爆栈）
-          dragTy.value = withSpring(exact, DROP_SPRING, () => {
-            visualFrom.value = -1;
-            targetIndex.value = -1;
-          });
-          runOnJS(commitOrder)(ids); // 立即提交，不等落位动画
-        } else {
-          dragTy.value = withSpring(0, DROP_SPRING, () => {
-            visualFrom.value = -1;
-            targetIndex.value = -1;
-          });
+          runOnJS(commitOrder)(ids);
         }
       });
     if (scrollGesture) {

@@ -248,7 +248,12 @@ def fetch_landmarks_via_amap(
     *,
     limit: int = 12,
 ) -> list[str]:
-    """用高德拉取某城风景名胜/热门景点名称。"""
+    """用高德拉取某城风景名胜/热门景点名称。
+
+    县级市（如德令哈）在高德检索里按城市名过滤常查不到，
+    因此先地理编码拿 adcode/中心点：优先用 adcode 检索，
+    仍为空则退化为绕市中心周边搜索。
+    """
     from app.services.amap_client import AmapError, POI_TYPES
 
     city = _normalize_city_key(city) or city.strip()
@@ -258,28 +263,11 @@ def fetch_landmarks_via_amap(
     scored: list[tuple[float, str]] = []
     seen: set[str] = set()
 
-    queries: list[tuple[str, str | None]] = [
-        ("风景名胜", POI_TYPES.get("attraction")),
-        ("旅游景点", POI_TYPES.get("attraction")),
-        (f"{city}必去", None),
-    ]
-    for keyword, poi_type in queries:
-        try:
-            pois = amap.search_poi_by_keyword(
-                keyword,
-                city=city,
-                limit=20,
-                city_limit=True,
-                poi_type=poi_type,
-            )
-        except AmapError as e:
-            logger.warning("高德景点检索失败 %s/%s: %s", city, keyword, e)
-            continue
+    def _collect(pois) -> None:
         for p in pois:
             name = (p.name or "").strip()
             if not name or is_micro_poi(name):
                 continue
-            # 去掉过长附属名
             if len(name) > 24:
                 continue
             key = name.lower()
@@ -287,6 +275,61 @@ def fetch_landmarks_via_amap(
                 continue
             seen.add(key)
             scored.append((float(p.rating or 0), name))
+
+    # 解析 adcode / 中心点（县级市关键）
+    adcode = ""
+    center = ""
+    try:
+        g = amap.geocode(city)
+        if g is not None:
+            adcode = (g.adcode or "").strip()[:6]
+            center = (g.location or "").strip()
+    except AmapError as e:
+        logger.warning("高德地理编码失败 %s: %s", city, e)
+
+    city_variants = [c for c in (city, adcode) if c]
+    attraction_type = POI_TYPES.get("attraction")
+    queries: list[tuple[str, str | None]] = [
+        ("风景名胜", attraction_type),
+        ("旅游景点", attraction_type),
+        (f"{city}必去", None),
+    ]
+    for cv in city_variants:
+        for keyword, poi_type in queries:
+            try:
+                pois = amap.search_poi_by_keyword(
+                    keyword,
+                    city=cv,
+                    limit=20,
+                    city_limit=True,
+                    poi_type=poi_type,
+                )
+            except AmapError as e:
+                logger.warning("高德景点检索失败 %s/%s: %s", cv, keyword, e)
+                continue
+            _collect(pois)
+            if len(scored) >= limit * 2:
+                break
+        if len(scored) >= limit * 2:
+            break
+
+    # 兜底：绕市中心周边搜风景名胜（radius 覆盖县级市全域）
+    if len(scored) < limit and center and "," in center:
+        for kw in ("风景名胜", "景点"):
+            try:
+                pois = amap.search_poi_around(
+                    center,
+                    keywords=kw,
+                    poi_type=attraction_type,
+                    radius=40000,
+                    limit=25,
+                )
+            except AmapError as e:
+                logger.warning("高德周边景点检索失败 %s/%s: %s", city, kw, e)
+                continue
+            _collect(pois)
+            if len(scored) >= limit * 2:
+                break
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [n for _, n in scored[:limit]]
