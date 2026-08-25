@@ -202,9 +202,10 @@ export function AddSpotSheet({
               </View>
             ) : list.length ? (
               <ScrollView
-                style={styles.addList}
+                style={[styles.addList, { maxHeight: 300 }]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
               >
                 {list.map((poi) => {
                   const dist =

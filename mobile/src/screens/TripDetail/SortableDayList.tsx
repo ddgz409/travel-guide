@@ -101,7 +101,6 @@ const SortableRow = memo(function SortableRow({
   targetIndex,
   orderIds,
   heights,
-  shifts,
   scrollWindow,
   lastAutoDir,
   onRemove,
@@ -125,7 +124,6 @@ const SortableRow = memo(function SortableRow({
   targetIndex: SharedValue<number>;
   orderIds: SharedValue<OrderIds>;
   heights: SharedValue<Record<string, number>>;
-  shifts: SharedValue<Record<string, number>>;
   scrollWindow: SharedValue<ScrollWindow | null>;
   lastAutoDir: SharedValue<number>;
   onRemove?: (item: Item) => void;
@@ -138,9 +136,6 @@ const SortableRow = memo(function SortableRow({
   commitOrder: (ids: OrderIds) => void;
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
-
-  /** 让位量：纯数字，直接读取；换位时由拖拽 worklet 一次性赋值 */
-  const myShift = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => {
     const ids = orderIds.value;
@@ -156,11 +151,16 @@ const SortableRow = memo(function SortableRow({
         elevation: 12,
       };
     }
+    // 被越过的行：瞬时让位（纯数值，无动画对象 → 零重启、零递归）
+    let sh = 0;
+    const to = targetIndex.value;
+    if (to >= 0 && to !== from) {
+      const hFrom = heights.value[ids[from]] || 0;
+      if (from < to && idx > from && idx <= to) sh = -hFrom;
+      else if (from > to && idx >= to && idx < from) sh = hFrom;
+    }
     return {
-      transform: [
-        { translateY: myShift.value },
-        { scale: myShift.value === 0 ? 1 : 0.985 },
-      ],
+      transform: [{ translateY: sh }, { scale: sh === 0 ? 1 : 0.985 }],
       zIndex: 0,
     };
   });
@@ -190,40 +190,14 @@ const SortableRow = memo(function SortableRow({
         const hs = heights.value;
         const t = computeTarget(from, e.translationY, ids, hs);
         if (t !== targetIndex.value) {
-          // 换位：被越过的行瞬时让位（无 spring 重启 → 丝滑不卡）
-          const hFrom = hs[ids[from]] || 0;
-          const prev = targetIndex.value;
+          // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出，
+          // 这里只需更新目标序号与磁吸基准
           targetIndex.value = t;
           fingerBase.value = e.translationY;
-          if (prev >= 0) {
-            // 归位上一轮被推开的行
-            if (prev > from) {
-              for (let i = from + 1; i <= prev; i++) {
-                const k = ids[i];
-                if (k != null) shifts.value[k] = 0;
-              }
-            } else if (prev < from) {
-              for (let i = prev; i < from; i++) {
-                const k = ids[i];
-                if (k != null) shifts.value[k] = 0;
-              }
-            }
-          }
-          if (t > from) {
-            for (let i = from + 1; i <= t; i++) {
-              const k = ids[i];
-              if (k != null) shifts.value[k] = -hFrom;
-            }
-          } else if (t < from) {
-            for (let i = t; i < from; i++) {
-              const k = ids[i];
-              if (k != null) shifts.value[k] = hFrom;
-            }
-          }
           runOnJS(hapticTick)();
         }
         // 1:1 跟手：目标槽位位移 + 基准内手指微调
-        const disp = slotDisplacement(from, t, ids, heights.value);
+        const disp = slotDisplacement(from, t, ids, hs);
         dragTy.value = disp + (e.translationY - fingerBase.value);
         // 边缘自动滚动
         const win = scrollWindow.value;
@@ -254,19 +228,16 @@ const SortableRow = memo(function SortableRow({
           const [moved] = ids.splice(from, 1);
           ids.splice(to, 0, moved);
           const exact = slotDisplacement(from, to, orderIds.value, heights.value);
+          // 落位弹簧回调只复位标记，绝不回写自身动画值（防递归爆栈）
           dragTy.value = withSpring(exact, DROP_SPRING, () => {
             visualFrom.value = -1;
             targetIndex.value = -1;
-            dragTy.value = 0;
-            fingerBase.value = 0;
           });
           runOnJS(commitOrder)(ids); // 立即提交，不等落位动画
         } else {
           dragTy.value = withSpring(0, DROP_SPRING, () => {
             visualFrom.value = -1;
             targetIndex.value = -1;
-            dragTy.value = 0;
-            fingerBase.value = 0;
           });
         }
       });
@@ -285,7 +256,6 @@ const SortableRow = memo(function SortableRow({
     targetIndex,
     orderIds,
     heights,
-    shifts,
     scrollWindow,
     lastAutoDir,
     setAutoDir,
@@ -304,63 +274,63 @@ const SortableRow = memo(function SortableRow({
       collapsable={false}
       onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
     >
-      <GestureDetector gesture={handlePan}>
-        <Animated.View style={[styles.rowInner, animatedStyle]}>
-          {editing ? (
-            <View style={styles.railLeft}>
+      <Animated.View style={[styles.rowInner, animatedStyle]}>
+        {editing ? (
+          // 左侧：↑↓ 微调（永远在左）
+          <View style={styles.railLeft}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.railBtn,
+                pressed && styles.railBtnPressed,
+              ]}
+              onPress={() => moveBy(item.id, -1)}
+            >
+              <Text style={styles.railUp}>↑</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.railBtn,
+                pressed && styles.railBtnPressed,
+              ]}
+              onPress={() => moveBy(item.id, 1)}
+            >
+              <Text style={styles.railDown}>↓</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.cardSlot}>{renderRow(item)}</View>
+
+        {editing ? (
+          // 右侧：✕ 删除在上，☰ 拖拽柄在下（拖拽手势只绑在柄上，
+          // 卡片区域零手势识别，滚动绝不冲突）
+          <View style={styles.railRight}>
+            {onRemove ? (
               <Pressable
                 style={({ pressed }) => [
-                  styles.railBtn,
-                  pressed && styles.railBtnPressed,
+                  styles.railX,
+                  pressed && styles.railXPressed,
                 ]}
-                onPress={() => moveBy(item.id, -1)}
+                onPress={() => onRemove(item)}
               >
-                <Text style={styles.railUp}>↑</Text>
+                <Text style={styles.railXIcon}>✕</Text>
               </Pressable>
+            ) : null}
+            <GestureDetector gesture={handlePan}>
               <Pressable
                 style={({ pressed }) => [
-                  styles.railBtn,
-                  pressed && styles.railBtnPressed,
+                  styles.gripBtn,
+                  pressed && styles.gripBtnPressed,
                 ]}
-                onPress={() => moveBy(item.id, 1)}
               >
-                <Text style={styles.railDown}>↓</Text>
+                <View style={styles.gripBar} />
+                <View style={[styles.gripBar, styles.gripBarMid]} />
+                <View style={styles.gripBar} />
               </Pressable>
-              {onRemove ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.railBtn,
-                    styles.railX,
-                    pressed && styles.railXPressed,
-                  ]}
-                  onPress={() => onRemove(item)}
-                >
-                  <Text style={styles.railXIcon}>✕</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-
-          <View style={styles.cardSlot}>{renderRow(item)}</View>
-
-          {editing ? (
-            <View style={styles.railRight} pointerEvents="box-none">
-              <GestureDetector gesture={handlePan}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.gripBtn,
-                    pressed && styles.gripBtnPressed,
-                  ]}
-                >
-                  <View style={styles.gripBar} />
-                  <View style={[styles.gripBar, styles.gripBarMid]} />
-                  <View style={styles.gripBar} />
-                </Pressable>
-              </GestureDetector>
-            </View>
-          ) : null}
-        </Animated.View>
-      </GestureDetector>
+            </GestureDetector>
+          </View>
+        ) : null}
+      </Animated.View>
     </View>
   );
 });
@@ -406,7 +376,6 @@ export function SortableDayList({
   const targetIndex = useSharedValue(-1);
   const orderIds = useSharedValue<OrderIds>(items.map((it) => it.id));
   const heights = useSharedValue<Record<string, number>>({});
-  const shifts = useSharedValue<Record<string, number>>({});
   const scrollWindow = useSharedValue<ScrollWindow | null>(null);
   const lastAutoDir = useSharedValue(0);
 
@@ -432,7 +401,6 @@ export function SortableDayList({
       targetIndex.value = -1;
       dragTy.value = 0;
       fingerBase.value = 0;
-      shifts.value = {};
       stopAutoScroll();
       onDragStateChangeRef.current?.(false);
     }
@@ -495,10 +463,9 @@ export function SortableDayList({
         .filter((it): it is Item => it != null);
       setOrder(next);
       orderIds.value = ids;
-      shifts.value = {};
       onOrderChangeRef.current?.(ids);
     },
-    [order, orderIds, shifts],
+    [order, orderIds],
   );
 
   const moveBy = useCallback(
@@ -544,7 +511,6 @@ export function SortableDayList({
           targetIndex={targetIndex}
           orderIds={orderIds}
           heights={heights}
-          shifts={shifts}
           scrollWindow={scrollWindow}
           lastAutoDir={lastAutoDir}
           onRemove={onRemove}
@@ -601,8 +567,6 @@ const styles = StyleSheet.create({
     color: "#45605A",
     includeFontPadding: false,
   },
-  railX: { borderColor: "rgba(198,40,40,0.32)" },
-  railXPressed: { backgroundColor: "#FDEBEB" },
   railXIcon: {
     fontSize: 12,
     lineHeight: 14,
@@ -610,14 +574,26 @@ const styles = StyleSheet.create({
     color: "#C62828",
     includeFontPadding: false,
   },
-  // 右侧拖拽栏
+  // 右侧栏：✕ 在上、☰ 在下
   railRight: {
     width: 42,
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
     marginLeft: 8,
     alignSelf: "stretch",
   },
+  railX: {
+    width: 32,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(198,40,40,0.32)",
+  },
+  railXPressed: { backgroundColor: "#FDEBEB" },
   gripBtn: {
     width: 36,
     height: 46,

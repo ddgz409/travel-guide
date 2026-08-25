@@ -90,7 +90,10 @@ export function AddCitySheet({
           <View
             style={[
               styles.addSheet,
-              { paddingBottom: Math.max(insets.bottom, 12) },
+              {
+                paddingBottom: Math.max(insets.bottom, 12),
+                maxHeight: "86%",
+              },
             ]}
           >
           <View style={styles.addHead}>
@@ -105,6 +108,13 @@ export function AddCitySheet({
             </Pressable>
           </View>
 
+          {/* 面板主体：单一滚动容器，多城市/键盘弹出时整体可滑 */}
+          <ScrollView
+            style={styles.cityBodyScroll}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           {/* 当前路线城市 + 删除 */}
           {routeCities.length > 0 ? (
             <View style={styles.citySection}>
@@ -140,12 +150,8 @@ export function AddCitySheet({
               value={filter}
               onChangeText={setFilter}
               maxLength={20}
+              returnKeyType="search"
             />
-            <ScrollView
-              style={styles.citySheetScroll}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
               {filter.trim().length === 0 ? (
                 // 未输入关键字时不展示全量列表（避免长列表把下方内容顶出屏幕），
                 // 等用户输入后再做补全
@@ -216,7 +222,6 @@ export function AddCitySheet({
                   </View>
                 ))
               )}
-            </ScrollView>
           </View>
 
           {/* 插入到第几天 */}
@@ -262,6 +267,7 @@ export function AddCitySheet({
               </View>
             </View>
           ) : null}
+          </ScrollView>
 
           <Pressable
             style={[

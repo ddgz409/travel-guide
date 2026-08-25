@@ -783,6 +783,11 @@ export const styles = StyleSheet.create({
   },
   citySheetScroll: { maxHeight: 220, flexGrow: 0 },
   cityGroup: { marginBottom: 10 },
+  // 面板主体滚动容器（AddCitySheet 单一滚动适配）
+  cityBodyScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   cityLetter: {
     fontSize: 12,
     fontWeight: "800",

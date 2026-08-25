@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   Linking,
   Platform,
   Pressable,
@@ -982,9 +983,16 @@ export function TripDetailScreen({ route, navigation }: Props) {
         city={trip.destination}
         dayLabel={dayLabel}
         busy={actionBusy}
-        onSelectPoi={(poi, type) => void handleAddPoi(poi, type)}
-        onAddCustom={(name, type) => void handleAddCustom(name, type)}
+        onSelectPoi={(poi, type) => {
+          Keyboard.dismiss();
+          void handleAddPoi(poi, type);
+        }}
+        onAddCustom={(name, type) => {
+          Keyboard.dismiss();
+          void handleAddCustom(name, type);
+        }}
         onCancel={() => {
+          Keyboard.dismiss();
           setAddSheetVisible(false);
           setAddCoords(null);
         }}
