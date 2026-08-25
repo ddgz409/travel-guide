@@ -106,6 +106,9 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const sheetListRef = useRef<ScrollView>(null);
   const sheetOffsetY = useRef(0);
   const sheetWindowRef = useRef<{ top: number; height: number } | null>(null);
+  // 地图选点：注入是否成功
+  const pickInjectedRef = useRef(false);
+  const pickInjectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureSheetWindow = useCallback(() => {
     // RN 的 ScrollView 实例运行时带 measureInWindow（类型层未暴露，做安全收窄）
     const node = sheetListRef.current as unknown as {
@@ -493,7 +496,17 @@ export function TripDetailScreen({ route, navigation }: Props) {
   function startPickMode() {
     if (!canEdit || !currentDay) return;
     setPoiSheet(null);
+    pickInjectedRef.current = false;
     setPickMode(true);
+    // 地图 WebView 未就绪时选点指令注入不了，用户会以为按钮坏了；
+    // 超时未注入则明确提示并退出选点模式
+    if (pickInjectTimer.current) clearTimeout(pickInjectTimer.current);
+    pickInjectTimer.current = setTimeout(() => {
+      if (!pickInjectedRef.current && !actionBusy) {
+        setPickMode(false);
+        Alert.alert("地图还在加载", "地图尚未就绪，请等几秒后再点「添加地点」。");
+      }
+    }, 1500);
   }
 
   function cancelPick() {
@@ -646,6 +659,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
           onPoiPress={openPoiDetail}
           pickMode={pickMode}
           onMapPick={onMapPick}
+          onPickModeInjected={() => {
+            pickInjectedRef.current = true;
+            if (pickInjectTimer.current) {
+              clearTimeout(pickInjectTimer.current);
+              pickInjectTimer.current = null;
+            }
+          }}
           routeMode={routeModeForTrip(trip)}
         />
       </FadeSwitch>
@@ -905,6 +925,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
                       tripId={trip.id}
                       destination={trip.destination}
                       hasNextRoute={hasNextRoute}
+                      compact={editingDay}
                       onPoiPress={
                         item.type === "attraction" ||
                         item.type === "meal" ||

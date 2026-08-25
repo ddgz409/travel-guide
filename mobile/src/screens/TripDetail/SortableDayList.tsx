@@ -160,7 +160,7 @@ function SortableRow({
    */
   const handlePan = useMemo(() => {
     let g = Gesture.Pan()
-      .minDistance(4)
+      .minDistance(2)
       .maxPointers(1)
       .enabled(canEdit && !dragDisabled)
       .onStart(() => {
@@ -258,25 +258,26 @@ function SortableRow({
       {editing ? (
         <View style={styles.cluster} pointerEvents="box-none">
           <GestureDetector gesture={handlePan}>
-            <Pressable
-              style={[styles.clusterBtn, styles.clusterGrip]}
-              disabled={dragDisabled}
-              hitSlop={4}
-            >
-              <Text style={styles.clusterIcon}>≡</Text>
+            <Pressable style={({ pressed }) => [styles.clusterBtn, styles.clusterGripBtn, pressed && styles.clusterBtnPressed]}>
+              <Text style={[styles.clusterGripIcon]}>☰</Text>
             </Pressable>
           </GestureDetector>
+          <View style={styles.clusterDivider} />
           <Pressable
-            style={styles.clusterBtn}
+            style={({ pressed }) => [
+              styles.clusterBtn,
+              pressed && styles.clusterBtnPressed,
+            ]}
             onPress={() => moveBy(item.id, -1)}
-            hitSlop={4}
           >
             <Text style={styles.clusterIcon}>↑</Text>
           </Pressable>
           <Pressable
-            style={styles.clusterBtn}
+            style={({ pressed }) => [
+              styles.clusterBtn,
+              pressed && styles.clusterBtnPressed,
+            ]}
             onPress={() => moveBy(item.id, 1)}
-            hitSlop={4}
           >
             <Text style={styles.clusterIcon}>↓</Text>
           </Pressable>
@@ -461,29 +462,55 @@ export function SortableDayList({
 const styles = StyleSheet.create({
   cluster: {
     position: "absolute",
-    right: 8,
+    right: 10,
     top: "50%",
-    transform: [{ translateY: -46 }],
+    transform: [{ translateY: -62 }],
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.97)",
+    borderRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,0,0,0.08)",
-    paddingHorizontal: 2,
-    paddingVertical: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
+    borderColor: "rgba(33,84,63,0.14)",
+    paddingVertical: 6,
+    paddingHorizontal: 5,
+    gap: 7,
+    shadowColor: "#0a2540",
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  clusterDivider: {
+    alignSelf: "stretch",
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(33,84,63,0.14)",
+    marginHorizontal: 7,
   },
   clusterBtn: {
-    width: 30,
-    height: 28,
+    width: 42,
+    height: 34,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "transparent",
   },
-  clusterGrip: { marginBottom: 1 },
-  clusterIcon: { fontSize: 15, lineHeight: 18, color: "#455A64", fontWeight: "700" },
+  clusterBtnPressed: { backgroundColor: "#E3F2E9" },
+  clusterGripBtn: {
+    width: 42,
+    height: 40,
+    borderRadius: 16,
+    backgroundColor: "#DEF2E4",
+  },
+  clusterGripIcon: {
+    fontSize: 19,
+    lineHeight: 22,
+    color: "#1B7A43",
+    fontWeight: "800",
+    letterSpacing: -1,
+  },
+  clusterIcon: {
+    fontSize: 16,
+    lineHeight: 19,
+    color: "#45605A",
+    fontWeight: "700",
+  },
 });

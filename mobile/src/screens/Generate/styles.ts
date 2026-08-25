@@ -276,4 +276,33 @@ export const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+
+  // ---- 交通方式（底部弱化档） ----
+  transportMutedBlock: { marginTop: 20 },
+  transportLabel: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  transportChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  transportChip: {
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderCurve: "continuous",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: "transparent",
+  },
+  transportChipOn: {
+    borderColor: colors.brand,
+    backgroundColor: "#E1F5FE",
+  },
+  transportChipText: { fontSize: 12, color: colors.muted, fontWeight: "500" },
+  transportChipTextOn: { color: "#0277BD", fontWeight: "700" },
 });

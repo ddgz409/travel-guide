@@ -62,6 +62,8 @@ type Props = {
   /** 地图选点模式：开启后点击地图回调 onMapPick */
   pickMode?: boolean;
   onMapPick?: (lng: number, lat: number) => void;
+  /** 选点指令成功注入 WebView 后回调（用于上层判断地图是否就绪） */
+  onPickModeInjected?: () => void;
   /** 路线规划模式（transit/walking/driving）；调用方按攻略交通偏好传入，缺省公交 */
   routeMode?: RouteMode;
 };
@@ -119,6 +121,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     onPoiPress,
     pickMode = false,
     onMapPick,
+    onPickModeInjected,
     routeMode: routeModeProp,
   },
   ref,
@@ -127,6 +130,8 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const webRef = useRef<WebView>(null);
   const mapGestureRef = useRef<NativeViewGestureHandler>(null);
+  const onPickModeInjectedRef = useRef(onPickModeInjected);
+  onPickModeInjectedRef.current = onPickModeInjected;
   useImperativeHandle(ref, () => mapGestureRef.current as NativeViewGestureHandler);
   const [mapReady, setMapReady] = useState(false);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -355,6 +360,7 @@ export const HeroRouteMap = forwardRef<NativeViewGestureHandler, Props>(function
   useEffect(() => {
     if (!mapReady || !amapKey) return;
     inject(`window.setPickMode && window.setPickMode(${!!pickMode})`);
+    if (pickMode) onPickModeInjectedRef.current?.();
   }, [mapReady, amapKey, pickMode, inject]);
 
   useEffect(() => {

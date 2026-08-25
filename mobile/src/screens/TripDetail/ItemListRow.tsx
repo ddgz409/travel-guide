@@ -1,5 +1,5 @@
 import React, { memo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Item, TransportToNext } from "@travel-guide/shared";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -42,6 +42,7 @@ export const ItemListRow = memo(function ItemListRow({
   tripId,
   destination,
   hasNextRoute,
+  compact = false,
   onPoiPress,
   onDelete,
 }: {
@@ -49,6 +50,8 @@ export const ItemListRow = memo(function ItemListRow({
   tripId: string;
   destination: string;
   hasNextRoute: boolean;
+  /** 排序编辑态：压缩高度、隐藏描述/交通段，让拖拽更轻快 */
+  compact?: boolean;
   onPoiPress?: () => void;
   /** 传入后显示右上角删除按钮（编辑态） */
   onDelete?: () => void;
@@ -57,7 +60,7 @@ export const ItemListRow = memo(function ItemListRow({
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const [expanded, setExpanded] = useState(false);
   const showRoute =
-    item.selected && hasNextRoute && hasCoords(item.location);
+    !compact && item.selected && hasNextRoute && hasCoords(item.location);
   const transportForSheet =
     item.transport_to_next || (showRoute ? ROUTE_STUB : null);
   const cover = itemCoverFor(item, destination);
@@ -87,10 +90,10 @@ export const ItemListRow = memo(function ItemListRow({
         }}
         style={styles.feedRow}
       >
-        <View style={styles.feedThumbWrap}>
+        <View style={[styles.feedThumbWrap, compact && localStyles.cThumbWrap]}>
           {item.type === "transport" ? (
-            <View style={[styles.feedThumb, { backgroundColor: cover.bg }]}>
-              <Text style={styles.feedThumbEmoji}>{cover.emoji}</Text>
+            <View style={[styles.feedThumb, compact && localStyles.cThumb, { backgroundColor: cover.bg }]}>
+              <Text style={[styles.feedThumbEmoji, compact && localStyles.cThumbEmoji]}>{cover.emoji}</Text>
             </View>
           ) : (
             <PlaceImage
@@ -98,11 +101,11 @@ export const ItemListRow = memo(function ItemListRow({
               name={item.name}
               category={placeKind(item.type)}
               poiId={item.poi_id || undefined}
-              style={styles.feedThumb}
+              style={[styles.feedThumb, compact && localStyles.cThumb]}
               fallbackSource={cover.source}
               fallback={
-                <View style={[styles.feedThumb, { backgroundColor: cover.bg }]}>
-                  <Text style={styles.feedThumbEmoji}>{cover.emoji}</Text>
+                <View style={[styles.feedThumb, compact && localStyles.cThumb, { backgroundColor: cover.bg }]}>
+                  <Text style={[styles.feedThumbEmoji, compact && localStyles.cThumbEmoji]}>{cover.emoji}</Text>
                 </View>
               }
             />
@@ -110,50 +113,65 @@ export const ItemListRow = memo(function ItemListRow({
         </View>
 
         <View style={styles.feedBody}>
-          <Text style={styles.feedTitle} numberOfLines={2}>
+          <Text
+            style={[styles.feedTitle, compact && localStyles.cTitle]}
+            numberOfLines={compact ? 1 : 2}
+          >
             {item.name}
           </Text>
 
-          <View style={styles.feedTags}>
-            <View style={[styles.feedTag, { backgroundColor: badge.bg }]}>
-              <Text style={[styles.feedTagText, { color: badge.fg }]}>
-                {TYPE_LABEL[item.type] || item.type}
-              </Text>
+          {compact ? (
+            <View style={styles.feedTags}>
+              <View style={[styles.feedTag, { backgroundColor: badge.bg }]}>
+                <Text style={[styles.feedTagText, { color: badge.fg }]}>
+                  {TYPE_LABEL[item.type] || item.type}
+                </Text>
+              </View>
             </View>
-            <View style={styles.feedTagMuted}>
-              <Text style={styles.feedTagMutedText}>
-                {SLOT_LABEL[item.time_slot] || item.time_slot}
-                {item.duration_min ? ` · ${item.duration_min}分钟` : ""}
-              </Text>
-            </View>
-          </View>
+          ) : (
+            <>
+              <View style={styles.feedTags}>
+                <View style={[styles.feedTag, { backgroundColor: badge.bg }]}>
+                  <Text style={[styles.feedTagText, { color: badge.fg }]}>
+                    {TYPE_LABEL[item.type] || item.type}
+                  </Text>
+                </View>
+                <View style={styles.feedTagMuted}>
+                  <Text style={styles.feedTagMutedText}>
+                    {SLOT_LABEL[item.time_slot] || item.time_slot}
+                    {item.duration_min ? ` · ${item.duration_min}分钟` : ""}
+                  </Text>
+                </View>
+              </View>
 
-          {desc ? (
-            <Text
-              style={styles.feedDesc}
-              numberOfLines={expanded ? undefined : 2}
-            >
-              {desc}
-              {longDesc && !expanded ? (
+              {desc ? (
                 <Text
-                  style={styles.feedExpand}
-                  onPress={() => setExpanded(true)}
+                  style={styles.feedDesc}
+                  numberOfLines={expanded ? undefined : 2}
                 >
-                  {" "}
-                  …展开
+                  {desc}
+                  {longDesc && !expanded ? (
+                    <Text
+                      style={styles.feedExpand}
+                      onPress={() => setExpanded(true)}
+                    >
+                      {" "}
+                      …展开
+                    </Text>
+                  ) : null}
                 </Text>
               ) : null}
-            </Text>
-          ) : null}
 
-          <View style={styles.feedMetaRow}>
-            {item.cost != null ? (
-              <Text style={styles.feedMeta}>¥{item.cost}</Text>
-            ) : null}
-            {item.rating != null ? (
-              <Text style={styles.feedMeta}>评分 {item.rating}</Text>
-            ) : null}
-          </View>
+              <View style={styles.feedMetaRow}>
+                {item.cost != null ? (
+                  <Text style={styles.feedMeta}>¥{item.cost}</Text>
+                ) : null}
+                {item.rating != null ? (
+                  <Text style={styles.feedMeta}>评分 {item.rating}</Text>
+                ) : null}
+              </View>
+            </>
+          )}
         </View>
       </PressScale>
 
@@ -169,4 +187,11 @@ export const ItemListRow = memo(function ItemListRow({
       ) : null}
     </View>
   );
+});
+
+const localStyles = StyleSheet.create({
+  cThumbWrap: { width: 46, height: 46 },
+  cThumb: { width: 46, height: 46, borderRadius: 12 },
+  cThumbEmoji: { fontSize: 22 },
+  cTitle: { fontSize: 14 },
 });

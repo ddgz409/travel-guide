@@ -766,27 +766,6 @@ export function GenerateScreen({ navigation, route }: Props) {
                 })}
               </View>
 
-              <Text style={styles.label}>交通方式</Text>
-              <View style={styles.chips}>
-                {TRANSPORTS.map((t) => {
-                  const on = transport === t;
-                  return (
-                    <PressScale
-                      key={t}
-                      scaleTo={0.96}
-                      style={[styles.chip, on && styles.chipOn]}
-                      onPress={() => setTransport(t)}
-                    >
-                      <Text
-                        style={[styles.chipText, on && styles.chipTextOn]}
-                      >
-                        {t}
-                      </Text>
-                    </PressScale>
-                  );
-                })}
-              </View>
-
               <View>
                 <Text style={styles.label}>必去景点（可选）</Text>
                 <Text style={styles.hint}>
@@ -902,6 +881,33 @@ export function GenerateScreen({ navigation, route }: Props) {
                       </ScrollView>
                     </View>
                   ) : null}
+                </View>
+              </View>
+
+              {/* 交通方式：弱化为底部小字选项 */}
+              <View style={styles.transportMutedBlock}>
+                <Text style={styles.transportLabel}>交通方式</Text>
+                <View style={styles.transportChips}>
+                  {TRANSPORTS.map((t) => {
+                    const on = transport === t;
+                    return (
+                      <PressScale
+                        key={t}
+                        scaleTo={0.96}
+                        style={[styles.transportChip, on && styles.transportChipOn]}
+                        onPress={() => setTransport(t)}
+                      >
+                        <Text
+                          style={[
+                            styles.transportChipText,
+                            on && styles.transportChipTextOn,
+                          ]}
+                        >
+                          {t}
+                        </Text>
+                      </PressScale>
+                    );
+                  })}
                 </View>
               </View>
 
