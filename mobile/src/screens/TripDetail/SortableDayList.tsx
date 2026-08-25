@@ -20,8 +20,6 @@ import Animated, {
 } from "react-native-reanimated";
 import type { Item } from "@travel-guide/shared";
 
-/** 行卡片之间固定间距（与 ItemListRow feedCard 的 marginBottom 一致） */
-const ROW_GAP = 12;
 
 /** 长按激活时长 */
 const ACTIVATE_MS = 280;
@@ -153,8 +151,12 @@ const SortableRow = memo(function SortableRow({
     // 本行槽位顶部（按原始顺序累加，含间距）
     let topJ = 0;
     for (let i = 0; i < idx; i++) topJ += hs[ids[i]] || 0;
-    const hJ = hs[ids[idx]] || 1;
-    const hFrom = hs[ids[from]] || 1;
+    const hJ = hs[ids[idx]];
+    const hFrom = hs[ids[from]];
+    // 行高未就绪：不产生位移（与判定逻辑同源，保证视觉与判定一致）
+    if (!hJ || !hFrom) {
+      return { transform: [{ translateY: 0 }], zIndex: 0 };
+    }
     let topFrom = 0;
     for (let i = 0; i < from; i++) topFrom += hs[ids[i]] || 0;
     const T = topFrom + dragTy.value; // 被拖卡片当前视觉顶部
@@ -194,6 +196,8 @@ const SortableRow = memo(function SortableRow({
         if (from < 0) return;
         const ids = orderIds.value;
         const hs = heights.value;
+        // 行高未测量完成时不判定（防止只震动手感、列表却不动）
+        if (!hs[ids[from]]) return;
         const t = computeTarget(from, e.translationY, ids, hs);
         if (t !== targetIndex.value) {
           // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出
@@ -474,9 +478,10 @@ export function SortableDayList({
 
   const onMeasure = useCallback(
     (id: string, h: number) => {
-      const layoutH = h + ROW_GAP;
-      if (layoutH > 0 && heights.value[id] !== layoutH) {
-        heights.value = { ...heights.value, [id]: layoutH };
+      // 布局高度已包含卡片下外边距（行距），不能再额外加间距，
+      // 否则列表越长累计偏差越大，判定线与视觉线错位（表现为乱跳）
+      if (h > 0 && heights.value[id] !== h) {
+        heights.value = { ...heights.value, [id]: h };
       }
     },
     [heights],
