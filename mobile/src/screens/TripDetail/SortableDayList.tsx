@@ -28,9 +28,9 @@ const ROW_GAP = 12;
 const DROP_SPRING = { damping: 16, stiffness: 300, mass: 0.9 };
 /** 长按激活时长 */
 const ACTIVATE_MS = 280;
-/** 自动滚动边缘/速度 */
-const AUTO_EDGE = 72;
-const AUTO_SPEED = 7;
+/** 自动滚动边缘/速度（过快会把卡片"甩离"手指） */
+const AUTO_EDGE = 44;
+const AUTO_SPEED = 3;
 /** 震动 ms */
 const TICK_MS = 8;
 
@@ -109,7 +109,6 @@ const SortableRow = memo(function SortableRow({
   setAutoDir,
   moveBy,
   onMeasure,
-  notifyDrag,
   commitOrder,
 }: {
   item: Item;
@@ -132,7 +131,6 @@ const SortableRow = memo(function SortableRow({
   setAutoDir: (dir: number) => void;
   moveBy: (id: string, delta: number) => void;
   onMeasure: (id: string, height: number) => void;
-  notifyDrag: (active: boolean) => void;
   commitOrder: (ids: OrderIds) => void;
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
@@ -179,7 +177,6 @@ const SortableRow = memo(function SortableRow({
         targetIndex.value = idx;
         dragTy.value = 0;
         fingerBase.value = 0;
-        runOnJS(notifyDrag)(true);
         runOnJS(onDragBegin)();
         runOnJS(hapticTick)();
       })
@@ -217,7 +214,6 @@ const SortableRow = memo(function SortableRow({
       .onFinalize(() => {
         lastAutoDir.value = 0;
         runOnJS(setAutoDir)(0);
-        runOnJS(notifyDrag)(false);
         runOnJS(onDragEnd)();
         const from = activeIndex.value;
         const to = targetIndex.value;
@@ -261,7 +257,6 @@ const SortableRow = memo(function SortableRow({
     setAutoDir,
     onDragBegin,
     onDragEnd,
-    notifyDrag,
     commitOrder,
     hapticTick,
     item.id,
@@ -342,7 +337,6 @@ type Props = {
   scrollGesture?: NativeGesture;
   renderRow: (item: Item) => React.ReactElement;
   onOrderChange: (orderedIds: string[]) => void;
-  onDragStateChange?: (dragging: boolean) => void;
   /** 编辑态删除单条（左侧 ✕） */
   onRemove?: (item: Item) => void;
   getScrollWindow?: () => ScrollWindow | null;
@@ -363,7 +357,6 @@ export function SortableDayList({
   scrollGesture,
   renderRow,
   onOrderChange,
-  onDragStateChange,
   onRemove,
   getScrollWindow,
   onAutoScroll,
@@ -378,9 +371,6 @@ export function SortableDayList({
   const heights = useSharedValue<Record<string, number>>({});
   const scrollWindow = useSharedValue<ScrollWindow | null>(null);
   const lastAutoDir = useSharedValue(0);
-
-  const onDragStateChangeRef = useRef(onDragStateChange);
-  onDragStateChangeRef.current = onDragStateChange;
   const onOrderChangeRef = useRef(onOrderChange);
   onOrderChangeRef.current = onOrderChange;
 
@@ -388,10 +378,6 @@ export function SortableDayList({
     setOrder(items);
     orderIds.value = items.map((it) => it.id);
   }, [items, orderIds]);
-
-  const notifyDrag = useCallback((active: boolean) => {
-    onDragStateChangeRef.current?.(active);
-  }, []);
 
   // ---- 兜底：退出编辑/禁用时强制复位，绝不留卡死状态 ----
   useEffect(() => {
@@ -402,7 +388,6 @@ export function SortableDayList({
       dragTy.value = 0;
       fingerBase.value = 0;
       stopAutoScroll();
-      onDragStateChangeRef.current?.(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canEdit, dragDisabled]);
@@ -449,7 +434,6 @@ export function SortableDayList({
   useEffect(
     () => () => {
       stopAutoScroll();
-      onDragStateChangeRef.current?.(false);
     },
     [stopAutoScroll],
   );
@@ -519,7 +503,6 @@ export function SortableDayList({
           setAutoDir={setAutoDir}
           moveBy={moveBy}
           onMeasure={onMeasure}
-          notifyDrag={notifyDrag}
           commitOrder={commitOrder}
         />
       ))}
@@ -574,14 +557,12 @@ const styles = StyleSheet.create({
     color: "#C62828",
     includeFontPadding: false,
   },
-  // 右侧栏：✕ 在上、☰ 在下
+  // 右侧栏：✕ 与 ☰ 横向并排
   railRight: {
-    width: 42,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
+    gap: 6,
     marginLeft: 8,
-    alignSelf: "stretch",
   },
   railX: {
     width: 32,

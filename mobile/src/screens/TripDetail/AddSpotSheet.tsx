@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -139,7 +138,7 @@ export function AddSpotSheet({
       <View style={styles.addRoot}>
         <Pressable style={styles.addBackdrop} onPress={onCancel} />
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior="padding"
           style={styles.spotKav}
           pointerEvents="box-none"
         >

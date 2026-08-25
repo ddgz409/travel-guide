@@ -99,11 +99,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
   // 编辑态：显示删除按钮
   const [editingDay, setEditingDay] = useState(false);
   // 长按拖拽中禁用外层滚动，避免与排序手势冲突
-  const [listScrollEnabled, setListScrollEnabled] = useState(true);
-  // 退出编辑时强制解锁滚动（防拖拽异常残留锁死）
-  useEffect(() => {
-    if (!editingDay) setListScrollEnabled(true);
-  }, [editingDay]);
   // 外层竖向 ScrollView 的原生手势：行内拖拽 Pan 与其 blocksExternalGesture，
   // 避免编辑模式启用大量长按拖拽手势时与原生滚动死锁（页面卡死）。
   const sheetScrollGesture = useMemo(() => Gesture.Native(), []);
@@ -819,7 +814,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.sheetList}
               nestedScrollEnabled
-              scrollEnabled={listScrollEnabled}
               scrollEventThrottle={16}
               onScroll={(e) => {
                 sheetOffsetY.current = e.nativeEvent.contentOffset.y;
@@ -937,7 +931,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
                   if (item.type !== "transport") void confirmDelete(item);
                 }}
                 onOrderChange={(ids) => void handleReorder(ids)}
-                onDragStateChange={setListScrollEnabled}
               />
             </FadeSwitch>
 
