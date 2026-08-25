@@ -223,8 +223,14 @@ const SortableRow = memo(function SortableRow({
         runOnJS(setAutoDir)(0);
         runOnJS(onDragEnd)();
         const from = activeIndex.value;
-        const to = targetIndex.value;
         if (from < 0) return;
+        // 松手前用最终位移重判一次目标：快速甩动时最后一帧
+        // onUpdate 可能没采样到，直接信旧 targetIndex 会"偶尔不生效"
+        const ty = dragTy.value;
+        const to =
+          Math.abs(ty) > 8
+            ? computeTarget(from, ty, orderIds.value, heights.value)
+            : targetIndex.value;
         // 全部同步复位：不留落位弹簧与让位量的叠加窗口（此前
         // 「移动一次后卡片消失/空白」就是两者叠加把卡片推出两格）
         activeIndex.value = -1;
