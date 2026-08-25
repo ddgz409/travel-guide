@@ -14,10 +14,8 @@ import {
 } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
-  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   type SharedValue,
 } from "react-native-reanimated";
 import type { Item } from "@travel-guide/shared";
@@ -25,10 +23,6 @@ import type { Item } from "@travel-guide/shared";
 /** 行卡片之间固定间距（与 ItemListRow feedCard 的 marginBottom 一致） */
 const ROW_GAP = 12;
 
-/** 邻居弹开：被越过时快速让位 */
-const PUSH_SPRING = { damping: 22, stiffness: 380, mass: 0.9 };
-/** 松手落位：Q弹 */
-const DROP_SPRING = { damping: 16, stiffness: 300, mass: 0.9 };
 /** 长按激活时长 */
 const ACTIVATE_MS = 280;
 /** 自动滚动边缘/速度（过快会把卡片"甩离"手指） */
@@ -136,31 +130,11 @@ const SortableRow = memo(function SortableRow({
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
 
-  /** 本行让位量：由 reaction 在换位瞬间起一次 spring（弹开动画） */
-  const myShift = useSharedValue(0);
-
-  // 换位瞬间计算本行应让出的位移并起弹簧；提交/复位后弹回 0。
-  // reaction 只在依赖变化时触发一次，不存在逐帧重启问题。
-  useAnimatedReaction(
-    () => {
-      const ids = orderIds.value;
-      const idx = ids.indexOf(item.id);
-      const from = visualFrom.value;
-      const to = targetIndex.value;
-      if (idx < 0 || from < 0 || to < 0 || to === from) return 0;
-      if (idx === from) return 0; // 被拖拽行走 dragTy
-      const hFrom = heights.value[ids[from]] || 0;
-      if (from < to && idx > from && idx <= to) return -hFrom;
-      if (from > to && idx >= to && idx < from) return hFrom;
-      return 0;
-    },
-    (sh, prev) => {
-      if (sh !== prev) {
-        myShift.value = withSpring(sh, PUSH_SPRING);
-      }
-    },
-  );
-
+  /**
+   * 连续挤开：每帧根据被拖卡片的位置 T（原始槽位顶 + dragTy）
+   * 纯函数式计算本行让位量——卡片压过来多少，就让多少，
+   * 完全越过时恰好让出一个卡位。无状态、无弹簧重启、逐帧丝滑。
+   */
   const animatedStyle = useAnimatedStyle(() => {
     const ids = orderIds.value;
     const idx = ids.indexOf(item.id);
@@ -175,10 +149,28 @@ const SortableRow = memo(function SortableRow({
         elevation: 12,
       };
     }
-    return {
-      transform: [{ translateY: myShift.value }],
-      zIndex: 0,
-    };
+    const hs = heights.value;
+    // 本行槽位顶部（按原始顺序累加，含间距）
+    let topJ = 0;
+    for (let i = 0; i < idx; i++) topJ += hs[ids[i]] || 0;
+    const hJ = hs[ids[idx]] || 1;
+    const hFrom = hs[ids[from]] || 1;
+    let topFrom = 0;
+    for (let i = 0; i < from; i++) topFrom += hs[ids[i]] || 0;
+    const T = topFrom + dragTy.value; // 被拖卡片当前视觉顶部
+    const B = T + hFrom; // 底部
+    let sh = 0;
+    if (idx > from) {
+      // 下方行：拖拽底边压过本行槽位的进度 → 向上让
+      const progress = Math.min(1, Math.max(0, (B - topJ) / hJ));
+      sh = -hFrom * progress;
+    } else {
+      // 上方行：拖拽顶边越过本行槽底的进度 → 向下让
+      const slotBottom = topJ + hJ;
+      const progress = Math.min(1, Math.max(0, (slotBottom - T) / hJ));
+      sh = hFrom * progress;
+    }
+    return { transform: [{ translateY: sh }] };
   });
 
   const handlePan = useMemo(() => {
