@@ -79,6 +79,7 @@ const SortableRow = memo(function SortableRow({
   tops,
   scrollWindow,
   lastAutoDir,
+  scrollY,
   onRemove,
   onDragBegin,
   onDragEnd,
@@ -101,6 +102,8 @@ const SortableRow = memo(function SortableRow({
   tops: SharedValue<Record<string, number>>;
   scrollWindow: SharedValue<ScrollWindow | null>;
   lastAutoDir: SharedValue<number>;
+  /** 列表实时滚动偏移（内容系换算用），由父容器 onScroll 持续更新 */
+  scrollY?: SharedValue<number>;
   onRemove?: (item: Item) => void;
   onDragBegin: () => void;
   onDragEnd: () => void;
@@ -110,6 +113,22 @@ const SortableRow = memo(function SortableRow({
   commitOrder: (ids: OrderIds) => void;
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
+
+  /**
+   * 抓取偏移：拖拽开始时「手指内容系Y − 卡片真实顶」。
+   * 此后每帧：卡片应有顶部 = 手指内容系Y − grabOffset，
+   * 与 scrollY 无关地始终粘在手指下（自动滚动时同样成立）。
+   */
+  const grabOffset = useSharedValue<number | null>(null);
+
+  /** 手指屏幕Y → 内容系Y；窗口/scrollY 未就绪时返回 null */
+  const fingerContentY = (absoluteY: number): number | null => {
+    "worklet";
+    const win = scrollWindow.value;
+    if (!win) return null;
+    const sy = scrollY?.value ?? 0;
+    return absoluteY - win.top + sy;
+  };
 
   /**
    * 连续挤开：每帧根据被拖卡片真实位置 T（真实Y + dragTy）
@@ -170,6 +189,7 @@ const SortableRow = memo(function SortableRow({
         visualFrom.value = idx;
         targetIndex.value = idx;
         dragTy.value = 0;
+        grabOffset.value = null; // 首个 update 帧锁定抓取偏移
         runOnJS(onDragBegin)();
         runOnJS(hapticTick)();
       })
@@ -179,18 +199,30 @@ const SortableRow = memo(function SortableRow({
         const ids = orderIds.value;
         const hs = heights.value;
         const ys = tops.value;
+        const topFrom = ys[ids[from]];
+        const hFrom = hs[ids[from]];
         // 几何未测量完成时不判定（防止只震动手感、列表却不动）
-        if (!hs[ids[from]] || ys[ids[from]] == null) return;
-        const t = computeTarget(from, e.translationY, ids, ys, hs);
+        if (topFrom == null || !hFrom) return;
+
+        // —— 统一坐标系：手指屏幕Y → 内容系Y ——
+        if (grabOffset.value == null) {
+          const f0 = fingerContentY(e.absoluteY);
+          if (f0 != null) grabOffset.value = f0 - topFrom;
+        }
+        const f = fingerContentY(e.absoluteY);
+        // scrollY/窗口就绪前退化为屏幕位移模式（不滚动时两者等价）
+        const tyContent =
+          f != null && grabOffset.value != null
+            ? f - grabOffset.value
+            : e.translationY;
+        dragTy.value = tyContent;
+
+        const t = computeTarget(from, tyContent, ids, ys, hs);
         if (t !== targetIndex.value) {
-          // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出
           targetIndex.value = t;
           runOnJS(hapticTick)();
         }
-        // 完全跟手：卡片严格按手指原始位移移动，零跳变；
-        // 其他行瞬时让位形成最终排列预览
-        dragTy.value = e.translationY;
-        // 边缘自动滚动
+        // 边缘自动滚动（边缘检测用屏幕系，滚动量经 onScroll 回流补偿）
         const win = scrollWindow.value;
         if (win) {
           const dir =
@@ -247,6 +279,7 @@ const SortableRow = memo(function SortableRow({
     heights,
     tops,
     scrollWindow,
+    scrollY,
     lastAutoDir,
     setAutoDir,
     onDragBegin,
@@ -335,6 +368,8 @@ type Props = {
   onRemove?: (item: Item) => void;
   getScrollWindow?: () => ScrollWindow | null;
   onAutoScroll?: (dy: number) => void;
+  /** 列表实时滚动偏移（SharedValue），用于手指坐标→内容系换算 */
+  scrollY?: SharedValue<number>;
 };
 
 /**
@@ -354,6 +389,7 @@ export function SortableDayList({
   onRemove,
   getScrollWindow,
   onAutoScroll,
+  scrollY,
 }: Props) {
   const [order, setOrder] = useState<Item[]>(items);
   const activeIndex = useSharedValue(-1);
@@ -492,6 +528,7 @@ export function SortableDayList({
           heights={heights}
           tops={tops}
           scrollWindow={scrollWindow}
+          scrollY={scrollY}
           lastAutoDir={lastAutoDir}
           onRemove={onRemove}
           onDragBegin={onDragBegin}

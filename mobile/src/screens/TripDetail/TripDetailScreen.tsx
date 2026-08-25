@@ -14,6 +14,7 @@ import {
   Gesture,
   GestureDetector,
 } from "react-native-gesture-handler";
+import { useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { GenerateProgressEvent } from "@travel-guide/shared";
@@ -105,6 +106,8 @@ export function TripDetailScreen({ route, navigation }: Props) {
   // 排序自动滚动：记录列表滚动位置与容器屏幕范围
   const sheetListRef = useRef<ScrollView>(null);
   const sheetOffsetY = useRef(0);
+  // 实时滚动偏移（UI 线程可读）：拖拽判定把手指屏幕坐标换算到内容系的关键
+  const sheetScrollY = useSharedValue(0);
   const sheetWindowRef = useRef<{ top: number; height: number } | null>(null);
   // 地图选点：注入是否成功
   const pickInjectedRef = useRef(false);
@@ -815,6 +818,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
               scrollEventThrottle={16}
               onScroll={(e) => {
                 sheetOffsetY.current = e.nativeEvent.contentOffset.y;
+                sheetScrollY.value = e.nativeEvent.contentOffset.y;
               }}
             >
             {routeOptions.length > 0 ? (
@@ -896,6 +900,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 canEdit={canEdit}
                 dragDisabled={actionBusy || !editingDay}
                 scrollGesture={sheetScrollGesture}
+                scrollY={sheetScrollY}
                 getScrollWindow={() => {
                   // 容器在窗口中的位置拖拽期间不变；每次开拖刷新一次，
                   // 返回上一帧的缓存值（异步测量下一帧生效）
