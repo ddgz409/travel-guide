@@ -141,6 +141,8 @@ function SortableRow({
   });
 
   const startDrag = useCallback(() => {
+    // 纯 JS 线程函数；手势回调里必须用 runOnJS(startDrag)() 调用，
+    // 直接在 worklet 里调用普通 JS 函数会静默失败（拖拽无响应的根因）
     if (activeIndex.value >= 0) return;
     const idx = orderIds.value.indexOf(item.id);
     if (idx < 0) return;
@@ -148,10 +150,9 @@ function SortableRow({
     dragTy.value = 0;
     targetIndex.value = idx;
     Vibration.vibrate(TICK_MS);
-    runOnJS(notifyDrag)(true);
-    runOnJS(onDragBegin)();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id]);
+    notifyDrag(true);
+    onDragBegin();
+  }, [item.id, activeIndex, orderIds, dragTy, targetIndex, notifyDrag, onDragBegin]);
 
   /**
    * 拖拽只从 ≡ 手柄发起：按住即拖（无长按等待），其余卡片区域保持
@@ -162,7 +163,9 @@ function SortableRow({
       .minDistance(4)
       .maxPointers(1)
       .enabled(canEdit && !dragDisabled)
-      .onStart(() => startDrag())
+      .onStart(() => {
+        runOnJS(startDrag)();
+      })
       .onUpdate((e) => {
         const from = activeIndex.value;
         if (from < 0) return;
@@ -246,42 +249,40 @@ function SortableRow({
   const editing = canEdit && !dragDisabled;
 
   return (
-    <GestureDetector gesture={handlePan}>
-      <Animated.View
-        style={animatedStyle}
-        collapsable={false}
-        onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
-      >
-        {renderRow(item)}
-        {editing ? (
-          <View style={styles.cluster} pointerEvents="box-none">
-            <GestureDetector gesture={handlePan}>
-              <Pressable
-                style={[styles.clusterBtn, styles.clusterGrip]}
-                disabled={dragDisabled}
-                hitSlop={4}
-              >
-                <Text style={styles.clusterIcon}>≡</Text>
-              </Pressable>
-            </GestureDetector>
+    <Animated.View
+      style={animatedStyle}
+      collapsable={false}
+      onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
+    >
+      {renderRow(item)}
+      {editing ? (
+        <View style={styles.cluster} pointerEvents="box-none">
+          <GestureDetector gesture={handlePan}>
             <Pressable
-              style={styles.clusterBtn}
-              onPress={() => moveBy(item.id, -1)}
+              style={[styles.clusterBtn, styles.clusterGrip]}
+              disabled={dragDisabled}
               hitSlop={4}
             >
-              <Text style={styles.clusterIcon}>↑</Text>
+              <Text style={styles.clusterIcon}>≡</Text>
             </Pressable>
-            <Pressable
-              style={styles.clusterBtn}
-              onPress={() => moveBy(item.id, 1)}
-              hitSlop={4}
-            >
-              <Text style={styles.clusterIcon}>↓</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </Animated.View>
-    </GestureDetector>
+          </GestureDetector>
+          <Pressable
+            style={styles.clusterBtn}
+            onPress={() => moveBy(item.id, -1)}
+            hitSlop={4}
+          >
+            <Text style={styles.clusterIcon}>↑</Text>
+          </Pressable>
+          <Pressable
+            style={styles.clusterBtn}
+            onPress={() => moveBy(item.id, 1)}
+            hitSlop={4}
+          >
+            <Text style={styles.clusterIcon}>↓</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </Animated.View>
   );
 }
 
