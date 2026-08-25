@@ -17,21 +17,23 @@ import type { Item } from "@travel-guide/shared";
 /** 行卡片之间固定间距（与 ItemListRow feedCard 的 marginBottom 一致） */
 const ROW_GAP = 12;
 
-/** 拖拽中被挤开卡片的让位动画：欠阻尼带明显回弹，Q 弹不散架 */
-const PUSH_SPRING = { damping: 15, stiffness: 230, mass: 0.9 };
-/** 松手后的归位动画：更弹一点的落位，像果冻一样墩一下 */
-const DROP_SPRING = { damping: 13, stiffness: 320, mass: 0.9 };
-
-/** 指尖进入滚动容器上下这段像素内触发自动滚动 */
+/** 邻居让位：快而不僵，轻微Q弹 */
+const PUSH_SPRING = { damping: 20, stiffness: 360, mass: 0.9 };
+/** 松手落位 */
+const DROP_SPRING = { damping: 18, stiffness: 340, mass: 0.9 };
+/** 磁吸换位：跟指但瞬间呈现最终排列 */
+const SNAP_SPRING = { damping: 26, stiffness: 520, mass: 0.9 };
+/** 长按激活时长 */
+const ACTIVATE_MS = 300;
+/** 自动滚动边缘/速度 */
 const AUTO_EDGE = 72;
-/** 自动滚动速度（px/帧） */
 const AUTO_SPEED = 7;
-/** 换位震动时长 ms */
+/** 震动 ms */
 const TICK_MS = 8;
 
 type OrderIds = string[];
 
-/** 根据拖拽位移，计算应插入的目标序号（UI 线程 worklet）。 */
+/** 拖拽位移 → 目标序号（worklet） */
 function computeTarget(
   from: number,
   ty: number,
@@ -58,27 +60,47 @@ function computeTarget(
   return n - 1;
 }
 
+/** 目标槽位相对于原位置的位移（worklet）：负=上移 */
+function slotDisplacement(
+  from: number,
+  to: number,
+  orderIds: OrderIds,
+  heights: Record<string, number>,
+): number {
+  "worklet";
+  let d = 0;
+  if (to > from) {
+    for (let i = from + 1; i <= to; i++) d -= heights[orderIds[i]] || 0;
+  } else if (to < from) {
+    for (let i = to; i < from; i++) d += heights[orderIds[i]] || 0;
+  }
+  return d;
+}
+
 export type ScrollWindow = { top: number; height: number };
 
 type RowProps = {
   item: Item;
   canEdit: boolean;
   dragDisabled: boolean;
-  /** 包裹外层竖向 ScrollView 的原生手势，用于与手柄拖拽协调 */
   scrollGesture?: NativeGesture;
   renderRow: (item: Item) => React.ReactElement;
   activeIndex: SharedValue<number>;
+  /** 手指原始位移 */
   dragTy: SharedValue<number>;
+  /** 磁吸基准：最近一次换位时的手指位移 */
+  fingerBase: SharedValue<number>;
   targetIndex: SharedValue<number>;
   orderIds: SharedValue<OrderIds>;
   heights: SharedValue<Record<string, number>>;
-  /** 滚动容器的屏幕位置（拖拽开始时由 JS 线程测量写入） */
   scrollWindow: SharedValue<ScrollWindow | null>;
   lastAutoDir: SharedValue<number>;
   onDragBegin: () => void;
   onDragEnd: () => void;
   setAutoDir: (dir: number) => void;
   moveBy: (id: string, delta: number) => void;
+  /** 编辑态左侧 ✕ 删除回调（不传则不显示 ✕） */
+  onRemove?: (item: Item) => void;
   onMeasure: (id: string, height: number) => void;
   notifyDrag: (active: boolean) => void;
   commitOrder: (ids: OrderIds) => void;
@@ -92,6 +114,7 @@ function SortableRow({
   renderRow,
   activeIndex,
   dragTy,
+  fingerBase,
   targetIndex,
   orderIds,
   heights,
@@ -101,6 +124,7 @@ function SortableRow({
   onDragEnd,
   setAutoDir,
   moveBy,
+  onRemove,
   onMeasure,
   notifyDrag,
   commitOrder,
@@ -113,7 +137,7 @@ function SortableRow({
       return { transform: [{ translateY: 0 }, { scale: 1 }], zIndex: 0, elevation: 0 };
     }
     if (idx === from) {
-      // 被拖拽的卡片跟随手指并轻微放大，强化「拿起来了」的手感
+      // 被拖拽卡片：磁吸跟随（dragTy 已含槽位位移），微微放大
       return {
         transform: [{ translateY: dragTy.value }, { scale: 1.02 }],
         zIndex: 100,
@@ -121,7 +145,6 @@ function SortableRow({
         opacity: 0.97,
       };
     }
-    // 其余卡片被挤开/回落：欠阻尼弹簧 + 轻微压扁回弹，Q 弹的果冻手感
     let shift = 0;
     const to = targetIndex.value;
     if (to >= 0 && to !== from) {
@@ -133,50 +156,52 @@ function SortableRow({
     return {
       transform: [
         { translateY: withSpring(shift, PUSH_SPRING) },
-        { scale: withSpring(moving ? 0.97 : 1, PUSH_SPRING) },
+        { scale: withSpring(moving ? 0.98 : 1, PUSH_SPRING) },
       ],
       zIndex: 0,
       elevation: 0,
     };
   });
 
-  const startDrag = useCallback(() => {
-    // 纯 JS 线程函数；手势回调里必须用 runOnJS(startDrag)() 调用，
-    // 直接在 worklet 里调用普通 JS 函数会静默失败（拖拽无响应的根因）
-    if (activeIndex.value >= 0) return;
-    const idx = orderIds.value.indexOf(item.id);
-    if (idx < 0) return;
-    activeIndex.value = idx;
-    dragTy.value = 0;
-    targetIndex.value = idx;
+  const hapticTick = useCallback(() => {
     Vibration.vibrate(TICK_MS);
-    notifyDrag(true);
-    onDragBegin();
-  }, [item.id, activeIndex, orderIds, dragTy, targetIndex, notifyDrag, onDragBegin]);
+  }, []);
 
   /**
-   * 拖拽只从 ≡ 手柄发起：按住即拖（无长按等待），其余卡片区域保持
-   * 正常的滚动与点击，彻底消除「想滚动却触发了拖拽」的手感问题。
+   * 编辑态长按任意位置启动拖拽（300ms，震动提示），随后磁吸跟随：
+   * 卡片实时吸附到目标槽位，拖动过程中即可看到最终排列。
    */
   const handlePan = useMemo(() => {
     let g = Gesture.Pan()
-      .minDistance(2)
+      .activateAfterLongPress(ACTIVATE_MS)
       .maxPointers(1)
       .enabled(canEdit && !dragDisabled)
       .onStart(() => {
-        runOnJS(startDrag)();
+        if (activeIndex.value >= 0) return;
+        const idx = orderIds.value.indexOf(item.id);
+        if (idx < 0) return;
+        activeIndex.value = idx;
+        dragTy.value = 0;
+        fingerBase.value = 0;
+        targetIndex.value = idx;
+        runOnJS(notifyDrag)(true);
+        runOnJS(onDragBegin)();
       })
       .onUpdate((e) => {
         const from = activeIndex.value;
         if (from < 0) return;
-        dragTy.value = e.translationY;
-        targetIndex.value = computeTarget(
-          from,
-          e.translationY,
-          orderIds.value,
-          heights.value,
-        );
-        // 指尖贴近容器上下边缘时自动滚动（长列表一拖到底）
+        const t = computeTarget(from, e.translationY, orderIds.value, heights.value);
+        if (t !== targetIndex.value) {
+          // 换位：重置磁吸基准并轻震一下
+          targetIndex.value = t;
+          fingerBase.value = e.translationY;
+          runOnJS(notifyDrag)(true);
+          runOnJS(hapticTick)();
+        }
+        // 最终位置 = 目标槽位位移 + 基准内的手指微调
+        const disp = slotDisplacement(from, t, orderIds.value, heights.value);
+        dragTy.value = withSpring(disp + (e.translationY - fingerBase.value), SNAP_SPRING);
+        // 边缘自动滚动
         const win = scrollWindow.value;
         if (win) {
           const dir =
@@ -194,29 +219,21 @@ function SortableRow({
       .onFinalize(() => {
         lastAutoDir.value = 0;
         runOnJS(setAutoDir)(0);
+        runOnJS(notifyDrag)(false);
         runOnJS(onDragEnd)();
         const from = activeIndex.value;
         const to = targetIndex.value;
         if (from < 0) return;
         if (to >= 0 && to !== from) {
-          // 先把卡片弹簧滑到目标槽位的视觉位置，落位动画结束后再切换数据，
-          // 布局与变换同帧交换，消除「松手瞬移」的生硬感。
           const ids = orderIds.value.slice();
           const [moved] = ids.splice(from, 1);
           ids.splice(to, 0, moved);
-          const hs = heights.value;
-          let land = dragTy.value;
-          if (to > from) {
-            for (let i = from + 1; i <= to; i++) land -= hs[ids[i]] || 0;
-          } else {
-            for (let i = to; i < from; i++) land += hs[ids[i]] || 0;
-          }
-          dragTy.value = withSpring(land, DROP_SPRING, (finished) => {
+          const exact = slotDisplacement(from, to, orderIds.value, heights.value);
+          dragTy.value = withSpring(exact, DROP_SPRING, (finished) => {
             if (!finished) return;
             runOnJS(commitOrder)(ids);
           });
         } else {
-          // 未跨越阈值：弹回原位
           dragTy.value = withSpring(0, DROP_SPRING, () => {
             activeIndex.value = -1;
             targetIndex.value = -1;
@@ -233,57 +250,84 @@ function SortableRow({
     scrollGesture,
     activeIndex,
     dragTy,
+    fingerBase,
     targetIndex,
     orderIds,
     heights,
     scrollWindow,
     lastAutoDir,
-    startDrag,
     setAutoDir,
     onDragBegin,
     onDragEnd,
     notifyDrag,
     commitOrder,
+    hapticTick,
   ]);
 
   const editing = canEdit && !dragDisabled;
 
   return (
-    <Animated.View
-      style={animatedStyle}
-      collapsable={false}
-      onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
-    >
-      {renderRow(item)}
-      {editing ? (
-        <View style={styles.cluster} pointerEvents="box-none">
-          <GestureDetector gesture={handlePan}>
-            <Pressable style={({ pressed }) => [styles.clusterBtn, styles.clusterGripBtn, pressed && styles.clusterBtnPressed]}>
-              <Text style={[styles.clusterGripIcon]}>☰</Text>
-            </Pressable>
-          </GestureDetector>
-          <View style={styles.clusterDivider} />
-          <Pressable
-            style={({ pressed }) => [
-              styles.clusterBtn,
-              pressed && styles.clusterBtnPressed,
-            ]}
-            onPress={() => moveBy(item.id, -1)}
-          >
-            <Text style={styles.clusterIcon}>↑</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.clusterBtn,
-              pressed && styles.clusterBtnPressed,
-            ]}
-            onPress={() => moveBy(item.id, 1)}
-          >
-            <Text style={styles.clusterIcon}>↓</Text>
-          </Pressable>
-        </View>
-      ) : null}
-    </Animated.View>
+    <GestureDetector gesture={handlePan}>
+      <Animated.View
+        style={animatedStyle}
+        collapsable={false}
+        onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
+      >
+        {renderRow(item)}
+        {editing ? (
+          <>
+            {/* 左侧：↑↓ 微调 + ✕ 删除 */}
+            <View style={styles.leftControls} pointerEvents="box-none">
+              <Pressable
+                style={({ pressed }) => [
+                  styles.ctrlBtn,
+                  pressed && styles.ctrlBtnPressed,
+                ]}
+                onPress={() => moveBy(item.id, -1)}
+              >
+                <Text style={styles.ctrlArrow}>↑</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.ctrlBtn,
+                  pressed && styles.ctrlBtnPressed,
+                ]}
+                onPress={() => moveBy(item.id, 1)}
+              >
+                <Text style={styles.ctrlArrow}>↓</Text>
+              </Pressable>
+              {onRemove ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.ctrlBtn,
+                    styles.ctrlX,
+                    pressed && styles.ctrlXPressed,
+                  ]}
+                  onPress={() => onRemove(item)}
+                >
+                  <Text style={styles.ctrlXIcon}>✕</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {/* 右侧：☰ 拖拽柄（自绘三道杠，不依赖字体渲染） */}
+            <View style={styles.gripWrap} pointerEvents="box-none">
+              <GestureDetector gesture={handlePan}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.gripBtn,
+                    pressed && styles.gripBtnPressed,
+                  ]}
+                >
+                  <View style={styles.gripBar} />
+                  <View style={[styles.gripBar, styles.gripBarMid]} />
+                  <View style={styles.gripBar} />
+                </Pressable>
+              </GestureDetector>
+            </View>
+          </>
+        ) : null}
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -291,25 +335,22 @@ type Props = {
   items: Item[];
   canEdit: boolean;
   dragDisabled?: boolean;
-  /** 包裹外层竖向 ScrollView 的原生手势；传入后行内拖拽会与它协调 */
   scrollGesture?: NativeGesture;
   renderRow: (item: Item) => React.ReactElement;
   onOrderChange: (orderedIds: string[]) => void;
   onDragStateChange?: (dragging: boolean) => void;
-  /** 返回滚动容器在窗口中的位置（拖拽开始时调用一次）；不传则无自动滚动 */
+  /** 编辑态删除单条（左上 ✕） */
+  onRemove?: (item: Item) => void;
   getScrollWindow?: () => ScrollWindow | null;
-  /** 自动滚动步进：正数向下滚 */
   onAutoScroll?: (dy: number) => void;
 };
 
 /**
- * 当天行程的可排序列表。
+ * 当天行程可排序列表。
  *
- * 编辑模式下每张卡片右侧出现操作条：
- *   ≡ 按住上下拖动（按下即拖，无需长按）
- *   ↑ / ↓ 单击微调一位
- * 拖到容器上下边缘自动滚动；拿起/换位/落下均有震动反馈。
- * 拖动过程中不发请求，松手后统一回调 onOrderChange 触发重新规划。
+ * 编辑态：长按卡片 300ms 开始拖拽（震动反馈），卡片磁吸到目标槽位，
+ * 拖动全程可见最终排列；右上角 ↑↓ 可单击微调。
+ * 松手统一回调 onOrderChange 触发重新规划。
  */
 export function SortableDayList({
   items,
@@ -319,12 +360,14 @@ export function SortableDayList({
   renderRow,
   onOrderChange,
   onDragStateChange,
+  onRemove,
   getScrollWindow,
   onAutoScroll,
 }: Props) {
   const [order, setOrder] = useState<Item[]>(items);
   const activeIndex = useSharedValue(-1);
   const dragTy = useSharedValue(0);
+  const fingerBase = useSharedValue(0);
   const targetIndex = useSharedValue(-1);
   const orderIds = useSharedValue<OrderIds>(items.map((it) => it.id));
   const heights = useSharedValue<Record<string, number>>({});
@@ -345,7 +388,7 @@ export function SortableDayList({
     onDragStateChangeRef.current?.(active);
   }, []);
 
-  // ---- 自动滚动（JS 线程驱动） ----
+  // ---- 自动滚动 ----
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoDirRef = useRef(0);
 
@@ -383,15 +426,21 @@ export function SortableDayList({
     Vibration.vibrate(TICK_MS);
   }, [stopAutoScroll]);
 
-  useEffect(() => stopAutoScroll, [stopAutoScroll]);
+  // 卸载兜底：务必把外层滚动解锁
+  useEffect(
+    () => () => {
+      stopAutoScroll();
+      onDragStateChangeRef.current?.(false);
+    },
+    [stopAutoScroll],
+  );
 
   const commitOrder = useCallback(
     (ids: OrderIds) => {
-      // 同一 JS 任务内先归零全部拖拽变换、再更新顺序数据，
-      // 让布局切换与变换清零在同批 UI 更新中生效，避免闪跳。
       activeIndex.value = -1;
       targetIndex.value = -1;
       dragTy.value = 0;
+      fingerBase.value = 0;
       const map = new Map<string, Item>();
       order.forEach((it) => map.set(it.id, it));
       const next = ids
@@ -401,13 +450,12 @@ export function SortableDayList({
       orderIds.value = ids;
       onOrderChangeRef.current?.(ids);
     },
-    [order, orderIds, activeIndex, targetIndex, dragTy],
+    [order, orderIds, activeIndex, targetIndex, dragTy, fingerBase],
   );
 
-  // ---- ↑↓ 微调 ----
   const moveBy = useCallback(
     (id: string, delta: number) => {
-      if (activeIndex.value >= 0) return; // 拖拽进行中忽略
+      if (activeIndex.value >= 0) return;
       const ids = orderIds.value.slice();
       const i = ids.indexOf(id);
       const j = i + delta;
@@ -441,6 +489,7 @@ export function SortableDayList({
           renderRow={renderRow}
           activeIndex={activeIndex}
           dragTy={dragTy}
+          fingerBase={fingerBase}
           targetIndex={targetIndex}
           orderIds={orderIds}
           heights={heights}
@@ -450,6 +499,7 @@ export function SortableDayList({
           onDragEnd={onDragEnd}
           setAutoDir={setAutoDir}
           moveBy={moveBy}
+          onRemove={onRemove}
           onMeasure={onMeasure}
           notifyDrag={notifyDrag}
           commitOrder={commitOrder}
@@ -460,57 +510,75 @@ export function SortableDayList({
 }
 
 const styles = StyleSheet.create({
-  cluster: {
+  // 左上：↑↓ 微调 + ✕ 删除
+  leftControls: {
     position: "absolute",
-    right: 10,
-    top: "50%",
-    transform: [{ translateY: -62 }],
+    top: 6,
+    left: 8,
+    flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.97)",
-    borderRadius: 24,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(33,84,63,0.14)",
-    paddingVertical: 6,
-    paddingHorizontal: 5,
-    gap: 7,
-    shadowColor: "#0a2540",
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    gap: 5,
   },
-  clusterDivider: {
-    alignSelf: "stretch",
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(33,84,63,0.14)",
-    marginHorizontal: 7,
-  },
-  clusterBtn: {
-    width: 42,
-    height: 34,
-    borderRadius: 14,
+  ctrlBtn: {
+    width: 32,
+    height: 27,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(255,255,255,0.97)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(33,84,63,0.20)",
+    shadowColor: "#0a2540",
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
   },
-  clusterBtnPressed: { backgroundColor: "#E3F2E9" },
-  clusterGripBtn: {
-    width: 42,
-    height: 40,
-    borderRadius: 16,
-    backgroundColor: "#DEF2E4",
-  },
-  clusterGripIcon: {
-    fontSize: 19,
-    lineHeight: 22,
+  ctrlBtnPressed: { backgroundColor: "#DEF2E4" },
+  ctrlArrow: {
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: "900",
     color: "#1B7A43",
+    textAlign: "center",
+    includeFontPadding: false,
+  },
+  ctrlX: { borderColor: "rgba(198,40,40,0.30)" },
+  ctrlXPressed: { backgroundColor: "#FDEBEB" },
+  ctrlXIcon: {
+    fontSize: 12,
+    lineHeight: 14,
     fontWeight: "800",
-    letterSpacing: -1,
+    color: "#C62828",
+    includeFontPadding: false,
   },
-  clusterIcon: {
-    fontSize: 16,
-    lineHeight: 19,
-    color: "#45605A",
-    fontWeight: "700",
+  // 右侧：☰ 拖拽柄
+  gripWrap: {
+    position: "absolute",
+    top: 6,
+    right: 8,
   },
+  gripBtn: {
+    width: 36,
+    height: 27,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DEF2E4",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(27,122,67,0.35)",
+    shadowColor: "#0a2540",
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  gripBtnPressed: { backgroundColor: "#C4E7CF" },
+  gripBar: {
+    width: 16,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#1B7A43",
+  },
+  gripBarMid: { marginVertical: 2.5 },
 });

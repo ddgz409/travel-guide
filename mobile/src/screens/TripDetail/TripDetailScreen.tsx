@@ -673,7 +673,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
       {pickMode ? (
         <View style={[styles.pickBar, { top: pickBarTop }]}>
           <Text style={styles.pickBarText}>
-            点击地图选择要添加的地点，选好后在此列表确认
+            👇 在地图上点击要添加的位置，选好后在此列表确认
           </Text>
           <Pressable onPress={cancelPick} hitSlop={10}>
             <Text style={styles.pickCancelText}>取消</Text>
@@ -681,7 +681,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <View style={[styles.topOverlay, { paddingTop: topPad }]}>
+      <View style={[styles.topOverlay, { paddingTop: topPad }]} pointerEvents="box-none">
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
@@ -709,7 +709,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
       </View>
 
       {days.length > 1 ? (
-        <View style={[styles.filterBar, { top: filterTop }]}>
+        <View style={[styles.filterBar, { top: filterTop }]} pointerEvents="box-none">
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -933,13 +933,11 @@ export function TripDetailScreen({ route, navigation }: Props) {
                           ? () => openPoiDetail(poiSheetFromTripItem(item))
                           : undefined
                       }
-                      onDelete={
-                        canEdit && editingDay && item.type !== "transport"
-                          ? () => void confirmDelete(item)
-                          : undefined
-                      }
                     />
                   );
+                }}
+                onRemove={(item) => {
+                  if (item.type !== "transport") void confirmDelete(item);
                 }}
                 onOrderChange={(ids) => void handleReorder(ids)}
                 onDragStateChange={setListScrollEnabled}

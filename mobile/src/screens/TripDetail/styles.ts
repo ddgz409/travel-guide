@@ -77,7 +77,7 @@ export const styles = StyleSheet.create({
   },
   sheetList: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 64,
   },
   content: { paddingHorizontal: 16, paddingBottom: 48 },
   title: { fontSize: 24, fontWeight: "800", color: colors.ink, marginTop: 16 },
