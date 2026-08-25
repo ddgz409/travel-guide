@@ -204,7 +204,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         on_chunk: Any | None = None,
     ) -> dict[str, Any]:
         """调用 LLM 并解析为 JSON 对象。on_chunk 可选，流式回调已累积文本。"""
@@ -364,7 +364,47 @@ class LLMClient:
             raise LLMError(f"{self.label} 响应格式异常: {data!r}") from e
 
     @staticmethod
-    def _parse_json(content: str) -> dict[str, Any]:
+    def _repair_truncated_json(text: str) -> str | None:
+        """截断的 LLM JSON 抢救：从最后一个完整元素处截断并补全括号。
+
+        返回可解析的 JSON 文本；救不回返回 None。
+        """
+        last = max(text.rfind("}"), text.rfind("]"))
+        if last <= 0:
+            return None
+        s = text[: last + 1]
+        # 引号不平衡说明截断点落在字符串里，向前回退到上一个安全引号
+        while s.count('"') % 2 == 1:
+            idx = s.rfind('"')
+            if idx <= 0:
+                return None
+            s = s[:idx]
+        s = s.rstrip().rstrip(",")
+        # 统计未闭合的 { [（忽略字符串内容）
+        stack: list[str] = []
+        in_str = False
+        esc = False
+        for ch in s:
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch in "{[":
+                    stack.append(ch)
+                elif ch in "}]":
+                    if stack:
+                        stack.pop()
+        s += "".join("]" if c == "[" else "}" for c in reversed(stack))
+        return s
+
+    @classmethod
+    def _parse_json(cls, content: str) -> dict[str, Any]:
         text = content.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -373,6 +413,20 @@ class LLMClient:
         try:
             result = json.loads(text)
         except json.JSONDecodeError as e:
+            # 截断抢救：LLM 达到 max_tokens 时 JSON 会断在半截，
+            # 尝试补全括号解析，能救回多少算多少
+            repaired = cls._repair_truncated_json(text)
+            salvaged: Any = None
+            if repaired:
+                try:
+                    salvaged = json.loads(repaired)
+                except json.JSONDecodeError:
+                    salvaged = None
+            if isinstance(salvaged, dict) and salvaged:
+                logger.warning(
+                    "LLM 输出疑似被截断（%s），已抢救解析出部分结果", e
+                )
+                return salvaged
             raise LLMError(
                 f"LLM 输出无法解析为 JSON: {e}\n原始内容: {content[:500]}"
             ) from e
