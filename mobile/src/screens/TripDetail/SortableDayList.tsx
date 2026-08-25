@@ -31,48 +31,29 @@ const TICK_MS = 8;
 
 type OrderIds = string[];
 
-/** 拖拽位移 → 目标序号（worklet） */
+/** 拖拽位移 → 目标序号（worklet）：用每行真实渲染 Y 坐标判定 */
 function computeTarget(
   from: number,
   ty: number,
   orderIds: OrderIds,
+  tops: Record<string, number>,
   heights: Record<string, number>,
 ): number {
   "worklet";
   const n = orderIds.length;
-  let draggedTop = 0;
-  for (let i = 0; i < from; i++) draggedTop += heights[orderIds[i]] || 0;
+  const topFrom = tops[orderIds[from]];
   const hFrom = heights[orderIds[from]] || 0;
-  const draggedCenter = draggedTop + hFrom / 2 + ty;
-  let top = 0;
+  if (topFrom == null) return from;
+  const draggedCenter = topFrom + hFrom / 2 + ty;
   for (let i = 0; i < n; i++) {
-    if (i === from) {
-      top += hFrom;
-      continue;
-    }
-    const h = heights[orderIds[i]] || 0;
-    const center = top + h / 2;
-    if (draggedCenter < center) return i;
-    top += h;
+    if (i === from) continue;
+    const id = orderIds[i];
+    const t = tops[id];
+    const h = heights[id] || 0;
+    if (t == null) continue;
+    if (draggedCenter < t + h / 2) return i;
   }
   return n - 1;
-}
-
-/** 目标槽位相对于原位置的位移（worklet）：负=上移 */
-function slotDisplacement(
-  from: number,
-  to: number,
-  orderIds: OrderIds,
-  heights: Record<string, number>,
-): number {
-  "worklet";
-  let d = 0;
-  if (to > from) {
-    for (let i = from + 1; i <= to; i++) d -= heights[orderIds[i]] || 0;
-  } else if (to < from) {
-    for (let i = to; i < from; i++) d += heights[orderIds[i]] || 0;
-  }
-  return d;
 }
 
 export type ScrollWindow = { top: number; height: number };
@@ -95,6 +76,7 @@ const SortableRow = memo(function SortableRow({
   targetIndex,
   orderIds,
   heights,
+  tops,
   scrollWindow,
   lastAutoDir,
   onRemove,
@@ -116,6 +98,7 @@ const SortableRow = memo(function SortableRow({
   targetIndex: SharedValue<number>;
   orderIds: SharedValue<OrderIds>;
   heights: SharedValue<Record<string, number>>;
+  tops: SharedValue<Record<string, number>>;
   scrollWindow: SharedValue<ScrollWindow | null>;
   lastAutoDir: SharedValue<number>;
   onRemove?: (item: Item) => void;
@@ -123,13 +106,13 @@ const SortableRow = memo(function SortableRow({
   onDragEnd: () => void;
   setAutoDir: (dir: number) => void;
   moveBy: (id: string, delta: number) => void;
-  onMeasure: (id: string, height: number) => void;
+  onMeasure: (id: string, y: number, height: number) => void;
   commitOrder: (ids: OrderIds) => void;
 }) {
   const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
 
   /**
-   * 连续挤开：每帧根据被拖卡片的位置 T（原始槽位顶 + dragTy）
+   * 连续挤开：每帧根据被拖卡片真实位置 T（真实Y + dragTy）
    * 纯函数式计算本行让位量——卡片压过来多少，就让多少，
    * 完全越过时恰好让出一个卡位。无状态、无弹簧重启、逐帧丝滑。
    */
@@ -148,17 +131,16 @@ const SortableRow = memo(function SortableRow({
       };
     }
     const hs = heights.value;
-    // 本行槽位顶部（按原始顺序累加，含间距）
-    let topJ = 0;
-    for (let i = 0; i < idx; i++) topJ += hs[ids[i]] || 0;
+    const ys = tops.value;
+    // 真实渲染坐标（layout.y），不做任何累加推算
+    const topJ = ys[ids[idx]];
     const hJ = hs[ids[idx]];
+    const topFrom = ys[ids[from]];
     const hFrom = hs[ids[from]];
-    // 行高未就绪：不产生位移（与判定逻辑同源，保证视觉与判定一致）
-    if (!hJ || !hFrom) {
+    // 几何未就绪：不产生位移（与判定逻辑同源，保证视觉与判定一致）
+    if (topJ == null || !hJ || topFrom == null || !hFrom) {
       return { transform: [{ translateY: 0 }], zIndex: 0 };
     }
-    let topFrom = 0;
-    for (let i = 0; i < from; i++) topFrom += hs[ids[i]] || 0;
     const T = topFrom + dragTy.value; // 被拖卡片当前视觉顶部
     const B = T + hFrom; // 底部
     let sh = 0;
@@ -196,9 +178,10 @@ const SortableRow = memo(function SortableRow({
         if (from < 0) return;
         const ids = orderIds.value;
         const hs = heights.value;
-        // 行高未测量完成时不判定（防止只震动手感、列表却不动）
-        if (!hs[ids[from]]) return;
-        const t = computeTarget(from, e.translationY, ids, hs);
+        const ys = tops.value;
+        // 几何未测量完成时不判定（防止只震动手感、列表却不动）
+        if (!hs[ids[from]] || ys[ids[from]] == null) return;
+        const t = computeTarget(from, e.translationY, ids, ys, hs);
         if (t !== targetIndex.value) {
           // 换位：让位量由各行 animatedStyle 依据 targetIndex 直接算出
           targetIndex.value = t;
@@ -233,7 +216,7 @@ const SortableRow = memo(function SortableRow({
         const ty = dragTy.value;
         const to =
           Math.abs(ty) > 8
-            ? computeTarget(from, ty, orderIds.value, heights.value)
+            ? computeTarget(from, ty, orderIds.value, tops.value, heights.value)
             : targetIndex.value;
         // 全部同步复位：不留落位弹簧与让位量的叠加窗口（此前
         // 「移动一次后卡片消失/空白」就是两者叠加把卡片推出两格）
@@ -262,6 +245,7 @@ const SortableRow = memo(function SortableRow({
     targetIndex,
     orderIds,
     heights,
+    tops,
     scrollWindow,
     lastAutoDir,
     setAutoDir,
@@ -277,7 +261,7 @@ const SortableRow = memo(function SortableRow({
   return (
     <View
       collapsable={false}
-      onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
+      onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
     >
       <Animated.View style={[styles.rowInner, animatedStyle]}>
         {editing ? (
@@ -378,6 +362,7 @@ export function SortableDayList({
   const targetIndex = useSharedValue(-1);
   const orderIds = useSharedValue<OrderIds>(items.map((it) => it.id));
   const heights = useSharedValue<Record<string, number>>({});
+  const tops = useSharedValue<Record<string, number>>({});
   const scrollWindow = useSharedValue<ScrollWindow | null>(null);
   const lastAutoDir = useSharedValue(0);
   const onOrderChangeRef = useRef(onOrderChange);
@@ -477,14 +462,16 @@ export function SortableDayList({
   );
 
   const onMeasure = useCallback(
-    (id: string, h: number) => {
-      // 布局高度已包含卡片下外边距（行距），不能再额外加间距，
-      // 否则列表越长累计偏差越大，判定线与视觉线错位（表现为乱跳）
-      if (h > 0 && heights.value[id] !== h) {
+    (id: string, y: number, h: number) => {
+      // 直接记录真实渲染几何：y=行在列表内容中的绝对偏移，
+      // h=行高。判定与挤开动画全部用真实坐标，不做累加推算。
+      if (h <= 0) return;
+      if (heights.value[id] !== h || tops.value[id] !== y) {
         heights.value = { ...heights.value, [id]: h };
+        tops.value = { ...tops.value, [id]: y };
       }
     },
-    [heights],
+    [heights, tops],
   );
 
   return (
@@ -503,6 +490,7 @@ export function SortableDayList({
           targetIndex={targetIndex}
           orderIds={orderIds}
           heights={heights}
+          tops={tops}
           scrollWindow={scrollWindow}
           lastAutoDir={lastAutoDir}
           onRemove={onRemove}
