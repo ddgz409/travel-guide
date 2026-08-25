@@ -99,6 +99,10 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [editingDay, setEditingDay] = useState(false);
   // 长按拖拽中禁用外层滚动，避免与排序手势冲突
   const [listScrollEnabled, setListScrollEnabled] = useState(true);
+  // 退出编辑时强制解锁滚动（防拖拽异常残留锁死）
+  useEffect(() => {
+    if (!editingDay) setListScrollEnabled(true);
+  }, [editingDay]);
   // 外层竖向 ScrollView 的原生手势：行内拖拽 Pan 与其 blocksExternalGesture，
   // 避免编辑模式启用大量长按拖拽手势时与原生滚动死锁（页面卡死）。
   const sheetScrollGesture = useMemo(() => Gesture.Native(), []);
@@ -496,17 +500,9 @@ export function TripDetailScreen({ route, navigation }: Props) {
   function startPickMode() {
     if (!canEdit || !currentDay) return;
     setPoiSheet(null);
-    pickInjectedRef.current = false;
-    setPickMode(true);
-    // 地图 WebView 未就绪时选点指令注入不了，用户会以为按钮坏了；
-    // 超时未注入则明确提示并退出选点模式
-    if (pickInjectTimer.current) clearTimeout(pickInjectTimer.current);
-    pickInjectTimer.current = setTimeout(() => {
-      if (!pickInjectedRef.current && !actionBusy) {
-        setPickMode(false);
-        Alert.alert("地图还在加载", "地图尚未就绪，请等几秒后再点「添加地点」。");
-      }
-    }, 1500);
+    // 直接打开搜索面板（无需先在地图上选点）；地图选点保留为面板内附近推荐
+    setAddCoords(null);
+    setAddSheetVisible(true);
   }
 
   function cancelPick() {
@@ -546,12 +542,12 @@ export function TripDetailScreen({ route, navigation }: Props) {
   }
 
   async function handleAddCustom(name: string, type: PoiAddType) {
-    if (!addCoords) return;
-    const coords = addCoords;
     await addItemPayload({
       name,
       type,
-      location: { lng: coords.lng, lat: coords.lat, address: "" },
+      location: addCoords
+        ? { lng: addCoords.lng, lat: addCoords.lat, address: "" }
+        : null,
       time_slot: null,
     });
   }

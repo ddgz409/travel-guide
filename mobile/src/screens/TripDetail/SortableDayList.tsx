@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, Text, Vibration, View } from "react-native";
 import {
   Gesture,
@@ -17,14 +24,10 @@ import type { Item } from "@travel-guide/shared";
 /** 行卡片之间固定间距（与 ItemListRow feedCard 的 marginBottom 一致） */
 const ROW_GAP = 12;
 
-/** 邻居让位：快而不僵，轻微Q弹 */
-const PUSH_SPRING = { damping: 20, stiffness: 360, mass: 0.9 };
-/** 松手落位 */
-const DROP_SPRING = { damping: 18, stiffness: 340, mass: 0.9 };
-/** 磁吸换位：跟指但瞬间呈现最终排列 */
-const SNAP_SPRING = { damping: 26, stiffness: 520, mass: 0.9 };
+/** 松手落位：Q弹 */
+const DROP_SPRING = { damping: 16, stiffness: 300, mass: 0.9 };
 /** 长按激活时长 */
-const ACTIVATE_MS = 300;
+const ACTIVATE_MS = 280;
 /** 自动滚动边缘/速度 */
 const AUTO_EDGE = 72;
 const AUTO_SPEED = 7;
@@ -79,98 +82,89 @@ function slotDisplacement(
 
 export type ScrollWindow = { top: number; height: number };
 
-type RowProps = {
-  item: Item;
-  canEdit: boolean;
-  dragDisabled: boolean;
-  scrollGesture?: NativeGesture;
-  renderRow: (item: Item) => React.ReactElement;
-  activeIndex: SharedValue<number>;
-  /** 手指原始位移 */
-  dragTy: SharedValue<number>;
-  /** 磁吸基准：最近一次换位时的手指位移 */
-  fingerBase: SharedValue<number>;
-  targetIndex: SharedValue<number>;
-  orderIds: SharedValue<OrderIds>;
-  heights: SharedValue<Record<string, number>>;
-  scrollWindow: SharedValue<ScrollWindow | null>;
-  lastAutoDir: SharedValue<number>;
-  onDragBegin: () => void;
-  onDragEnd: () => void;
-  setAutoDir: (dir: number) => void;
-  moveBy: (id: string, delta: number) => void;
-  /** 编辑态左侧 ✕ 删除回调（不传则不显示 ✕） */
-  onRemove?: (item: Item) => void;
-  onMeasure: (id: string, height: number) => void;
-  notifyDrag: (active: boolean) => void;
-  commitOrder: (ids: OrderIds) => void;
-};
-
-function SortableRow({
+/**
+ * 单行：左侧竖排操作栏(↑↓✕) + 卡片 + 右侧☰拖拽栏。
+ * 操作栏是真实布局空间，不悬浮、不遮挡卡片内容。
+ * 拖拽：长按 ☰ 280ms 激活；拖动中卡片 1:1 跟手，
+ * 其他行在被越过时瞬时让位 —— 全程所见即所得。
+ */
+const SortableRow = memo(function SortableRow({
   item,
   canEdit,
   dragDisabled,
   scrollGesture,
   renderRow,
   activeIndex,
+  visualFrom,
   dragTy,
   fingerBase,
   targetIndex,
   orderIds,
   heights,
+  shifts,
   scrollWindow,
   lastAutoDir,
+  onRemove,
   onDragBegin,
   onDragEnd,
   setAutoDir,
   moveBy,
-  onRemove,
   onMeasure,
   notifyDrag,
   commitOrder,
-}: RowProps) {
+}: {
+  item: Item;
+  canEdit: boolean;
+  dragDisabled: boolean;
+  scrollGesture?: NativeGesture;
+  renderRow: (item: Item) => React.ReactElement;
+  activeIndex: SharedValue<number>;
+  visualFrom: SharedValue<number>;
+  dragTy: SharedValue<number>;
+  fingerBase: SharedValue<number>;
+  targetIndex: SharedValue<number>;
+  orderIds: SharedValue<OrderIds>;
+  heights: SharedValue<Record<string, number>>;
+  shifts: SharedValue<Record<string, number>>;
+  scrollWindow: SharedValue<ScrollWindow | null>;
+  lastAutoDir: SharedValue<number>;
+  onRemove?: (item: Item) => void;
+  onDragBegin: () => void;
+  onDragEnd: () => void;
+  setAutoDir: (dir: number) => void;
+  moveBy: (id: string, delta: number) => void;
+  onMeasure: (id: string, height: number) => void;
+  notifyDrag: (active: boolean) => void;
+  commitOrder: (ids: OrderIds) => void;
+}) {
+  const hapticTick = useCallback(() => Vibration.vibrate(TICK_MS), []);
+
+  /** 让位量：纯数字，直接读取；换位时由拖拽 worklet 一次性赋值 */
+  const myShift = useSharedValue(0);
+
   const animatedStyle = useAnimatedStyle(() => {
     const ids = orderIds.value;
     const idx = ids.indexOf(item.id);
-    const from = activeIndex.value;
+    const from = visualFrom.value;
     if (idx < 0 || from < 0) {
-      return { transform: [{ translateY: 0 }, { scale: 1 }], zIndex: 0, elevation: 0 };
+      return { transform: [{ translateY: 0 }, { scale: 1 }], zIndex: 0 };
     }
     if (idx === from) {
-      // 被拖拽卡片：磁吸跟随（dragTy 已含槽位位移），微微放大
       return {
         transform: [{ translateY: dragTy.value }, { scale: 1.02 }],
         zIndex: 100,
         elevation: 12,
-        opacity: 0.97,
       };
     }
-    let shift = 0;
-    const to = targetIndex.value;
-    if (to >= 0 && to !== from) {
-      const hFrom = heights.value[ids[from]] || 0;
-      if (from < to && idx > from && idx <= to) shift = -hFrom;
-      else if (from > to && idx >= to && idx < from) shift = hFrom;
-    }
-    const moving = shift !== 0;
     return {
       transform: [
-        { translateY: withSpring(shift, PUSH_SPRING) },
-        { scale: withSpring(moving ? 0.98 : 1, PUSH_SPRING) },
+        { translateY: myShift.value },
+        { scale: myShift.value === 0 ? 1 : 0.985 },
       ],
       zIndex: 0,
-      elevation: 0,
     };
   });
 
-  const hapticTick = useCallback(() => {
-    Vibration.vibrate(TICK_MS);
-  }, []);
-
-  /**
-   * 编辑态长按任意位置启动拖拽（300ms，震动提示），随后磁吸跟随：
-   * 卡片实时吸附到目标槽位，拖动过程中即可看到最终排列。
-   */
   const handlePan = useMemo(() => {
     let g = Gesture.Pan()
       .activateAfterLongPress(ACTIVATE_MS)
@@ -181,26 +175,56 @@ function SortableRow({
         const idx = orderIds.value.indexOf(item.id);
         if (idx < 0) return;
         activeIndex.value = idx;
+        visualFrom.value = idx;
+        targetIndex.value = idx;
         dragTy.value = 0;
         fingerBase.value = 0;
-        targetIndex.value = idx;
         runOnJS(notifyDrag)(true);
         runOnJS(onDragBegin)();
+        runOnJS(hapticTick)();
       })
       .onUpdate((e) => {
         const from = activeIndex.value;
         if (from < 0) return;
-        const t = computeTarget(from, e.translationY, orderIds.value, heights.value);
+        const ids = orderIds.value;
+        const hs = heights.value;
+        const t = computeTarget(from, e.translationY, ids, hs);
         if (t !== targetIndex.value) {
-          // 换位：重置磁吸基准并轻震一下
+          // 换位：被越过的行瞬时让位（无 spring 重启 → 丝滑不卡）
+          const hFrom = hs[ids[from]] || 0;
+          const prev = targetIndex.value;
           targetIndex.value = t;
           fingerBase.value = e.translationY;
-          runOnJS(notifyDrag)(true);
+          if (prev >= 0) {
+            // 归位上一轮被推开的行
+            if (prev > from) {
+              for (let i = from + 1; i <= prev; i++) {
+                const k = ids[i];
+                if (k != null) shifts.value[k] = 0;
+              }
+            } else if (prev < from) {
+              for (let i = prev; i < from; i++) {
+                const k = ids[i];
+                if (k != null) shifts.value[k] = 0;
+              }
+            }
+          }
+          if (t > from) {
+            for (let i = from + 1; i <= t; i++) {
+              const k = ids[i];
+              if (k != null) shifts.value[k] = -hFrom;
+            }
+          } else if (t < from) {
+            for (let i = t; i < from; i++) {
+              const k = ids[i];
+              if (k != null) shifts.value[k] = hFrom;
+            }
+          }
           runOnJS(hapticTick)();
         }
-        // 最终位置 = 目标槽位位移 + 基准内的手指微调
-        const disp = slotDisplacement(from, t, orderIds.value, heights.value);
-        dragTy.value = withSpring(disp + (e.translationY - fingerBase.value), SNAP_SPRING);
+        // 1:1 跟手：目标槽位位移 + 基准内手指微调
+        const disp = slotDisplacement(from, t, ids, heights.value);
+        dragTy.value = disp + (e.translationY - fingerBase.value);
         // 边缘自动滚动
         const win = scrollWindow.value;
         if (win) {
@@ -224,19 +248,25 @@ function SortableRow({
         const from = activeIndex.value;
         const to = targetIndex.value;
         if (from < 0) return;
+        activeIndex.value = -1; // 先解锁，杜绝后续卡死
         if (to >= 0 && to !== from) {
           const ids = orderIds.value.slice();
           const [moved] = ids.splice(from, 1);
           ids.splice(to, 0, moved);
           const exact = slotDisplacement(from, to, orderIds.value, heights.value);
-          dragTy.value = withSpring(exact, DROP_SPRING, (finished) => {
-            if (!finished) return;
-            runOnJS(commitOrder)(ids);
+          dragTy.value = withSpring(exact, DROP_SPRING, () => {
+            visualFrom.value = -1;
+            targetIndex.value = -1;
+            dragTy.value = 0;
+            fingerBase.value = 0;
           });
+          runOnJS(commitOrder)(ids); // 立即提交，不等落位动画
         } else {
           dragTy.value = withSpring(0, DROP_SPRING, () => {
-            activeIndex.value = -1;
+            visualFrom.value = -1;
             targetIndex.value = -1;
+            dragTy.value = 0;
+            fingerBase.value = 0;
           });
         }
       });
@@ -249,11 +279,13 @@ function SortableRow({
     dragDisabled,
     scrollGesture,
     activeIndex,
+    visualFrom,
     dragTy,
     fingerBase,
     targetIndex,
     orderIds,
     heights,
+    shifts,
     scrollWindow,
     lastAutoDir,
     setAutoDir,
@@ -262,55 +294,57 @@ function SortableRow({
     notifyDrag,
     commitOrder,
     hapticTick,
+    item.id,
   ]);
 
   const editing = canEdit && !dragDisabled;
 
   return (
-    <GestureDetector gesture={handlePan}>
-      <Animated.View
-        style={animatedStyle}
-        collapsable={false}
-        onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
-      >
-        {renderRow(item)}
-        {editing ? (
-          <>
-            {/* 左侧：↑↓ 微调 + ✕ 删除 */}
-            <View style={styles.leftControls} pointerEvents="box-none">
+    <View
+      collapsable={false}
+      onLayout={(e) => onMeasure(item.id, e.nativeEvent.layout.height)}
+    >
+      <GestureDetector gesture={handlePan}>
+        <Animated.View style={[styles.rowInner, animatedStyle]}>
+          {editing ? (
+            <View style={styles.railLeft}>
               <Pressable
                 style={({ pressed }) => [
-                  styles.ctrlBtn,
-                  pressed && styles.ctrlBtnPressed,
+                  styles.railBtn,
+                  pressed && styles.railBtnPressed,
                 ]}
                 onPress={() => moveBy(item.id, -1)}
               >
-                <Text style={styles.ctrlArrow}>↑</Text>
+                <Text style={styles.railUp}>↑</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [
-                  styles.ctrlBtn,
-                  pressed && styles.ctrlBtnPressed,
+                  styles.railBtn,
+                  pressed && styles.railBtnPressed,
                 ]}
                 onPress={() => moveBy(item.id, 1)}
               >
-                <Text style={styles.ctrlArrow}>↓</Text>
+                <Text style={styles.railDown}>↓</Text>
               </Pressable>
               {onRemove ? (
                 <Pressable
                   style={({ pressed }) => [
-                    styles.ctrlBtn,
-                    styles.ctrlX,
-                    pressed && styles.ctrlXPressed,
+                    styles.railBtn,
+                    styles.railX,
+                    pressed && styles.railXPressed,
                   ]}
                   onPress={() => onRemove(item)}
                 >
-                  <Text style={styles.ctrlXIcon}>✕</Text>
+                  <Text style={styles.railXIcon}>✕</Text>
                 </Pressable>
               ) : null}
             </View>
-            {/* 右侧：☰ 拖拽柄（自绘三道杠，不依赖字体渲染） */}
-            <View style={styles.gripWrap} pointerEvents="box-none">
+          ) : null}
+
+          <View style={styles.cardSlot}>{renderRow(item)}</View>
+
+          {editing ? (
+            <View style={styles.railRight} pointerEvents="box-none">
               <GestureDetector gesture={handlePan}>
                 <Pressable
                   style={({ pressed }) => [
@@ -324,12 +358,12 @@ function SortableRow({
                 </Pressable>
               </GestureDetector>
             </View>
-          </>
-        ) : null}
-      </Animated.View>
-    </GestureDetector>
+          ) : null}
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
-}
+});
 
 type Props = {
   items: Item[];
@@ -339,7 +373,7 @@ type Props = {
   renderRow: (item: Item) => React.ReactElement;
   onOrderChange: (orderedIds: string[]) => void;
   onDragStateChange?: (dragging: boolean) => void;
-  /** 编辑态删除单条（左上 ✕） */
+  /** 编辑态删除单条（左侧 ✕） */
   onRemove?: (item: Item) => void;
   getScrollWindow?: () => ScrollWindow | null;
   onAutoScroll?: (dy: number) => void;
@@ -348,9 +382,9 @@ type Props = {
 /**
  * 当天行程可排序列表。
  *
- * 编辑态：长按卡片 300ms 开始拖拽（震动反馈），卡片磁吸到目标槽位，
- * 拖动全程可见最终排列；右上角 ↑↓ 可单击微调。
- * 松手统一回调 onOrderChange 触发重新规划。
+ * 编辑态：每行左侧竖排 ↑↓✕ 微调/删除，右侧 ☰ 长按拖拽；
+ * 拖动全程 1:1 跟手，其他景点被实时挤开预览最终排列；
+ * 松手 Q 弹落位后统一回调 onOrderChange。
  */
 export function SortableDayList({
   items,
@@ -366,11 +400,13 @@ export function SortableDayList({
 }: Props) {
   const [order, setOrder] = useState<Item[]>(items);
   const activeIndex = useSharedValue(-1);
+  const visualFrom = useSharedValue(-1);
   const dragTy = useSharedValue(0);
   const fingerBase = useSharedValue(0);
   const targetIndex = useSharedValue(-1);
   const orderIds = useSharedValue<OrderIds>(items.map((it) => it.id));
   const heights = useSharedValue<Record<string, number>>({});
+  const shifts = useSharedValue<Record<string, number>>({});
   const scrollWindow = useSharedValue<ScrollWindow | null>(null);
   const lastAutoDir = useSharedValue(0);
 
@@ -387,6 +423,21 @@ export function SortableDayList({
   const notifyDrag = useCallback((active: boolean) => {
     onDragStateChangeRef.current?.(active);
   }, []);
+
+  // ---- 兜底：退出编辑/禁用时强制复位，绝不留卡死状态 ----
+  useEffect(() => {
+    if (!canEdit || dragDisabled) {
+      activeIndex.value = -1;
+      visualFrom.value = -1;
+      targetIndex.value = -1;
+      dragTy.value = 0;
+      fingerBase.value = 0;
+      shifts.value = {};
+      stopAutoScroll();
+      onDragStateChangeRef.current?.(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit, dragDisabled]);
 
   // ---- 自动滚动 ----
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -437,10 +488,6 @@ export function SortableDayList({
 
   const commitOrder = useCallback(
     (ids: OrderIds) => {
-      activeIndex.value = -1;
-      targetIndex.value = -1;
-      dragTy.value = 0;
-      fingerBase.value = 0;
       const map = new Map<string, Item>();
       order.forEach((it) => map.set(it.id, it));
       const next = ids
@@ -448,9 +495,10 @@ export function SortableDayList({
         .filter((it): it is Item => it != null);
       setOrder(next);
       orderIds.value = ids;
+      shifts.value = {};
       onOrderChangeRef.current?.(ids);
     },
-    [order, orderIds, activeIndex, targetIndex, dragTy, fingerBase],
+    [order, orderIds, shifts],
   );
 
   const moveBy = useCallback(
@@ -460,7 +508,9 @@ export function SortableDayList({
       const i = ids.indexOf(id);
       const j = i + delta;
       if (i < 0 || j < 0 || j >= ids.length) return;
-      [ids[i], ids[j]] = [ids[j], ids[i]];
+      const tmp = ids[i];
+      ids[i] = ids[j];
+      ids[j] = tmp;
       Vibration.vibrate(TICK_MS);
       commitOrder(ids);
     },
@@ -488,18 +538,20 @@ export function SortableDayList({
           scrollGesture={scrollGesture}
           renderRow={renderRow}
           activeIndex={activeIndex}
+          visualFrom={visualFrom}
           dragTy={dragTy}
           fingerBase={fingerBase}
           targetIndex={targetIndex}
           orderIds={orderIds}
           heights={heights}
+          shifts={shifts}
           scrollWindow={scrollWindow}
           lastAutoDir={lastAutoDir}
+          onRemove={onRemove}
           onDragBegin={onDragBegin}
           onDragEnd={onDragEnd}
           setAutoDir={setAutoDir}
           moveBy={moveBy}
-          onRemove={onRemove}
           onMeasure={onMeasure}
           notifyDrag={notifyDrag}
           commitOrder={commitOrder}
@@ -510,68 +562,71 @@ export function SortableDayList({
 }
 
 const styles = StyleSheet.create({
-  // 左上：↑↓ 微调 + ✕ 删除
-  leftControls: {
-    position: "absolute",
-    top: 6,
-    left: 8,
+  rowInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    backgroundColor: "transparent",
   },
-  ctrlBtn: {
-    width: 32,
-    height: 27,
-    borderRadius: 9,
+  cardSlot: { flex: 1, minWidth: 0 },
+  // 左侧竖排操作栏
+  railLeft: {
+    width: 36,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.97)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(33,84,63,0.20)",
-    shadowColor: "#0a2540",
-    shadowOpacity: 0.14,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
+    gap: 6,
+    marginRight: 8,
   },
-  ctrlBtnPressed: { backgroundColor: "#DEF2E4" },
-  ctrlArrow: {
+  railBtn: {
+    width: 32,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(33,84,63,0.22)",
+  },
+  railBtnPressed: { backgroundColor: "#DEF2E4" },
+  railUp: {
     fontSize: 14,
     lineHeight: 16,
     fontWeight: "900",
     color: "#1B7A43",
-    textAlign: "center",
     includeFontPadding: false,
   },
-  ctrlX: { borderColor: "rgba(198,40,40,0.30)" },
-  ctrlXPressed: { backgroundColor: "#FDEBEB" },
-  ctrlXIcon: {
+  railDown: {
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: "900",
+    color: "#45605A",
+    includeFontPadding: false,
+  },
+  railX: { borderColor: "rgba(198,40,40,0.32)" },
+  railXPressed: { backgroundColor: "#FDEBEB" },
+  railXIcon: {
     fontSize: 12,
     lineHeight: 14,
     fontWeight: "800",
     color: "#C62828",
     includeFontPadding: false,
   },
-  // 右侧：☰ 拖拽柄
-  gripWrap: {
-    position: "absolute",
-    top: 6,
-    right: 8,
+  // 右侧拖拽栏
+  railRight: {
+    width: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+    alignSelf: "stretch",
   },
   gripBtn: {
     width: 36,
-    height: 27,
-    borderRadius: 9,
+    height: 46,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#DEF2E4",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(27,122,67,0.35)",
-    shadowColor: "#0a2540",
-    shadowOpacity: 0.14,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
   },
   gripBtnPressed: { backgroundColor: "#C4E7CF" },
   gripBar: {

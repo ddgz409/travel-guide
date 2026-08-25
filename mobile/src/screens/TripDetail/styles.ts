@@ -642,6 +642,17 @@ export const styles = StyleSheet.create({
   },
 
   // ---- AddSpotSheet ----
+  spotKav: { flex: 1, justifyContent: "flex-end" },
+  spotSearchInput: {
+    backgroundColor: "#F4F7F5",
+    borderRadius: 14,
+    borderCurve: "continuous",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.ink,
+    marginBottom: 10,
+  },
   addRoot: {
     flex: 1,
     justifyContent: "flex-end",
