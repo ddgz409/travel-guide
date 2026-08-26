@@ -10,11 +10,6 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  Gesture,
-  GestureDetector,
-} from "react-native-gesture-handler";
-import { useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { GenerateProgressEvent } from "@travel-guide/shared";
@@ -97,36 +92,11 @@ export function TripDetailScreen({ route, navigation }: Props) {
   const [addSheetVisible, setAddSheetVisible] = useState(false);
   // 城市管理弹层（添加/删除城市）
   const [citySheetVisible, setCitySheetVisible] = useState(false);
-  // 编辑态：显示删除按钮
+  // 编辑态：显示删除/排序操作
   const [editingDay, setEditingDay] = useState(false);
-  // 长按拖拽中禁用外层滚动，避免与排序手势冲突
-  // 外层竖向 ScrollView 的原生手势：行内拖拽 Pan 与其 blocksExternalGesture，
-  // 避免编辑模式启用大量长按拖拽手势时与原生滚动死锁（页面卡死）。
-  const sheetScrollGesture = useMemo(() => Gesture.Native(), []);
-  // 排序自动滚动：记录列表滚动位置与容器屏幕范围
-  const sheetListRef = useRef<ScrollView>(null);
-  const sheetOffsetY = useRef(0);
-  // 实时滚动偏移（UI 线程可读）：拖拽判定把手指屏幕坐标换算到内容系的关键
-  const sheetScrollY = useSharedValue(0);
-  const sheetWindowRef = useRef<{ top: number; height: number } | null>(null);
   // 地图选点：注入是否成功
   const pickInjectedRef = useRef(false);
   const pickInjectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const measureSheetWindow = useCallback(() => {
-    // RN 的 ScrollView 实例运行时带 measureInWindow（类型层未暴露，做安全收窄）
-    const node = sheetListRef.current as unknown as {
-      measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void;
-    } | null;
-    node?.measureInWindow?.((_x, y, _w, h) => {
-      sheetWindowRef.current = { top: y, height: h };
-    });
-  }, []);
-  const autoScrollStep = useCallback((dy: number) => {
-    sheetListRef.current?.scrollTo({
-      y: Math.max(0, sheetOffsetY.current + dy),
-      animated: false,
-    });
-  }, []);
 
   const openPoiDetail = useCallback(
     (base: PoiSheetData) => {
@@ -581,17 +551,13 @@ export function TripDetailScreen({ route, navigation }: Props) {
   async function handleReorder(orderedIds: string[]) {
     if (!trip || !currentDay) return;
     const items = orderedIds.map((id, seq) => ({ item_id: id, new_seq: seq }));
-    // 乐观更新：本地顺序已即时生效（同一批对象引用，零重渲染白屏），
-    // 接口仅后台静默保存；失败才提示并回拉
+    // 本地顺序已在列表组件内即时生效，接口仅静默落库；失败才提示
     try {
       await api.trips.reorderItems(trip.id, currentDay.id, items);
     } catch {
       Alert.alert("排序保存失败", "网络异常，顺序可能未同步到云端");
     }
   }
-
-  // 拖拽中每次换位都会回调 onOrderChange：云端保存做尾沿防抖，
-  // 停顿/松手后只落库最终顺序一次
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reorderPendingRef = useRef<string[] | null>(null);
   useEffect(
@@ -828,19 +794,12 @@ export function TripDetailScreen({ route, navigation }: Props) {
             ) : null}
           </View>
 
-          <GestureDetector gesture={sheetScrollGesture}>
-            <ScrollView
-              ref={sheetListRef}
-              style={styles.sheetScroll}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.sheetList}
-              nestedScrollEnabled
-              scrollEventThrottle={16}
-              onScroll={(e) => {
-                sheetOffsetY.current = e.nativeEvent.contentOffset.y;
-                sheetScrollY.value = e.nativeEvent.contentOffset.y;
-              }}
-            >
+          <ScrollView
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.sheetList}
+            nestedScrollEnabled
+          >
             {routeOptions.length > 0 ? (
             <View style={styles.routeSection}>
               <Text style={styles.sectionTitle}>路线方案</Text>
@@ -919,15 +878,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 items={dayItems}
                 canEdit={canEdit}
                 dragDisabled={actionBusy || !editingDay}
-                scrollGesture={sheetScrollGesture}
-                scrollY={sheetScrollY}
-                getScrollWindow={() => {
-                  // 容器在窗口中的位置拖拽期间不变；每次开拖刷新一次，
-                  // 返回上一帧的缓存值（异步测量下一帧生效）
-                  measureSheetWindow();
-                  return sheetWindowRef.current;
-                }}
-                onAutoScroll={autoScrollStep}
                 renderRow={(item) => {
                   const idx = dayItems.indexOf(item);
                   const hasNextRoute = dayItems
@@ -985,7 +935,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
             refs={trip.external_refs}
           />
           </ScrollView>
-          </GestureDetector>
         </View>
       </DraggableBottomSheet>
       <ShareChoiceSheet
