@@ -665,45 +665,53 @@ export function TripDetailScreen({ route, navigation }: Props) {
     ) : null;
 
   /** 行程列表（编辑/常规两种布局共用同一份配置） */
-  const dayListBlock = (fill: boolean) => (
-    <FadeSwitch
-      switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
-      style={fill ? styles.editListGrow : undefined}
-    >
-      <SortableDayList
-        items={dayItems}
-        canEdit={canEdit}
-        dragDisabled={actionBusy || !editingDay}
-        fill={fill}
-        renderRow={(item) => {
-          const idx = dayItems.indexOf(item);
-          const hasNextRoute = dayItems
-            .slice(idx + 1)
-            .some((n) => n.selected && hasCoords(n.location));
-          return (
-            <ItemListRow
-              item={item}
-              tripId={trip.id}
-              destination={trip.destination}
-              hasNextRoute={hasNextRoute}
-              compact={editingDay}
-              onPoiPress={
-                item.type === "attraction" ||
-                item.type === "meal" ||
-                item.type === "hotel"
-                  ? () => openPoiDetail(poiSheetFromTripItem(item))
-                  : undefined
-              }
-            />
-          );
-        }}
-        onRemove={(item) => {
-          if (item.type !== "transport") void confirmDelete(item);
-        }}
-        onOrderChange={scheduleReorderPersist}
-      />
-    </FadeSwitch>
+  const dayListEl = (fill: boolean) => (
+    <SortableDayList
+      items={dayItems}
+      canEdit={canEdit}
+      dragDisabled={actionBusy || !editingDay}
+      fill={fill}
+      renderRow={(item) => {
+        const idx = dayItems.indexOf(item);
+        const hasNextRoute = dayItems
+          .slice(idx + 1)
+          .some((n) => n.selected && hasCoords(n.location));
+        return (
+          <ItemListRow
+            item={item}
+            tripId={trip.id}
+            destination={trip.destination}
+            hasNextRoute={hasNextRoute}
+            compact={editingDay}
+            onPoiPress={
+              item.type === "attraction" ||
+              item.type === "meal" ||
+              item.type === "hotel"
+                ? () => openPoiDetail(poiSheetFromTripItem(item))
+                : undefined
+            }
+          />
+        );
+      }}
+      onRemove={(item) => {
+        if (item.type !== "transport") void confirmDelete(item);
+      }}
+      onOrderChange={scheduleReorderPersist}
+    />
   );
+
+  /** 常规布局：切天用 FadeSwitch 交叉淡入；编辑布局直接渲染（动画层
+   *  在 DraggableFlatList 上会卡 opacity 0 导致整片空白） */
+  const dayListBlock = (fill: boolean) =>
+    fill ? (
+      dayListEl(true)
+    ) : (
+      <FadeSwitch
+        switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+      >
+        {dayListEl(false)}
+      </FadeSwitch>
+    );
 
   return (
     <View style={styles.root}>
@@ -885,14 +893,22 @@ export function TripDetailScreen({ route, navigation }: Props) {
                不与外层 ScrollView 嵌套，避免手势打架卡死 */
             <View style={styles.editWrap}>
               {dayHeadBlock}
+              <Text style={styles.sectionTitle}>
+                精选行程 · {selectedItems.length} 个安排
+              </Text>
               <Text style={styles.dragHint}>
                 点击卡片右上角 ✕ 删除 · 长按右侧 ≡ 手柄拖动排序
               </Text>
               {dayListBlock(true)}
             </View>
-          ) : (
+          ) : null}
+          {/* 常规滚动布局：编辑态用 display:none 隐藏而非卸载，
+              避免 FadeSwitch 整树卸载触发退场动画异常 */}
           <ScrollView
-            style={styles.sheetScroll}
+            style={[
+              styles.sheetScroll,
+              editingDay && canEdit ? styles.sheetHidden : null,
+            ]}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.sheetList}
             nestedScrollEnabled
@@ -955,7 +971,6 @@ export function TripDetailScreen({ route, navigation }: Props) {
             refs={trip.external_refs}
           />
           </ScrollView>
-          )}
         </View>
       </DraggableBottomSheet>
       <ShareChoiceSheet

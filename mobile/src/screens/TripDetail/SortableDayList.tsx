@@ -186,7 +186,7 @@ export function SortableDayList({
   }
 
   return (
-    <View style={[rowStyles.listWrap, fill && rowStyles.listWrapFill]}>
+    <View style={fill ? rowStyles.listWrapFill : rowStyles.listWrap}>
       <DraggableFlatList<Item>
         data={order}
         keyExtractor={keyExtractor}
@@ -219,7 +219,6 @@ const rowStyles = StyleSheet.create({
   /** fill 模式：独占父级全部高度，作为唯一滚动容器（不嵌套） */
   listWrapFill: {
     flex: 1,
-    maxHeight: undefined,
   },
   listContent: { paddingBottom: 4 },
   /** fill 模式内容至少铺满视口，少量条目时拖拽区域也够大 */

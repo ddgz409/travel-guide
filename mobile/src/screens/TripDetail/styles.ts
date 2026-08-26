@@ -82,11 +82,8 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 4,
   },
-  /** FadeSwitch 包裹层也要占满，DraggableFlatList 才能拿到有界高度 */
-  editListGrow: {
-    flex: 1,
-    minHeight: 0,
-  },
+  /** 编辑态隐藏常规滚动布局（display:none 而非卸载，避免退场动画异常） */
+  sheetHidden: { display: "none" },
   sheetList: {
     paddingHorizontal: 20,
     paddingBottom: 64,
