@@ -701,7 +701,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
   );
 
   /** 常规布局：切天用 FadeSwitch 交叉淡入；编辑布局直接渲染（动画层
-   *  在 DraggableFlatList 上会卡 opacity 0 导致整片空白） */
+   *  会在排序列表上卡 opacity 0 导致整片空白） */
   const dayListBlock = (fill: boolean) =>
     fill ? (
       dayListEl(true)
