@@ -392,3 +392,72 @@ export interface RegeoResult {
   province: string;
   adcode: string;
 }
+
+// ---- AA 分账 ----
+
+export interface TripMember {
+  id: string;
+  name: string;
+  user_id?: string | null;
+  is_owner?: boolean;
+  color?: string | null;
+  created_at: string;
+}
+
+export interface ExpenseSplit {
+  member_id: string;
+  member_name: string;
+  color?: string | null;
+  /** null=均摊，否则为自定义分摊金额 */
+  amount?: number | null;
+}
+
+export interface Expense {
+  id: string;
+  trip_id: string;
+  title: string;
+  amount: number;
+  paid_by_member_id: string;
+  paid_by_name: string;
+  paid_by_color?: string | null;
+  paid_at?: string | null;
+  splits: ExpenseSplit[];
+}
+
+export interface ExpenseSplitInput {
+  member_id: string;
+  /** null=均摊 */
+  amount?: number | null;
+}
+
+export interface ExpenseInput {
+  title: string;
+  amount: number;
+  paid_by_member_id: string;
+  paid_at?: string | null;
+  splits: ExpenseSplitInput[];
+}
+
+export interface SettlementBalance {
+  member_id: string;
+  name: string;
+  color?: string | null;
+  /** 正=被欠（别人欠我），负=欠别人 */
+  balance: number;
+}
+
+export interface SettlementFlow {
+  from_member_id: string;
+  from_name: string;
+  from_color?: string | null;
+  to_member_id: string;
+  to_name: string;
+  to_color?: string | null;
+  amount: number;
+}
+
+export interface SettlementData {
+  currency: "CNY";
+  balances: SettlementBalance[];
+  flows: SettlementFlow[];
+}

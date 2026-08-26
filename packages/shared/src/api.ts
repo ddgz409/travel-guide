@@ -7,6 +7,8 @@ import type {
   CityInfoStreamEvent,
   PlaceImagesResult,
   DayRoutesResult,
+  Expense,
+  ExpenseInput,
   GenerateRequest,
   GenerateProgressEvent,
   OptimizePlanQueryRequest,
@@ -18,9 +20,11 @@ import type {
   QuickRecommendResponse,
   ValidateDestinationResult,
   RegeoResult,
+  SettlementData,
   Token,
   Trip,
   TripListItem,
+  TripMember,
   TripPreferences,
   User,
 } from "./types";
@@ -307,6 +311,46 @@ export function createApiClient(opts: CreateApiClientOptions) {
         request<GenerateProgressEvent>(`/trips/${tripId}/progress`, {
           timeoutMs: 8000,
         }),
+      split: {
+        members: (tripId: string) =>
+          request<TripMember[]>(`/trips/${tripId}/members`),
+        addMember: (tripId: string, name: string) =>
+          request<TripMember>(`/trips/${tripId}/members`, {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          }),
+        renameMember: (tripId: string, memberId: string, name: string) =>
+          request<TripMember>(`/trips/${tripId}/members/${memberId}`, {
+            method: "PUT",
+            body: JSON.stringify({ name }),
+          }),
+        removeMember: (tripId: string, memberId: string) =>
+          request<void>(`/trips/${tripId}/members/${memberId}`, {
+            method: "DELETE",
+          }),
+        expenses: (tripId: string) =>
+          request<Expense[]>(`/trips/${tripId}/expenses`),
+        addExpense: (tripId: string, data: ExpenseInput) =>
+          request<Expense>(`/trips/${tripId}/expenses`, {
+            method: "POST",
+            body: JSON.stringify(data),
+          }),
+        updateExpense: (
+          tripId: string,
+          expenseId: string,
+          data: Partial<ExpenseInput>,
+        ) =>
+          request<Expense>(`/trips/${tripId}/expenses/${expenseId}`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+          }),
+        removeExpense: (tripId: string, expenseId: string) =>
+          request<void>(`/trips/${tripId}/expenses/${expenseId}`, {
+            method: "DELETE",
+          }),
+        settlement: (tripId: string) =>
+          request<SettlementData>(`/trips/${tripId}/settlement`),
+      },
     },
     chat: {
       /**

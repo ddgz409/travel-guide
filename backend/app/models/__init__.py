@@ -93,6 +93,12 @@ class Trip(Base):
     collaborator_links: Mapped[list["TripCollaborator"]] = relationship(
         back_populates="trip", cascade="all, delete-orphan"
     )
+    members: Mapped[list["TripMember"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+    expenses: Mapped[list["Expense"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
 
 
 class TripCollaborator(Base):
@@ -168,6 +174,96 @@ class Item(Base):
     transport_to_next: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     day: Mapped["Day"] = relationship(back_populates="items")
+
+
+class TripMember(Base):
+    """同行人（AA 分账参与者）。
+
+    is_owner=True 的行自动随行程创建（懒创建），对应行程创建者；其余为
+    手动添加的同行人，可关联登录账号（user_id）或仅填姓名。
+    """
+
+    __tablename__ = "trip_members"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 关联登录账号（owner / 加入协作的登录用户）；纯姓名同行人为 None
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    is_owner: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # 头像底色（前端分配，如 "#FF8A65"）
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+
+    trip: Mapped["Trip"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship()
+
+
+class Expense(Base):
+    """一笔共同消费（AA 分账明细）。
+
+    paid_by_member_id 为付款人；amount 为总金额；分摊由 ExpenseSplit 记录
+    （amount 为空表示与其它均摊项平分剩余）。
+    """
+
+    __tablename__ = "expenses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    trip_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    paid_by_member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trip_members.id"), nullable=False, index=True
+    )
+    paid_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    trip: Mapped["Trip"] = relationship(back_populates="expenses")
+    payer: Mapped["TripMember"] = relationship()
+    splits: Mapped[list["ExpenseSplit"]] = relationship(
+        back_populates="expense", cascade="all, delete-orphan"
+    )
+
+
+class ExpenseSplit(Base):
+    """一笔消费的分摊：member_id 分摊 amount（None=均摊）。"""
+
+    __tablename__ = "expense_splits"
+    __table_args__ = (
+        UniqueConstraint("expense_id", "member_id", name="uq_expense_split"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    expense_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("expenses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("trip_members.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # None = 与其它均摊项平分剩余金额
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    expense: Mapped["Expense"] = relationship(back_populates="splits")
+    member: Mapped["TripMember"] = relationship()
 
 
 class TripGenerationCache(Base):

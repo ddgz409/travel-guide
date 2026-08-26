@@ -8,6 +8,19 @@ from app.schemas.auth import (
     UserOut,
 )
 from app.schemas.chat import ChatMessage, ChatRequest
+from app.schemas.expense import (
+    ExpenseCreate,
+    ExpenseOut,
+    ExpenseSplitInput,
+    ExpenseSplitOut,
+    ExpenseUpdate,
+    SettlementBalance,
+    SettlementData,
+    SettlementFlow,
+    TripMemberCreate,
+    TripMemberOut,
+    TripMemberUpdate,
+)
 from app.schemas.trip import (
     DayOut,
     ItemOut,
@@ -36,6 +49,17 @@ __all__ = [
     "LlmSettingsUpdate",
     "ChatMessage",
     "ChatRequest",
+    "TripMemberOut",
+    "TripMemberCreate",
+    "TripMemberUpdate",
+    "ExpenseOut",
+    "ExpenseCreate",
+    "ExpenseUpdate",
+    "ExpenseSplitOut",
+    "ExpenseSplitInput",
+    "SettlementData",
+    "SettlementBalance",
+    "SettlementFlow",
     "DayOut",
     "ItemOut",
     "ItemUpdate",
