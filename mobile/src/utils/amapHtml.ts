@@ -32,6 +32,8 @@ export function buildAmapHtml(opts: {
   viewportLimit?: number;
   /** 地图选点模式：点击地图回调 mapClick（新增地点用） */
   pickMode?: boolean;
+  /** 中心选点模式（高德式）：大头针固定屏幕中心，拖动地图回调 mapCenter */
+  centerPickMode?: boolean;
 }): string {
   const {
     key,
@@ -44,6 +46,7 @@ export function buildAmapHtml(opts: {
     focusCenter = false,
     viewportLimit = 0,
     pickMode = false,
+    centerPickMode = false,
   } = opts;
   const payload = JSON.stringify({
     markers,
@@ -55,6 +58,7 @@ export function buildAmapHtml(opts: {
     focusCenter: !!focusCenter,
     viewportLimit: viewportLimit || 0,
     pickMode: !!pickMode,
+    centerPickMode: !!centerPickMode,
   });
   return `<!DOCTYPE html>
 <html>
@@ -112,6 +116,28 @@ export function buildAmapHtml(opts: {
       pointer-events:none;
     }
     .pin-marker{transition:opacity .25s ease,transform .25s ease,filter .25s ease;cursor:pointer}
+    #centerPin{position:absolute;left:50%;top:50%;z-index:900;pointer-events:none;display:none}
+    .center-pin-shape{
+      position:absolute;
+      left:-15px;
+      top:-44px;
+      width:30px;
+      height:30px;
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      background:#e8453c;
+      border:3px solid #fff;
+      box-shadow:0 3px 10px rgba(0,0,0,.35);
+    }
+    .center-pin-shadow{
+      position:absolute;
+      left:-7px;
+      top:-3px;
+      width:14px;
+      height:6px;
+      border-radius:50%;
+      background:rgba(0,0,0,.22);
+    }
     .amap-logo,
     .amap-copyright,
     .amap-mcode {
@@ -128,6 +154,7 @@ export function buildAmapHtml(opts: {
 </head>
 <body>
   <div id="map"></div>
+  <div id="centerPin"><div class="center-pin-shadow"></div><div class="center-pin-shape"></div></div>
   <script>
     (function () {
       var data = ${payload};
@@ -224,6 +251,33 @@ export function buildAmapHtml(opts: {
           }
         };
         if (data.pickMode) window.setPickMode(true);
+
+        // ---- 中心选点模式（高德式）：大头针固定屏幕中心，拖动地图回调 mapCenter ----
+        window.__centerPick = !!data.centerPickMode;
+        var centerPinEl = document.getElementById('centerPin');
+        function showCenterPin(on) {
+          if (centerPinEl) centerPinEl.style.display = on ? 'block' : 'none';
+        }
+        showCenterPin(window.__centerPick);
+        function reportCenter() {
+          if (!window.__centerPick || !window.__map) return;
+          var c = window.__map.getCenter();
+          if (!c) return;
+          post('mapCenter', { lng: c.lng, lat: c.lat });
+        }
+        window.setCenterPick = function (on) {
+          window.__centerPick = !!on;
+          showCenterPin(window.__centerPick);
+        };
+        window.recenterTo = function (lng, lat, zoom) {
+          if (!window.__map) return;
+          window.__map.setZoomAndCenter(typeof zoom === 'number' ? zoom : 15, [lng, lat]);
+        };
+        if (window.__centerPick) {
+          map.on('moveend', reportCenter);
+          map.on('zoomend', reportCenter);
+          setTimeout(reportCenter, 250);
+        }
 
         function applyMarkerFocus() {
           if (!data.focusCenter || !window.__map || !window.__markerEls.length) return;
@@ -401,10 +455,23 @@ export function buildAmapHtml(opts: {
             if (data.focusCenter) {
               if (source.length > 1 && !window.__didCenterCategory) {
                 window.__didCenterCategory = true;
-                var sumLng = 0, sumLat = 0;
-                source.forEach(function (m) { sumLng += m.lng; sumLat += m.lat; });
-                var z = source.length > 40 ? 12 : source.length > 15 ? 13 : 14;
-                map.setZoomAndCenter(z, [sumLng / source.length, sumLat / source.length]);
+                // 密度定位：以「邻域内点数最多」的点为中心，
+                // 避免散落/跨城点的平均质心漂到无关位置
+                var best = source[0];
+                var bestScore = -1;
+                var R = 0.05;
+                source.forEach(function (a) {
+                  var score = 0;
+                  source.forEach(function (b) {
+                    if (Math.abs(a.lng - b.lng) <= R && Math.abs(a.lat - b.lat) <= R) score += 1;
+                  });
+                  if (score > bestScore) { bestScore = score; best = a; }
+                });
+                var z = bestScore > 40 ? 12 : bestScore > 15 ? 13 : 14;
+                map.setZoomAndCenter(z, [best.lng, best.lat]);
+              } else if (source.length === 1 && !window.__didCenterCategory) {
+                window.__didCenterCategory = true;
+                map.setZoomAndCenter(15, [source[0].lng, source[0].lat]);
               }
               setTimeout(applyMarkerFocus, 150);
             } else {

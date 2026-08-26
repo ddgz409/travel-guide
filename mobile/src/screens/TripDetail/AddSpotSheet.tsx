@@ -1,19 +1,24 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 import type { PoiSearchResult } from "@travel-guide/shared";
 import { api } from "../../api/client";
+import { getAmapJsKey } from "../../api/config";
+import { cityCenterFor } from "../../data/cityCenters";
 import { distanceLabel } from "../../utils/geo";
 import { colors } from "../../theme";
+import { buildAmapHtml } from "../../utils/amapHtml";
 import { styles } from "./styles";
 
 export type PoiAddType = "attraction" | "meal" | "hotel";
@@ -26,7 +31,7 @@ const TYPE_OPTIONS: { id: PoiAddType; label: string }[] = [
 
 type Props = {
   visible: boolean;
-  /** 有坐标=地图选点模式（展示附近）；无坐标=搜索模式 */
+  /** 有坐标=以该点为初始中心；无坐标=用目的地城市中心 */
   coords: { lng: number; lat: number } | null;
   city: string;
   dayLabel: string;
@@ -47,6 +52,11 @@ export function AddSpotSheet({
   onCancel,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const webRef = useRef<WebView>(null);
+  const amapKey = getAmapJsKey();
+  const [mapReady, setMapReady] = useState(false);
+  /** 当前地图中心（大头针所指位置），拖动地图实时更新 */
+  const [mapCenter, setMapCenter] = useState<{ lng: number; lat: number } | null>(null);
   const [type, setType] = useState<PoiAddType>("attraction");
   const [nearby, setNearby] = useState<PoiSearchResult[]>([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
@@ -56,40 +66,79 @@ export function AddSpotSheet({
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const seqRef = useRef(0);
+  const nearbyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 打开时复位
+  /** 初始中心：优先传入坐标，其次目的地城市中心，兜底北京 */
+  const initialCenter = useMemo(() => {
+    if (coords?.lng != null && coords.lat != null) return coords;
+    const c = cityCenterFor(city);
+    if (c) return { lng: c.lng, lat: c.lat };
+    return { lng: 116.4074, lat: 39.9042 };
+  }, [coords, city]);
+
+  const bootHtml = useMemo(() => {
+    if (!amapKey) return "";
+    return buildAmapHtml({
+      key: amapKey,
+      markers: [],
+      polyline: [],
+      interactive: true,
+      centerPickMode: true,
+    });
+  }, [amapKey]);
+
+  const inject = useCallback((js: string) => {
+    webRef.current?.injectJavaScript(`${js}; true;`);
+  }, []);
+
+  // 打开时复位（mapReady 不重置：Modal 可能保留 WebView 不重载，
+  // 重载场景由 onLoadStart 重置）
   useEffect(() => {
     if (!visible) return;
     setQuery("");
     setResults([]);
     setCustomOpen(false);
     setCustomName("");
+    setMapCenter(null);
+    setNearby([]);
   }, [visible]);
 
-  // 地图选点模式：加载附近候选
+  // 地图就绪：把中心移到初始位置，触发首次附近加载
   useEffect(() => {
-    if (!visible || !coords) {
-      setNearby([]);
-      setLoadingNearby(false);
-      return;
-    }
-    let cancelled = false;
-    setLoadingNearby(true);
-    void api.trips
-      .nearbyPois(coords.lng, coords.lat, type, 10)
-      .then((list) => {
-        if (!cancelled) setNearby(list);
-      })
-      .catch(() => {
-        if (!cancelled) setNearby([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingNearby(false);
-      });
+    if (!mapReady || !visible) return;
+    inject(`window.recenterTo && window.recenterTo(${initialCenter.lng}, ${initialCenter.lat}, 15)`);
+  }, [mapReady, visible, initialCenter.lng, initialCenter.lat, inject]);
+
+  // 地图中心变化（拖动/缩放结束）：防抖刷新附近列表
+  const fetchNearby = useCallback(
+    (lng: number, lat: number, t: PoiAddType) => {
+      const seq = ++seqRef.current;
+      setLoadingNearby(true);
+      void api.trips
+        .nearbyPois(lng, lat, t, 10)
+        .then((list) => {
+          if (seq === seqRef.current) setNearby(list);
+        })
+        .catch(() => {
+          if (seq === seqRef.current) setNearby([]);
+        })
+        .finally(() => {
+          if (seq === seqRef.current) setLoadingNearby(false);
+        });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!visible || !mapCenter) return;
+    if (nearbyTimerRef.current) clearTimeout(nearbyTimerRef.current);
+    nearbyTimerRef.current = setTimeout(() => {
+      fetchNearby(mapCenter.lng, mapCenter.lat, type);
+    }, 250);
     return () => {
-      cancelled = true;
+      if (nearbyTimerRef.current) clearTimeout(nearbyTimerRef.current);
     };
-  }, [visible, coords, type]);
+  }, [visible, mapCenter, type, fetchNearby]);
 
   // 关键字即时搜索（防抖）
   useEffect(() => {
@@ -100,9 +149,9 @@ export function AddSpotSheet({
       setSearching(false);
       return;
     }
-    const seq = ++seqRef.current;
     setSearching(true);
     const timer = setTimeout(() => {
+      const seq = ++seqRef.current;
       void api.trips
         .searchPois(q, city.trim() || q, 8)
         .then((list) => {
@@ -117,6 +166,31 @@ export function AddSpotSheet({
     }, 350);
     return () => clearTimeout(timer);
   }, [query, city]);
+
+  const onMapMessage = useCallback(
+    (event: { nativeEvent: { data?: string } }) => {
+      const raw = event.nativeEvent.data;
+      if (!raw) return;
+      try {
+        const msg = JSON.parse(raw) as {
+          type: string;
+          payload?: { lng?: number; lat?: number } | null;
+        };
+        if (msg.type === "ready") {
+          setMapReady(true);
+        } else if (
+          msg.type === "mapCenter" &&
+          msg.payload?.lng != null &&
+          msg.payload.lat != null
+        ) {
+          setMapCenter({ lng: msg.payload.lng, lat: msg.payload.lat });
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  );
 
   const confirmCustom = useCallback(() => {
     const name = customName.trim();
@@ -143,15 +217,17 @@ export function AddSpotSheet({
           pointerEvents="box-none"
         >
           <View
-            style={[styles.addSheet, { paddingBottom: Math.max(insets.bottom, 12) }]}
+            style={[
+              styles.addSheet,
+              spotStyles.sheet,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
           >
             <View style={styles.addHead}>
               <View style={styles.addHeadMain}>
                 <Text style={styles.addTitle}>添加到 {dayLabel}</Text>
                 <Text style={styles.addSub}>
-                  {coords
-                    ? "选择附近或搜索地点，添加进当天行程"
-                    : "输入关键字搜索地点，添加进当天行程"}
+                  拖动地图选点或搜索关键词，添加进当天行程
                 </Text>
               </View>
               <Pressable style={styles.addClose} onPress={onCancel} hitSlop={12}>
@@ -167,6 +243,28 @@ export function AddSpotSheet({
               onChangeText={setQuery}
               returnKeyType="search"
             />
+
+            {amapKey ? (
+              <View style={[spotStyles.mapBox, q && spotStyles.mapBoxHidden]}>
+                {!mapReady ? (
+                  <View style={spotStyles.mapLoading}>
+                    <ActivityIndicator color={colors.brand} />
+                  </View>
+                ) : null}
+                <WebView
+                  ref={webRef}
+                  originWhitelist={["*"]}
+                  source={{ html: bootHtml, baseUrl: "https://webapi.amap.com" }}
+                  style={StyleSheet.absoluteFill}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  mixedContentMode="always"
+                  onLoadStart={() => setMapReady(false)}
+                  onMessage={onMapMessage}
+                />
+                <Text style={spotStyles.mapHint}>拖动地图，大头针所指位置即为选点</Text>
+              </View>
+            ) : null}
 
             <View style={styles.addTypeRow}>
               {TYPE_OPTIONS.map((o) => {
@@ -201,21 +299,30 @@ export function AddSpotSheet({
               </View>
             ) : list.length ? (
               <ScrollView
-                style={[styles.addList, { maxHeight: 300 }]}
+                style={styles.addList}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 nestedScrollEnabled
               >
                 {list.map((poi) => {
+                  const anchor = q ? null : mapCenter;
                   const dist =
-                    coords && poi.location
-                      ? distanceLabel(coords, poi.location)
+                    anchor && poi.location
+                      ? distanceLabel(anchor, poi.location)
                       : null;
                   return (
                     <Pressable
                       key={poi.poi_id || poi.name}
                       style={styles.addRow}
-                      onPress={() => onSelectPoi(poi, type)}
+                      onPress={() => {
+                        // 有坐标的搜索结果：先把地图移过去，让用户确认位置
+                        if (q && poi.location?.lng != null && poi.location.lat != null) {
+                          inject(
+                            `window.recenterTo && window.recenterTo(${poi.location.lng}, ${poi.location.lat}, 16)`,
+                          );
+                        }
+                        onSelectPoi(poi, type);
+                      }}
                       disabled={busy}
                     >
                       <View style={styles.addRowBody}>
@@ -240,9 +347,9 @@ export function AddSpotSheet({
             ) : (
               <View style={styles.addEmpty}>
                 <Text style={styles.addEmptyText}>
-                  {coords
-                    ? "该位置附近暂无这类地点，可搜索或自定义添加"
-                    : "输入关键字开始搜索，或用下方自定义添加"}
+                  {q
+                    ? "未找到匹配地点，换个词试试，或用下方自定义添加"
+                    : "大头针附近暂无这类地点，拖动地图或搜索"}
                 </Text>
               </View>
             )}
@@ -283,3 +390,40 @@ export function AddSpotSheet({
     </Modal>
   );
 }
+
+const spotStyles = StyleSheet.create({
+  sheet: {
+    height: "88%",
+    maxHeight: "88%",
+  },
+  mapBox: {
+    height: 210,
+    borderRadius: 16,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    marginBottom: 12,
+    backgroundColor: "#f3f4f6",
+  },
+  /** 搜索时隐藏地图但保留 WebView，避免清空搜索后地图中心被重置 */
+  mapBoxHidden: { display: "none" },
+  mapLoading: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  mapHint: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 8,
+    textAlign: "center",
+    fontSize: 11,
+    color: colors.muted,
+    zIndex: 3,
+  },
+});

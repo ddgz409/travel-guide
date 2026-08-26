@@ -29,7 +29,7 @@ type Props = {
 /**
  * 当天行程可排序列表 —— 基于 react-native-draggable-flatlist。
  *
- * 长按卡片进入拖拽：被拖卡片跟手移动、其余行自动让位，
+ * 长按右侧 ≡ 手柄进入拖拽：被拖卡片跟手移动、其余行自动让位，
  * 松手时经 onDragEnd 拿到最终顺序，一次性通知父级落库。
  * 列表自身可滚动，拖到边缘自动滚动，无需外层 ScrollView 参与手势协调。
  */
@@ -111,12 +111,7 @@ export function SortableDayList({
               </View>
             ) : null}
 
-            <View style={rowStyles.cardSlot}>
-              {/* 长按整卡即可拖拽；drag 由库托管手势，这里仅作兜底入口 */}
-              <Pressable onLongPress={drag} delayLongPress={ACTIVATE_DELAY}>
-                {renderRow(item)}
-              </Pressable>
-            </View>
+            <View style={rowStyles.cardSlot}>{renderRow(item)}</View>
 
             {editing ? (
               <View style={rowStyles.railRight}>

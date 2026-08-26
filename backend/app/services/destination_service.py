@@ -31,7 +31,12 @@ _COVERS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _cached_cover_url(city: str, name: str, url: str) -> str | None:
-    """把好图下载到 static/covers，返回稳定 URL；失败返回原 URL。"""
+    """把好图下载到 static/covers，返回稳定 URL；失败返回原 URL。
+
+    落盘前用 PIL 按 EXIF 方向转正像素再重编码为 JPEG：
+    手机竖拍照片靠 EXIF Orientation 标记旋转，Android RN Image
+    对网络图不应用该标记，直接存原始字节会显示成横着/歪的。
+    """
     if not url or not url.startswith("http"):
         return url
     try:
@@ -47,7 +52,32 @@ def _cached_cover_url(city: str, name: str, url: str) -> str | None:
         content = resp.content
         if len(content) < 1024:
             return url
-        path.write_bytes(content)
+        try:
+            from io import BytesIO
+
+            from PIL import Image, ImageOps
+
+            img = Image.open(BytesIO(content))
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            # 过大图等比缩到长边 1280，省流量也省存储
+            max_side = max(img.size)
+            if max_side > 1280:
+                scale = 1280 / max_side
+                img = img.resize(
+                    (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            data = buf.getvalue()
+        except Exception:
+            # 转码失败则退回原始字节，至少不丢图
+            data = content
+        if len(data) < 1024:
+            return url
+        path.write_bytes(data)
         return f"/static/covers/{filename}"
     except Exception:
         return url
