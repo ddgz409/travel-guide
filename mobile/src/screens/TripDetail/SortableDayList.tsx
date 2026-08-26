@@ -20,6 +20,9 @@ type Props = {
   items: Item[];
   canEdit: boolean;
   dragDisabled?: boolean;
+  /** 编辑态独占滚动区域（flex:1）：列表必须挂在唯一滚动容器上，
+   *  嵌套在 ScrollView 里会和父级抢垂直手势导致卡死 */
+  fill?: boolean;
   renderRow: (item: Item) => React.ReactElement;
   onOrderChange: (orderedIds: string[]) => void;
   /** 编辑态删除单条（右上 ✕） */
@@ -29,23 +32,30 @@ type Props = {
 /**
  * 当天行程可排序列表 —— 基于 react-native-draggable-flatlist。
  *
- * 长按右侧 ≡ 手柄进入拖拽：被拖卡片跟手移动、其余行自动让位，
- * 松手时经 onDragEnd 拿到最终顺序，一次性通知父级落库。
- * 列表自身可滚动，拖到边缘自动滚动，无需外层 ScrollView 参与手势协调。
+ * 参考 money_planner（sh.calvin.reorderable）的拖拽架构：
+ * - 拖拽中只改本地顺序，松手才提交父级落库；
+ * - 拖拽进行中外部数据回推不覆盖本地顺序（isDragging 守卫），
+ *   避免拖到一半被重置；
+ * - 拖拽只能由右侧 ≡ 手柄长按触发，卡片其余区域不响应；
+ * - 列表必须作为唯一滚动容器（fill 模式），不嵌套进 ScrollView。
  */
 export function SortableDayList({
   items,
   canEdit,
   dragDisabled = false,
+  fill = false,
   renderRow,
   onOrderChange,
   onRemove,
 }: Props) {
   const [order, setOrder] = useState<Item[]>(items);
   const editing = canEdit && !dragDisabled;
+  /** 拖拽进行中：屏蔽外部数据对本地顺序的覆盖 */
+  const draggingRef = useRef(false);
 
-  // 外部数据变化（切天/删改/接口回包）时以外部为准
+  // 外部数据变化（切天/删改/接口回包）时以外部为准；拖拽中跳过
   useEffect(() => {
+    if (draggingRef.current) return;
     setOrder(items);
   }, [items]);
 
@@ -53,17 +63,24 @@ export function SortableDayList({
   onOrderChangeRef.current = onOrderChange;
 
   const handleDragBegin = useCallback(() => {
+    draggingRef.current = true;
     Vibration.vibrate(TICK_MS);
   }, []);
 
   const handleDragEnd = useCallback(
     ({ data }: DragEndParams<Item>) => {
+      draggingRef.current = false;
       Vibration.vibrate(TICK_MS);
       setOrder(data);
       onOrderChangeRef.current?.(data.map((it) => it.id));
     },
     [],
   );
+
+  /** 松手兜底：即使 onDragEnd 未触发也解除拖拽守卫 */
+  const handleRelease = useCallback(() => {
+    draggingRef.current = false;
+  }, []);
 
   /** 上/下按钮点移一位（不依赖拖拽，稳态兜底交互） */
   const moveBy = useCallback(
@@ -169,22 +186,25 @@ export function SortableDayList({
   }
 
   return (
-    <View style={rowStyles.listWrap}>
+    <View style={[rowStyles.listWrap, fill && rowStyles.listWrapFill]}>
       <DraggableFlatList<Item>
         data={order}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         onDragBegin={handleDragBegin}
         onDragEnd={handleDragEnd}
+        onRelease={handleRelease}
         activationDistance={8}
         autoscrollSpeed={AUTOSCROLL_SPEED}
         windowSize={windowSize}
         initialNumToRender={order.length}
         maxToRenderPerBatch={order.length}
         showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
         removeClippedSubviews={false}
-        contentContainerStyle={rowStyles.listContent}
+        contentContainerStyle={[
+          rowStyles.listContent,
+          fill && rowStyles.listContentFill,
+        ]}
       />
     </View>
   );
@@ -196,7 +216,14 @@ const rowStyles = StyleSheet.create({
     maxHeight: 480,
     flexGrow: 0,
   },
+  /** fill 模式：独占父级全部高度，作为唯一滚动容器（不嵌套） */
+  listWrapFill: {
+    flex: 1,
+    maxHeight: undefined,
+  },
   listContent: { paddingBottom: 4 },
+  /** fill 模式内容至少铺满视口，少量条目时拖拽区域也够大 */
+  listContentFill: { flexGrow: 1, paddingBottom: 24 },
   row: {
     flexDirection: "row",
     alignItems: "center",

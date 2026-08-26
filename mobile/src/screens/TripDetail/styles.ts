@@ -75,6 +75,18 @@ export const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
+  /** 编辑态：列表独占滚动区（替代 ScrollView），拖拽列表作为唯一滚动容器 */
+  editWrap: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  /** FadeSwitch 包裹层也要占满，DraggableFlatList 才能拿到有界高度 */
+  editListGrow: {
+    flex: 1,
+    minHeight: 0,
+  },
   sheetList: {
     paddingHorizontal: 20,
     paddingBottom: 64,

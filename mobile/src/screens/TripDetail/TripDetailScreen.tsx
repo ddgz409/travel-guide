@@ -619,6 +619,92 @@ export function TripDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  /** 当天操作头（编辑态独占布局与常规滚动布局共用） */
+  const dayHeadBlock =
+    canEdit && currentDay ? (
+      <View style={styles.dayHead}>
+        <PressScale
+          style={styles.dayHeadLink}
+          onPress={onRegenDay}
+          disabled={actionBusy}
+        >
+          <Text style={styles.regenText}>
+            {actionBusy ? "处理中…" : "重新生成当天"}
+          </Text>
+        </PressScale>
+        <PressScale
+          style={styles.dayHeadLink}
+          onPress={onReplanDay}
+          disabled={actionBusy}
+        >
+          <Text style={styles.regenText}>AI 重新规划</Text>
+        </PressScale>
+        <View style={styles.dayHeadSpacer} />
+        <PressScale
+          style={styles.dayHeadBtn}
+          onPress={startPickMode}
+          disabled={actionBusy || pickMode}
+        >
+          <Text style={styles.dayHeadBtnText}>＋ 添加地点</Text>
+        </PressScale>
+        <PressScale
+          style={[styles.dayHeadBtn, editingDay && styles.dayHeadBtnOn]}
+          onPress={() => setEditingDay((v) => !v)}
+          disabled={actionBusy}
+        >
+          <Text
+            style={[
+              styles.dayHeadBtnText,
+              editingDay && styles.dayHeadBtnTextOn,
+            ]}
+          >
+            {editingDay ? "完成" : "编辑"}
+          </Text>
+        </PressScale>
+      </View>
+    ) : null;
+
+  /** 行程列表（编辑/常规两种布局共用同一份配置） */
+  const dayListBlock = (fill: boolean) => (
+    <FadeSwitch
+      switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
+      style={fill ? styles.editListGrow : undefined}
+    >
+      <SortableDayList
+        items={dayItems}
+        canEdit={canEdit}
+        dragDisabled={actionBusy || !editingDay}
+        fill={fill}
+        renderRow={(item) => {
+          const idx = dayItems.indexOf(item);
+          const hasNextRoute = dayItems
+            .slice(idx + 1)
+            .some((n) => n.selected && hasCoords(n.location));
+          return (
+            <ItemListRow
+              item={item}
+              tripId={trip.id}
+              destination={trip.destination}
+              hasNextRoute={hasNextRoute}
+              compact={editingDay}
+              onPoiPress={
+                item.type === "attraction" ||
+                item.type === "meal" ||
+                item.type === "hotel"
+                  ? () => openPoiDetail(poiSheetFromTripItem(item))
+                  : undefined
+              }
+            />
+          );
+        }}
+        onRemove={(item) => {
+          if (item.type !== "transport") void confirmDelete(item);
+        }}
+        onOrderChange={scheduleReorderPersist}
+      />
+    </FadeSwitch>
+  );
+
   return (
     <View style={styles.root}>
       <FadeSwitch
@@ -794,6 +880,17 @@ export function TripDetailScreen({ route, navigation }: Props) {
             ) : null}
           </View>
 
+          {editingDay && canEdit ? (
+            /* 编辑态：列表独占抽屉滚动区（唯一滚动容器），
+               不与外层 ScrollView 嵌套，避免手势打架卡死 */
+            <View style={styles.editWrap}>
+              {dayHeadBlock}
+              <Text style={styles.dragHint}>
+                点击卡片右上角 ✕ 删除 · 长按右侧 ≡ 手柄拖动排序
+              </Text>
+              {dayListBlock(true)}
+            </View>
+          ) : (
           <ScrollView
             style={styles.sheetScroll}
             showsVerticalScrollIndicator={false}
@@ -816,48 +913,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
           ) : null}
 
           <View style={styles.daySection}>
-            {canEdit && currentDay ? (
-              <View style={styles.dayHead}>
-                <PressScale
-                  style={styles.dayHeadLink}
-                  onPress={onRegenDay}
-                  disabled={actionBusy}
-                >
-                  <Text style={styles.regenText}>
-                    {actionBusy ? "处理中…" : "重新生成当天"}
-                  </Text>
-                </PressScale>
-                <PressScale
-                  style={styles.dayHeadLink}
-                  onPress={onReplanDay}
-                  disabled={actionBusy}
-                >
-                  <Text style={styles.regenText}>AI 重新规划</Text>
-                </PressScale>
-                <View style={styles.dayHeadSpacer} />
-                <PressScale
-                  style={styles.dayHeadBtn}
-                  onPress={startPickMode}
-                  disabled={actionBusy || pickMode}
-                >
-                  <Text style={styles.dayHeadBtnText}>＋ 添加地点</Text>
-                </PressScale>
-                <PressScale
-                  style={[styles.dayHeadBtn, editingDay && styles.dayHeadBtnOn]}
-                  onPress={() => setEditingDay((v) => !v)}
-                  disabled={actionBusy}
-                >
-                  <Text
-                    style={[
-                      styles.dayHeadBtnText,
-                      editingDay && styles.dayHeadBtnTextOn,
-                    ]}
-                  >
-                    {editingDay ? "完成" : "编辑"}
-                  </Text>
-                </PressScale>
-              </View>
-            ) : null}
+            {dayHeadBlock}
 
             <Text style={styles.sectionTitle}>
               精选行程 · {selectedItems.length} 个安排
@@ -865,47 +921,11 @@ export function TripDetailScreen({ route, navigation }: Props) {
 
             {canEdit ? (
               <Text style={styles.dragHint}>
-                {editingDay
-                  ? "点击卡片右上角 ✕ 删除 · 长按景点可上下拖动排序"
-                  : "点「编辑」可删除或长按拖动调整景点顺序"}
+                点「编辑」可删除或长按 ≡ 手柄拖动调整景点顺序
               </Text>
             ) : null}
 
-            <FadeSwitch
-              switchKey={`day-${selectedRouteId || "default"}-${activeDay}-${currentDay?.id || "d"}`}
-            >
-              <SortableDayList
-                items={dayItems}
-                canEdit={canEdit}
-                dragDisabled={actionBusy || !editingDay}
-                renderRow={(item) => {
-                  const idx = dayItems.indexOf(item);
-                  const hasNextRoute = dayItems
-                    .slice(idx + 1)
-                    .some((n) => n.selected && hasCoords(n.location));
-                  return (
-                    <ItemListRow
-                      item={item}
-                      tripId={trip.id}
-                      destination={trip.destination}
-                      hasNextRoute={hasNextRoute}
-                      compact={editingDay}
-                      onPoiPress={
-                        item.type === "attraction" ||
-                        item.type === "meal" ||
-                        item.type === "hotel"
-                          ? () => openPoiDetail(poiSheetFromTripItem(item))
-                          : undefined
-                      }
-                    />
-                  );
-                }}
-                onRemove={(item) => {
-                  if (item.type !== "transport") void confirmDelete(item);
-                }}
-                onOrderChange={scheduleReorderPersist}
-              />
-            </FadeSwitch>
+            {dayListBlock(false)}
 
             <View style={styles.budget}>
               <Text style={styles.sectionTitle}>预算估算</Text>
@@ -935,6 +955,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
             refs={trip.external_refs}
           />
           </ScrollView>
+          )}
         </View>
       </DraggableBottomSheet>
       <ShareChoiceSheet
