@@ -202,6 +202,28 @@ def _poi_to_item(poi: Poi, desc: str) -> dict[str, Any]:
     return item
 
 
+def _finalize_item_images(items: list[dict[str, Any]], city: str) -> list[dict[str, Any]]:
+    """统一把好图落盘到 static/covers 返回稳定 URL（对齐 /place-images 管线）。
+
+    高德原始图 URL 会过期/有防盗链，首张还可能是黑图占位图；
+    与 _enrich_items_with_photos 互斥：只处理已有 image 的条目，避免重复下载。
+    """
+    for it in items:
+        url = str(it.get("image") or "").strip()
+        if not url:
+            continue
+        good = pick_best_image([url] + [u for u in (it.get("images") or []) if u != url])
+        if not good:
+            # 全部不合格：去掉坏图，让前端走 place-images 兜底
+            it.pop("image", None)
+            it.pop("images", None)
+            continue
+        cached = _cached_cover_url(city, str(it.get("name") or ""), good)
+        it["image"] = cached
+        it["images"] = [cached] if cached else []
+    return items
+
+
 def _enrich_items_with_photos(
     items: list[dict[str, Any]],
     city: str,
@@ -233,8 +255,12 @@ def _enrich_items_with_photos(
             limit=3,
         )
         if photos:
-            out[idx]["image"] = photos[0]
-            out[idx]["images"] = photos[:3]
+            # 与 /place-images 一致：先质检挑好图，避免黑图/占位图直接上墙；
+            # 落盘缓存由后续 _finalize_item_images 统一做，此处不重复下载。
+            good = pick_best_image(photos)
+            if good:
+                out[idx]["image"] = good
+                out[idx]["images"] = photos[:3]
         count += 1
         time.sleep(0.15)
     return out
@@ -372,6 +398,12 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
 
     spots = _enrich_items_with_photos(spots, city_name, "spots")
     foods = _enrich_items_with_photos(foods, city_name, "foods")
+
+    # 统一把好图落盘为稳定本地 URL，避免高德原始图过期/防盗链导致前端裂图；
+    # 无图条目交由前端 place-images 兜底补图。
+    spots = _finalize_item_images(spots, city_name)
+    foods = _finalize_item_images(foods, city_name)
+    culture = _finalize_item_images(culture, city_name)
 
     logger.info(
         "City info fast city=%s foods=%d spots=%d humanities=%d",
