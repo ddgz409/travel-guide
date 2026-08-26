@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AA 分账 — UI 预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --text: #0f172a; --muted: #64748b;
+    --green: #0b8a3d; --red: #e11d48;
+    --brand-dark: #29B6F6;
+    --glass-bg: linear-gradient(135deg, rgba(255,255,255,.66), rgba(255,255,255,.28));
+    --glass-border: 1.5px solid rgba(255,255,255,.72);
+    --glass-shadow: 0 8px 24px rgba(71,85,158,.14), inset 0 1px 0 rgba(255,255,255,.85);
+    --blur: blur(18px) saturate(175%);
+  }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background:#e8ecf4; color:var(--text); -webkit-font-smoothing: antialiased; }
+  .demo-note { text-align:center; background:#fffbeb; color:#92400e; padding:8px; font-size:13px; border-bottom:1px solid #fde68a; }
+  .stage { padding: 28px 16px; display: flex; justify-content: center; }
+
+  .phone { position: relative; width: 390px; border-radius: 44px; border: 10px solid #10131a; overflow: hidden;
+           background: linear-gradient(168deg, #f0f9ff 0%, #f4f1ff 45%, #fff3f9 100%);
+           box-shadow: 0 24px 70px rgba(15,23,42,.35); }
+  /* 背景彩色光斑：让玻璃卡片有颜色可透 */
+  .blobs { position: absolute; inset: 0; pointer-events: none; }
+  .blobs i { position: absolute; border-radius: 50%; filter: blur(46px); }
+  .blobs .b1 { width: 230px; height: 230px; background: #9ad9ff; opacity: .45; top: -70px; left: -60px; }
+  .blobs .b2 { width: 200px; height: 200px; background: #c9b8fd; opacity: .35; top: 140px; right: -80px; }
+  .blobs .b3 { width: 220px; height: 220px; background: #fcc0da; opacity: .32; bottom: 130px; left: -90px; }
+  .blobs .b4 { width: 190px; height: 190px; background: #9ceac9; opacity: .35; bottom: -60px; right: -50px; }
+
+  .screen { position: relative; z-index: 1; height: 780px; overflow-y: auto; display: flex; flex-direction: column; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  .statusbar { flex-shrink: 0; height: 40px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: 11px; font-weight: 700; }
+
+  .head { flex-shrink: 0; display: flex; align-items: center; padding: 4px 16px 10px; }
+  .back { font-size: 16px; font-weight: 700; width: 64px; cursor: pointer; user-select: none; text-decoration: none; color: var(--text); }
+  .head-title { flex: 1; text-align: center; font-size: 19px; font-weight: 800; }
+  .head-right { width: 64px; }
+
+  .content { flex: 1; display: flex; flex-direction: column; padding: 4px 16px 12px; }
+
+  /* 行程信息区 */
+  .trip-info { text-align: center; padding: 2px 0 10px; }
+  .trip-name { font-size: 16px; font-weight: 800; }
+  .trip-dates { font-size: 12px; color: #475569; margin-top: 3px; font-weight: 600; }
+
+  /* 待办提醒横幅：同款玻璃 */
+  .banner { display: flex; align-items: center; gap: 8px; border-radius: 18px; padding: 11px 14px; margin-bottom: 8px; font-size: 13px; font-weight: 700;
+            background: var(--glass-bg); border: var(--glass-border);
+            -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-shadow); }
+  .banner-green { background: linear-gradient(135deg, rgba(200,242,213,.72), rgba(200,242,213,.35)); color: #14532d; }
+  .banner-orange { background: linear-gradient(135deg, rgba(255,224,178,.72), rgba(255,224,178,.35)); color: #9a3412; }
+  .banner-gray { background: var(--glass-bg); color: var(--muted); }
+  .banner .b-old { margin-left: auto; font-weight: 800; font-size: 15px; }
+
+  /* 核心：别人欠我 / 我欠别人 —— 透明玻璃卡 + 大号醒目数字 */
+  .summary-row { display: flex; gap: 10px; }
+  .summary-card { flex: 1; position: relative; overflow: hidden; border-radius: 24px; padding: 15px 8px 13px; text-align: center;
+                  background: var(--glass-bg); border: var(--glass-border);
+                  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+                  box-shadow: 0 10px 28px rgba(71,85,158,.16), inset 0 1px 0 rgba(255,255,255,.9); }
+  .summary-card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+                         background: linear-gradient(118deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 45%); }
+  .summary-label { position: relative; z-index: 1; font-size: 14px; font-weight: 800; color: #334155; letter-spacing: 1px; }
+  .summary-value { position: relative; z-index: 1; margin-top: 7px; font-size: 32px; font-weight: 900; letter-spacing: .5px; line-height: 1; }
+  .sum-green { color: var(--green); text-shadow: 0 3px 12px rgba(11,138,61,.30); }
+  .sum-red { color: var(--red); text-shadow: 0 3px 12px rgba(225,29,72,.28); }
+  .summary-sub { position: relative; z-index: 1; display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+  .sub-green { background: rgba(11,138,61,.13); color: var(--green); }
+  .sub-red { background: rgba(225,29,72,.11); color: var(--red); }
+  .summary-single { margin-top: 8px; }
+  /* 我需要支付：蓝色玻璃主调 */
+  .summary-card.slim { padding: 12px 8px;
+                       background: linear-gradient(135deg, rgba(41,182,246,.92), rgba(79,195,247,.42));
+                       border: 1.5px solid rgba(255,255,255,.68);
+                       box-shadow: 0 12px 28px rgba(41,182,246,.38), inset 0 1px 0 rgba(255,255,255,.7); }
+  .summary-card.slim .summary-label { font-size: 13px; font-weight: 800; color: rgba(255,255,255,.96); letter-spacing: 1px; }
+  .summary-card.slim .summary-value { margin-top: 6px; font-size: 24px; color: #fff; text-shadow: 0 3px 12px rgba(2,119,189,.45); }
+  .summary-card.slim .summary-sub { margin-top: 8px; background: rgba(255,255,255,.24); color: #fff; }
+
+  /* 统计条：玻璃 */
+  .stat-row { display: flex; margin-top: 8px; border-radius: 20px; padding: 11px 0;
+              background: var(--glass-bg); border: var(--glass-border);
+              -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-shadow); }
+  .stat-item { flex: 1; text-align: center; }
+  .stat-item + .stat-item { border-left: 1px solid rgba(255,255,255,.7); }
+  .stat-label { font-size: 11px; color: var(--muted); font-weight: 700; }
+  .stat-val { font-size: 17px; font-weight: 900; margin-top: 3px; color: var(--text); }
+
+  /* 同行人：玻璃胶囊 */
+  .section { margin-top: 14px; }
+  .section-title { font-size: 16px; font-weight: 800; margin-bottom: 7px; display: flex; align-items: center; gap: 8px; }
+  .add-small { font-size: 13px; font-weight: 700; color: #0288d1; margin-left: auto; cursor: pointer; }
+  .member-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+  .member-chip { display: flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 11px;
+                 background: var(--glass-bg); border: var(--glass-border);
+                 -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+                 box-shadow: 0 4px 14px rgba(71,85,158,.10); }
+  .member-chip.me { border-color: rgba(41,182,246,.55);
+                    background: linear-gradient(135deg, rgba(224,247,255,.8), rgba(224,247,255,.4)); }
+  .dot { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 800; }
+  .member-name { font-size: 13px; font-weight: 800; color: #1e293b; }
+  .me-tag { font-size: 10px; color: #0288d1; font-weight: 700; }
+  .member-bal { margin-left: 2px; font-size: 13px; font-weight: 900; }
+  .bal-plus { color: var(--green); }
+  .bal-minus { color: var(--red); }
+
+  /* 入口卡片：玻璃大卡，flex 撑满剩余屏幕高度 */
+  .section.entries { margin-top: 12px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .card-link { flex: 1; display: flex; align-items: center; gap: 14px; border-radius: 24px; padding: 13px; text-decoration: none; color: inherit;
+               background: var(--glass-bg); border: var(--glass-border);
+               -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+               box-shadow: 0 10px 28px rgba(71,85,158,.14), inset 0 1px 0 rgba(255,255,255,.85);
+               transition: transform .15s ease; }
+  .card-link:active { transform: scale(.985); }
+  .card-icon { width: 50px; height: 50px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;
+               background: rgba(255,255,255,.55);
+               box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 6px 16px rgba(71,85,158,.14); }
+  .card-body { flex: 1; min-width: 0; }
+  .card-title { font-size: 17px; font-weight: 800; color: var(--text); }
+  .card-sub { font-size: 12.5px; color: #475569; margin-top: 4px; font-weight: 600; }
+  .card-arrow { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.62); display: flex; align-items: center; justify-content: center;
+                font-size: 17px; color: #64748b; font-weight: 800; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+
+  /* 弹层 */
+  .overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-end; justify-content: center; z-index: 99; }
+  .overlay.show { display: flex; }
+  .sheet { width: 390px; background: rgba(255,255,255,.9); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+           border-radius: 28px 28px 0 0; padding: 14px 20px 32px; animation: up .25s ease; }
+  @keyframes up { from { transform: translateY(40px); opacity: .5; } to { transform: none; opacity: 1; } }
+  .grabber { width: 40px; height: 4px; border-radius: 2px; background: #E3E8EF; margin: 0 auto 14px; }
+  .sheet-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .field-label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 12px 0 6px; }
+  .input { width: 100%; border: 1px solid rgba(148,163,184,.4); background: rgba(255,255,255,.75); border-radius: 16px; padding: 12px 14px; font-size: 16px; font-family: inherit; outline: none; }
+  .row-between { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+  .cancel-text { color: var(--muted); font-size: 15px; font-weight: 700; padding: 8px; cursor: pointer; }
+  .save-btn { background: var(--brand-dark); color: #fff; border: none; border-radius: 999px; padding: 13px 30px; font-size: 15px; font-weight: 800; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="demo-note">📱 UI 预览 · AA 分账主页（玻璃拟态版）· 点下方两个入口框进入子页面</div>
+
+<div class="stage">
+  <div class="phone">
+    <div class="blobs"><i class="b1"></i><i class="b2"></i><i class="b3"></i><i class="b4"></i></div>
+    <div class="screen">
+      <div class="statusbar">9:41</div>
+
+      <div class="head">
+        <a class="back" href="detail.html">‹ 返回</a>
+        <div class="head-title">AA 分账</div>
+        <div class="head-right"></div>
+      </div>
+
+      <div class="content">
+        <!-- 行程信息 -->
+        <div class="trip-info">
+          <div class="trip-name">呼伦贝尔 7 日游</div>
+          <div class="trip-dates">8.1 → 8.3 · 共 4 人同行</div>
+        </div>
+
+        <!-- 待办提醒（动态：根据结算结果显示） -->
+        <div class="banner banner-green">
+          💚 王五 欠你 ¥125 · 共 1 笔
+          <span class="b-old">去收</span>
+        </div>
+
+        <!-- 汇总卡片：玻璃卡 + 醒目大数字 -->
+        <div class="summary-row">
+          <div class="summary-card">
+            <div class="summary-label">别人欠我</div>
+            <div class="summary-value sum-green">¥125</div>
+            <span class="summary-sub sub-green">1 笔待收</span>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">我欠别人</div>
+            <div class="summary-value sum-red">¥0</div>
+            <span class="summary-sub sub-red">已结清</span>
+          </div>
+        </div>
+        <div class="summary-single">
+          <div class="summary-card slim">
+            <div class="summary-label">我需要支付</div>
+            <div class="summary-value">¥0</div>
+            <span class="summary-sub">无需转账</span>
+          </div>
+        </div>
+
+        <!-- 统计条：总支出 / 人均 / 同行 -->
+        <div class="stat-row">
+          <div class="stat-item">
+            <div class="stat-label">总支出</div>
+            <div class="stat-val">¥600</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">人均</div>
+            <div class="stat-val">¥150</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">同行</div>
+            <div class="stat-val">4 人</div>
+          </div>
+        </div>
+
+        <!-- 同行人 -->
+        <div class="section">
+          <div class="section-title">
+            同行人 · 4
+            <span class="add-small" onclick="openSheet('member')">＋ 添加</span>
+          </div>
+          <div class="member-wrap">
+            <div class="member-chip me">
+              <div class="dot" style="background:#FF8A65">我</div>
+              <span class="member-name">我</span>
+              <span class="member-bal bal-plus">+125</span>
+            </div>
+            <div class="member-chip">
+              <div class="dot" style="background:#64B5F6">张</div>
+              <span class="member-name">张三</span>
+              <span class="member-bal bal-plus">+75</span>
+            </div>
+            <div class="member-chip">
+              <div class="dot" style="background:#81C784">李</div>
+              <span class="member-name">李四</span>
+              <span class="member-bal bal-minus">-75</span>
+            </div>
+            <div class="member-chip">
+              <div class="dot" style="background:#FFD54F">王</div>
+              <span class="member-name">王五</span>
+              <span class="member-bal bal-minus">-125</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 两个玻璃入口大卡：结算方案在上，消费明细在下，撑满剩余高度 -->
+        <div class="section entries">
+          <a class="card-link" href="settlement-flows.html">
+            <div class="card-icon" style="background:rgba(46,204,113,.22)">💸</div>
+            <div class="card-body">
+              <div class="card-title">结算方案</div>
+              <div class="card-sub">2 笔转账 · 人均 ¥150</div>
+            </div>
+            <div class="card-arrow">›</div>
+          </a>
+          <a class="card-link" href="settlement-expenses.html">
+            <div class="card-icon" style="background:rgba(79,195,247,.25)">🧾</div>
+            <div class="card-body">
+              <div class="card-title">消费明细</div>
+              <div class="card-sub">3 笔 · 合计 ¥600</div>
+            </div>
+            <div class="card-arrow">›</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 添加同行人弹层 -->
+<div class="overlay" id="memberOverlay">
+  <div class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-title">添加同行人</div>
+    <div class="field-label">姓名</div>
+    <input class="input" placeholder="输入同行人姓名" />
+    <div class="row-between">
+      <span class="cancel-text" onclick="closeSheet('member')">取消</span>
+      <button class="save-btn" onclick="closeSheet('member')">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openSheet(kind) {
+  document.getElementById(kind + "Overlay").classList.add("show");
+}
+function closeSheet(kind) {
+  document.getElementById(kind + "Overlay").classList.remove("show");
+}
+document.querySelectorAll(".overlay").forEach((ov) => {
+  ov.addEventListener("click", (e) => {
+    if (e.target === ov) ov.classList.remove("show");
+  });
+});
+</script>
+</body>
+</html>

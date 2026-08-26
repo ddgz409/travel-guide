@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>结算方案 — AA 分账</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #fafafa; --card: #ffffff; --text: #111827; --muted: #9E9E9E;
+    --line: #f0f0f0; --brand: #4FC3F7; --brand-dark: #29B6F6; --brand-soft: #E1F5FE;
+    --green: #2e7d32; --red: #c62828;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  .demo-note { text-align:center; background:#fffbeb; color:#92400e; padding:8px; font-size:13px; border-bottom:1px solid #fde68a; }
+  .stage { padding: 28px 16px; display: flex; justify-content: center; }
+
+  .phone { width: 390px; background: #fff; border-radius: 40px; border: 10px solid #111; box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; }
+  .screen { height: 780px; overflow-y: auto; background: #fff; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  .statusbar { height: 40px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: 11px; font-weight: 700; }
+
+  .head { display: flex; align-items: center; padding: 4px 16px 10px; }
+  .back { font-size: 16px; font-weight: 700; width: 64px; cursor: pointer; user-select: none; text-decoration: none; color: var(--text); }
+  .head-title { flex: 1; text-align: center; font-size: 19px; font-weight: 800; }
+  .head-right { width: 64px; }
+
+  .content { padding: 6px 16px 40px; }
+
+  .section { margin-top: 6px; }
+  .section-title { font-size: 16px; font-weight: 800; margin-bottom: 10px; }
+  .section-title .sub { font-size: 12px; color: var(--muted); font-weight: 600; margin-left: 6px; }
+
+  .flow-card { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+  .flow-person { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+  .flow-name { margin-top: 4px; font-size: 12px; font-weight: 600; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot-lg { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: 800; }
+  .flow-arrow { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .flow-amount { font-size: 15px; font-weight: 800; color: var(--brand-dark); }
+  .flow-unit { font-size: 12px; color: var(--muted); }
+
+  /* 已支付勾勾按钮：灰 = 未付，绿 = 已付，可来回切换 */
+  .paid-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid #d5d5d5;
+    background: #f7f7f7;
+    color: #b8b8b8;
+    font-size: 16px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: all .18s ease;
+    user-select: none;
+  }
+  .paid-btn.done {
+    background: var(--green);
+    border-color: var(--green);
+    color: #fff;
+  }
+
+  /* 成员余额 */
+  .balance-card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 6px 14px; }
+  .balance-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .balance-row:last-child { border-bottom: none; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 800; }
+  .balance-name { flex: 1; font-size: 13px; font-weight: 600; }
+  .balance-name .me-tag { font-size: 10px; color: var(--brand-dark); font-weight: 700; margin-left: 4px; }
+  .balance-val { font-size: 14px; font-weight: 800; }
+  .bal-plus { color: var(--green); }
+  .bal-minus { color: var(--red); }
+  .bal-zero { color: var(--muted); }
+
+  .hint { margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="demo-note">📱 UI 预览 · 结算方案（点击主页「结算方案」进入）</div>
+
+<div class="stage">
+  <div class="phone">
+    <div class="screen">
+      <div class="statusbar">9:41</div>
+
+      <div class="head">
+        <a class="back" href="javascript:history.back()">‹ 返回</a>
+        <div class="head-title">结算方案</div>
+        <div class="head-right"></div>
+      </div>
+
+      <div class="content">
+        <!-- 转账方案 -->
+        <div class="section">
+          <div class="section-title">谁该转给谁<span class="sub">最少转账 2 笔</span></div>
+          <div class="flow-card">
+            <div class="flow-person">
+              <div class="dot-lg" style="background:#FFD54F">王</div>
+              <div class="flow-name">王五</div>
+            </div>
+            <div class="flow-arrow">
+              <div class="flow-amount">¥125</div>
+              <div class="flow-unit">→</div>
+            </div>
+            <div class="flow-person">
+              <div class="dot-lg" style="background:#FF8A65">我</div>
+              <div class="flow-name">我</div>
+            </div>
+            <button class="paid-btn" onclick="togglePaid(this)">✓</button>
+          </div>
+          <div class="flow-card">
+            <div class="flow-person">
+              <div class="dot-lg" style="background:#81C784">李</div>
+              <div class="flow-name">李四</div>
+            </div>
+            <div class="flow-arrow">
+              <div class="flow-amount">¥75</div>
+              <div class="flow-unit">→</div>
+            </div>
+            <div class="flow-person">
+              <div class="dot-lg" style="background:#64B5F6">张</div>
+              <div class="flow-name">张三</div>
+            </div>
+            <button class="paid-btn" onclick="togglePaid(this)">✓</button>
+          </div>
+        </div>
+
+        <!-- 成员余额 -->
+        <div class="section">
+          <div class="section-title">成员结余<span class="sub">正 = 别人欠 TA</span></div>
+          <div class="balance-card">
+            <div class="balance-row">
+              <div class="dot" style="background:#FF8A65">我</div>
+              <span class="balance-name">我<span class="me-tag">我</span></span>
+              <span class="balance-val bal-plus">+¥125</span>
+            </div>
+            <div class="balance-row">
+              <div class="dot" style="background:#64B5F6">张</div>
+              <span class="balance-name">张三</span>
+              <span class="balance-val bal-plus">+¥75</span>
+            </div>
+            <div class="balance-row">
+              <div class="dot" style="background:#81C784">李</div>
+              <span class="balance-name">李四</span>
+              <span class="balance-val bal-minus">-¥75</span>
+            </div>
+            <div class="balance-row">
+              <div class="dot" style="background:#FFD54F">王</div>
+              <span class="balance-name">王五</span>
+              <span class="balance-val bal-minus">-¥125</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">共 ¥600 · 人均 ¥150 · 转完账点绿色勾 ✓</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function togglePaid(btn) {
+  btn.classList.toggle("done");
+}
+</script>
+</body>
+</html>

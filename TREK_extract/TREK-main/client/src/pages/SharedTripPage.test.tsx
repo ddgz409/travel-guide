@@ -1,0 +1,575 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '../../tests/helpers/render';
+import { Routes, Route } from 'react-router-dom';
+import { http, HttpResponse } from 'msw';
+import { server } from '../../tests/helpers/msw/server';
+import { resetAllStores, seedStore } from '../../tests/helpers/store';
+import { buildSettings } from '../../tests/helpers/factories';
+import { useSettingsStore } from '../store/settingsStore';
+import SharedTripPage from './SharedTripPage';
+
+// Mock react-leaflet (SharedTripPage renders a map)
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="map-container">{children}</div>
+  ),
+  TileLayer: () => null,
+  Marker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  useMap: () => ({
+    fitBounds: vi.fn(),
+    getCenter: vi.fn(() => ({ lat: 0, lng: 0 })),
+  }),
+}));
+
+vi.mock('leaflet', () => {
+  const L = {
+    divIcon: vi.fn(() => ({})),
+    latLngBounds: vi.fn(() => ({
+      extend: vi.fn(),
+      isValid: vi.fn(() => true),
+    })),
+    icon: vi.fn(() => ({})),
+  };
+  return { default: L, ...L };
+});
+
+// Mock react-dom/server (used in createMarkerIcon)
+vi.mock('react-dom/server', () => ({
+  renderToStaticMarkup: vi.fn(() => '<svg></svg>'),
+}));
+
+// Helper: render SharedTripPage under the correct route so useParams works
+function renderSharedTrip(token: string) {
+  return render(
+    <Routes>
+      <Route path="/shared/:token" element={<SharedTripPage />} />
+    </Routes>,
+    { initialEntries: [`/shared/${token}`] },
+  );
+}
+
+beforeEach(() => {
+  // SharedTripPage does NOT require authentication — do NOT seed auth store
+  resetAllStores();
+  vi.clearAllMocks();
+});
+
+describe('SharedTripPage', () => {
+  describe('FE-PAGE-SHARED-001: Renders without authentication', () => {
+    it('renders loading spinner without any auth state', async () => {
+      // Use a token that will delay or we just check initial state before response
+      server.use(
+        http.get('/api/shared/:token', async () => {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          return HttpResponse.json({ trips: [] });
+        }),
+      );
+
+      renderSharedTrip('test-token');
+
+      // While data is loading, shows a spinner (the loading div)
+      // The page shows a spinning div before data arrives
+      expect(document.body.textContent).toBeDefined();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-002: Trip data loads from share token API', () => {
+    it('fetches shared trip from GET /api/shared/:token', async () => {
+      renderSharedTrip('test-token');
+
+      // After data loads, trip name appears
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-003: Trip details displayed', () => {
+    it('shows trip name after data loads', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-004: Invalid token shows error', () => {
+    it('displays error message when token is invalid or expired', async () => {
+      renderSharedTrip('invalid-token');
+
+      await waitFor(() => {
+        expect(screen.getByText(/link expired or invalid/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-005: No edit controls shown (read-only)', () => {
+    it('shows the read-only indicator after data loads', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        // The shared page renders "Read-only shared view" text
+        expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-006: Expired token hint is shown', () => {
+    it('shows hint text below the lock icon on error', async () => {
+      renderSharedTrip('expired-token');
+
+      await waitFor(() => {
+        expect(screen.getByText(/no longer active/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-007: Map is rendered', () => {
+    it('renders the map container for the shared trip', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      // Map container should be rendered
+      expect(screen.getByTestId('map-container')).toBeInTheDocument();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-008: Bookings tab is visible when share_bookings is true', () => {
+    it('shows bookings tab button with default test-token permissions', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      const bookingsTab = screen.getByRole('button', { name: /bookings/i });
+      expect(bookingsTab).toBeInTheDocument();
+
+      // Clicking should not crash
+      fireEvent.click(bookingsTab);
+      expect(bookingsTab).toBeInTheDocument();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-009: Packing tab hidden when share_packing is false', () => {
+    it('does not show packing tab with default test-token (share_packing: false)', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: /packing/i })).toBeNull();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-010: Packing tab visible when share_packing is true', () => {
+    it('shows packing tab and packing items when share_packing is true', async () => {
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'packing-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+            days: [],
+            assignments: {},
+            dayNotes: {},
+            places: [],
+            reservations: [],
+            accommodations: [],
+            packing: [{ id: 1, name: 'Sunscreen', category: 'Health', checked: false }],
+            budget: [],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: true, share_budget: false, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('packing-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      const packingTab = screen.getByRole('button', { name: /packing/i });
+      expect(packingTab).toBeInTheDocument();
+
+      fireEvent.click(packingTab);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sunscreen')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-011: Budget tab visible when share_budget is true', () => {
+    it('shows budget tab and budget items when share_budget is true', async () => {
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'budget-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05', currency: 'EUR' },
+            days: [],
+            assignments: {},
+            dayNotes: {},
+            places: [],
+            reservations: [],
+            accommodations: [],
+            packing: [],
+            budget: [{ id: 1, name: 'Hotel', total_price: '200', category: 'Accommodation' }],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: false, share_budget: true, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('budget-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      const budgetTab = screen.getByRole('button', { name: /costs/i });
+      expect(budgetTab).toBeInTheDocument();
+
+      fireEvent.click(budgetTab);
+
+      await waitFor(() => {
+        expect(screen.getByText('Hotel')).toBeInTheDocument();
+      });
+      expect(screen.getAllByText(/200/).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('FE-PAGE-SHARED-012: Collab tab renders messages when share_collab is true', () => {
+    it('shows collab messages when share_collab is true', async () => {
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'collab-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+            days: [],
+            assignments: {},
+            dayNotes: {},
+            places: [],
+            reservations: [],
+            accommodations: [],
+            packing: [],
+            budget: [],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: false, share_budget: false, share_collab: true },
+            collab: [{ id: 1, username: 'alice', text: 'Hello team!', created_at: '2025-01-01T10:00:00Z', avatar: null }],
+          });
+        }),
+      );
+
+      renderSharedTrip('collab-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      const collabTab = screen.getByRole('button', { name: /chat/i });
+      expect(collabTab).toBeInTheDocument();
+
+      fireEvent.click(collabTab);
+
+      await waitFor(() => {
+        expect(screen.getByText('Hello team!')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-013: Day card expands when clicked', () => {
+    it('reveals place names after clicking a collapsed day card header', async () => {
+      const day = { id: 101, trip_id: 1, day_number: 1, date: '2026-07-01', title: 'Day One', notes: null };
+      const place = { id: 201, trip_id: 1, name: 'Eiffel Tower', lat: 48.8584, lng: 2.2945, category_id: null, image_url: null, address: null };
+
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'expand-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+            days: [day],
+            assignments: {
+              '101': [{ id: 301, day_id: 101, place_id: 201, order_index: 0, place }],
+            },
+            dayNotes: {},
+            places: [place],
+            reservations: [],
+            accommodations: [],
+            packing: [],
+            budget: [],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: false, share_budget: false, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('expand-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      // Eiffel Tower is only in the mocked map tooltip (1 occurrence)
+      expect(screen.getAllByText('Eiffel Tower')).toHaveLength(1);
+
+      // Click the day card header to expand it
+      fireEvent.click(screen.getByText('Day One'));
+
+      // Now Eiffel Tower also appears in the expanded day content
+      await waitFor(() => {
+        expect(screen.getAllByText('Eiffel Tower')).toHaveLength(2);
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-014: Language picker toggles', () => {
+    it('opens language dropdown and closes after selecting a language', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      // Language picker button shows current language
+      const langButton = screen.getByRole('button', { name: /english/i });
+      expect(langButton).toBeInTheDocument();
+
+      // Open the dropdown
+      fireEvent.click(langButton);
+
+      // Language options should now be visible
+      expect(screen.getByRole('button', { name: /deutsch/i })).toBeInTheDocument();
+
+      // Select a different language
+      fireEvent.click(screen.getByRole('button', { name: /deutsch/i }));
+
+      // Dropdown should close — Español is no longer visible
+      expect(screen.queryByRole('button', { name: /español/i })).toBeNull();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-015: TREK branding footer is rendered', () => {
+    it('renders the Shared via TREK footer', async () => {
+      renderSharedTrip('test-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/shared via/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-016: Bookings tab shows reservation list', () => {
+    it('renders reservations when bookings tab is active and reservations are provided', async () => {
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'bookings-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+            days: [],
+            assignments: {},
+            dayNotes: {},
+            places: [],
+            reservations: [
+              { id: 1, title: 'Flight to Paris', type: 'flight', status: 'confirmed', reservation_time: '2026-07-01T10:00:00', metadata: '{}' },
+            ],
+            accommodations: [],
+            packing: [],
+            budget: [],
+            categories: [],
+            permissions: { share_bookings: true, share_packing: false, share_budget: false, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('bookings-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /bookings/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Flight to Paris')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('FE-PAGE-SHARED-017: Multi-leg flight shows each leg in the Day Plan', () => {
+    const day = { id: 101, trip_id: 1, day_number: 1, date: '2026-07-01', title: 'Day One', notes: null };
+    const multiLegFlight = {
+      id: 9, trip_id: 1, title: 'Flight', type: 'flight', status: 'confirmed',
+      day_id: 101, end_day_id: 101,
+      reservation_time: '2026-07-01T08:00:00', reservation_end_time: '2026-07-01T20:00:00',
+      metadata: JSON.stringify({
+        legs: [
+          { from: 'FRA', to: 'BER', airline: 'Lufthansa', flight_number: 'LH1', dep_day_id: 101, dep_time: '08:00', arr_day_id: 101, arr_time: '09:00' },
+          { from: 'BER', to: 'HND', airline: 'Lufthansa', flight_number: 'LH2', dep_day_id: 101, dep_time: '10:00', arr_day_id: 101, arr_time: '20:00' },
+        ],
+        departure_airport: 'FRA', arrival_airport: 'HND', airline: 'Lufthansa', flight_number: 'LH1',
+      }),
+    };
+
+    function serveMultiLeg(token: string) {
+      server.use(
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== token) return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+            days: [day],
+            assignments: {},
+            dayNotes: {},
+            places: [],
+            reservations: [multiLegFlight],
+            accommodations: [],
+            packing: [],
+            budget: [],
+            categories: [],
+            permissions: { share_bookings: true, share_packing: false, share_budget: false, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+    }
+
+    it('renders each leg with its own route, not the overall start/end', async () => {
+      serveMultiLeg('multileg-token');
+      renderSharedTrip('multileg-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      // Expand the day to reveal the timeline
+      fireEvent.click(screen.getByText('Day One'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/FRA → BER/)).toBeInTheDocument();
+      });
+      // Second leg shows its OWN route + flight number (the bug showed the overall route here)
+      expect(screen.getByText(/BER → HND/)).toBeInTheDocument();
+      expect(screen.getByText(/LH2/)).toBeInTheDocument();
+      // The overall start→end must NOT appear on any leg
+      expect(screen.queryByText(/FRA → HND/)).toBeNull();
+    });
+
+    it('lists each leg flight number in the Bookings tab', async () => {
+      serveMultiLeg('multileg-bookings-token');
+      renderSharedTrip('multileg-bookings-token');
+
+      await waitFor(() => {
+        expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /bookings/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/LH1/)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/LH2/)).toBeInTheDocument();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-018: untitled day uses the translated day label (#1296)', () => {
+    it('renders the day-number label via i18n (German), not a hardcoded English string', async () => {
+      seedStore(useSettingsStore, { settings: buildSettings({ language: 'de' }) });
+      const day = { id: 101, trip_id: 1, day_number: 1, date: '2026-07-01', title: null, notes: null };
+      server.use(
+        http.get('/api/shared/:token', () => HttpResponse.json({
+          trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
+          days: [day],
+          assignments: {},
+          dayNotes: {},
+          places: [],
+          reservations: [],
+          accommodations: [],
+          packing: [],
+          budget: [],
+          categories: [],
+          permissions: { share_bookings: false, share_packing: false, share_budget: false, share_collab: false },
+          collab: [],
+        })),
+      );
+      renderSharedTrip('test-token');
+      // The untitled day shows the German label "Tag 1", proving the hardcoded English
+      // "Day 1" was replaced by the i18n key t('dayplan.dayN').
+      await waitFor(() => expect(screen.getByText('Tag 1')).toBeInTheDocument());
+    });
+  });
+
+  describe('FE-PAGE-SHARED-019: budget renders in the owner\'s baseCurrency, not the EUR trip fallback (#1361)', () => {
+    it('labels totals with the payload baseCurrency even when the trip currency is EUR', async () => {
+      server.use(
+        // No FX needed when the expense is already in the base; stub frankfurter so
+        // the live-rate fetch never hits the network in tests.
+        http.get('https://api.frankfurter.dev/v2/rates', () => HttpResponse.json([])),
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'cad-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05', currency: 'EUR' },
+            baseCurrency: 'CAD',
+            days: [], assignments: {}, dayNotes: {}, places: [], reservations: [], accommodations: [], packing: [],
+            budget: [{ id: 1, name: 'Hotel', total_price: '200', category: 'Accommodation', currency: 'CAD' }],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: false, share_budget: true, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('cad-token');
+      await waitFor(() => expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /costs/i }));
+
+      await waitFor(() => expect(screen.getByText('Hotel')).toBeInTheDocument());
+      // Total + per-row labelled CAD; never the EUR fallback.
+      expect(screen.getAllByText(/200\.00 CAD/).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/EUR/)).toBeNull();
+    });
+  });
+
+  describe('FE-PAGE-SHARED-020: mixed-currency expenses convert into baseCurrency via live FX (#1361)', () => {
+    it('converts a EUR expense into the base using fetched rates', async () => {
+      // Distinct base (NZD) so this test can't read the cached CAD rates seeded by
+      // FE-PAGE-SHARED-019 (useExchangeRates caches per base in module memory).
+      server.use(
+        // rates[X] = units of X per 1 base(NZD); 0.8 EUR per NZD → 100 EUR = 125.00 NZD
+        // (a clean 2-decimal result, distinct from the unconverted 100).
+        http.get('https://api.frankfurter.dev/v2/rates', () => HttpResponse.json([{ quote: 'EUR', rate: 0.8 }])),
+        http.get('/api/shared/:token', ({ params }) => {
+          if (params.token !== 'mixed-token') return;
+          return HttpResponse.json({
+            trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05', currency: 'EUR' },
+            baseCurrency: 'NZD',
+            days: [], assignments: {}, dayNotes: {}, places: [], reservations: [], accommodations: [], packing: [],
+            budget: [{ id: 1, name: 'Dinner', total_price: '100', category: 'Food', currency: 'EUR' }],
+            categories: [],
+            permissions: { share_bookings: false, share_packing: false, share_budget: true, share_collab: false },
+            collab: [],
+          });
+        }),
+      );
+
+      renderSharedTrip('mixed-token');
+      await waitFor(() => expect(screen.getByText('Shared Paris Trip')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /costs/i }));
+
+      await waitFor(() => expect(screen.getByText('Dinner')).toBeInTheDocument());
+      // 100 EUR / 0.8 = 125.00 NZD once the rate resolves.
+      await waitFor(() => expect(screen.getAllByText(/125\.00 NZD/).length).toBeGreaterThan(0));
+    });
+  });
+});

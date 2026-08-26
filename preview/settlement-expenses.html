@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>消费明细 — AA 分账</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #fafafa; --card: #ffffff; --text: #111827; --muted: #9E9E9E;
+    --line: #f0f0f0; --brand: #4FC3F7; --brand-dark: #29B6F6; --brand-soft: #E1F5FE;
+    --green: #2e7d32; --red: #c62828;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  .demo-note { text-align:center; background:#fffbeb; color:#92400e; padding:8px; font-size:13px; border-bottom:1px solid #fde68a; }
+  .stage { padding: 28px 16px; display: flex; justify-content: center; }
+
+  .phone { width: 390px; background: #fff; border-radius: 40px; border: 10px solid #111; box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; }
+  .screen { height: 780px; overflow-y: auto; background: #fff; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  .statusbar { height: 40px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: 11px; font-weight: 700; }
+
+  .head { display: flex; align-items: center; padding: 4px 16px 10px; }
+  .back { font-size: 16px; font-weight: 700; width: 64px; cursor: pointer; user-select: none; text-decoration: none; color: var(--text); }
+  .head-title { flex: 1; text-align: center; font-size: 19px; font-weight: 800; }
+  .head-right { width: 64px; }
+
+  .content { padding: 6px 16px 40px; }
+
+  .total-bar { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .total-bar .count { font-size: 16px; font-weight: 800; }
+  .total-bar .sum { font-size: 16px; font-weight: 800; color: var(--brand-dark); }
+
+  .btn-primary { width: 100%; background: var(--brand-dark); color: #fff; border: none; border-radius: 999px; padding: 13px 0; font-size: 15px; font-weight: 800; cursor: pointer; margin-bottom: 14px; }
+
+  .expense-card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+  .expense-head { display: flex; align-items: center; }
+  .expense-title { flex: 1; font-size: 15px; font-weight: 700; }
+  .expense-amount { font-size: 16px; font-weight: 800; }
+  .expense-meta { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .dot-sm { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 800; }
+  .expense-meta-text { font-size: 12px; color: var(--muted); }
+  .expense-split { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .split-chip { display: flex; align-items: center; gap: 4px; background: #F5F8FB; border-radius: 12px; padding: 3px 7px; }
+  .split-chip-text { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .dot-xs { width: 14px; height: 14px; border-radius: 50%; }
+
+  /* 弹层 */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; align-items: flex-end; justify-content: center; z-index: 99; }
+  .overlay.show { display: flex; }
+  .sheet { width: 390px; background: #fff; border-radius: 28px 28px 0 0; padding: 14px 20px 32px; animation: up .25s ease; }
+  @keyframes up { from { transform: translateY(40px); opacity: .5; } to { transform: none; opacity: 1; } }
+  .grabber { width: 40px; height: 4px; border-radius: 2px; background: #E3E8EF; margin: 0 auto 14px; }
+  .sheet-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .field-label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 12px 0 6px; }
+  .input { width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 16px; padding: 12px 14px; font-size: 16px; font-family: inherit; outline: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: #F5F8FB; cursor: pointer; user-select: none; }
+  .chip.on { border-color: var(--brand-dark); background: var(--brand-soft); }
+  .chip-text { font-size: 13px; font-weight: 700; }
+  .chip.on .chip-text { color: var(--brand-dark); }
+  .dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 800; }
+  .row-between { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+  .cancel-text { color: var(--muted); font-size: 15px; font-weight: 700; padding: 8px; cursor: pointer; }
+  .save-btn { background: var(--brand-dark); color: #fff; border: none; border-radius: 999px; padding: 13px 30px; font-size: 15px; font-weight: 800; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="demo-note">📱 UI 预览 · 消费明细（点击主页「消费明细」进入）</div>
+
+<div class="stage">
+  <div class="phone">
+    <div class="screen">
+      <div class="statusbar">9:41</div>
+
+      <div class="head">
+        <a class="back" href="javascript:history.back()">‹ 返回</a>
+        <div class="head-title">消费明细</div>
+        <div class="head-right"></div>
+      </div>
+
+      <div class="content">
+        <div class="total-bar">
+          <span class="count">共 3 笔</span>
+          <span class="sum">合计 ¥600</span>
+        </div>
+
+        <button class="btn-primary" onclick="openSheet('expense')">＋ 记一笔</button>
+
+        <div class="expense-card">
+          <div class="expense-head">
+            <span class="expense-title">晚餐</span>
+            <span class="expense-amount">¥300</span>
+          </div>
+          <div class="expense-meta">
+            <div class="dot-sm" style="background:#FF8A65">我</div>
+            <span class="expense-meta-text">我 付 · AA 给 4 人</span>
+          </div>
+          <div class="expense-split">
+            <div class="split-chip"><div class="dot-xs" style="background:#FF8A65"></div><span class="split-chip-text">我</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#64B5F6"></div><span class="split-chip-text">张三</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#81C784"></div><span class="split-chip-text">李四</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#FFD54F"></div><span class="split-chip-text">王五</span></div>
+          </div>
+        </div>
+
+        <div class="expense-card">
+          <div class="expense-head">
+            <span class="expense-title">景区门票</span>
+            <span class="expense-amount">¥200</span>
+          </div>
+          <div class="expense-meta">
+            <div class="dot-sm" style="background:#64B5F6">张</div>
+            <span class="expense-meta-text">张三 付 · AA 给 4 人</span>
+          </div>
+          <div class="expense-split">
+            <div class="split-chip"><div class="dot-xs" style="background:#FF8A65"></div><span class="split-chip-text">我</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#64B5F6"></div><span class="split-chip-text">张三</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#81C784"></div><span class="split-chip-text">李四</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#FFD54F"></div><span class="split-chip-text">王五</span></div>
+          </div>
+        </div>
+
+        <div class="expense-card">
+          <div class="expense-head">
+            <span class="expense-title">打车</span>
+            <span class="expense-amount">¥100</span>
+          </div>
+          <div class="expense-meta">
+            <div class="dot-sm" style="background:#81C784">李</div>
+            <span class="expense-meta-text">李四 付 · AA 给 2 人</span>
+          </div>
+          <div class="expense-split">
+            <div class="split-chip"><div class="dot-xs" style="background:#FF8A65"></div><span class="split-chip-text">我</span></div>
+            <div class="split-chip"><div class="dot-xs" style="background:#81C784"></div><span class="split-chip-text">李四</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 记一笔弹层 -->
+<div class="overlay" id="expenseOverlay">
+  <div class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-title">记一笔</div>
+    <div class="field-label">是什么钱</div>
+    <input class="input" placeholder="如：晚餐、打车、门票…" />
+    <div class="field-label">金额（元）</div>
+    <input class="input" placeholder="0.00" />
+    <div class="field-label">谁付的钱</div>
+    <div class="chips">
+      <div class="chip on"><div class="dot" style="background:#FF8A65">我</div><span class="chip-text">我</span></div>
+      <div class="chip"><div class="dot" style="background:#64B5F6">张</div><span class="chip-text">张三</span></div>
+      <div class="chip"><div class="dot" style="background:#81C784">李</div><span class="chip-text">李四</span></div>
+      <div class="chip"><div class="dot" style="background:#FFD54F">王</div><span class="chip-text">王五</span></div>
+    </div>
+    <div class="field-label">分摊给谁（默认均摊）</div>
+    <div class="chips">
+      <div class="chip on"><div class="dot" style="background:#FF8A65">我</div><span class="chip-text">我</span></div>
+      <div class="chip on"><div class="dot" style="background:#64B5F6">张</div><span class="chip-text">张三</span></div>
+      <div class="chip on"><div class="dot" style="background:#81C784">李</div><span class="chip-text">李四</span></div>
+      <div class="chip on"><div class="dot" style="background:#FFD54F">王</div><span class="chip-text">王五</span></div>
+    </div>
+    <div class="row-between">
+      <span class="cancel-text" onclick="closeSheet('expense')">取消</span>
+      <button class="save-btn" onclick="closeSheet('expense')">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openSheet(kind) {
+  document.getElementById(kind + "Overlay").classList.add("show");
+}
+function closeSheet(kind) {
+  document.getElementById(kind + "Overlay").classList.remove("show");
+}
+document.querySelectorAll(".overlay").forEach((ov) => {
+  ov.addEventListener("click", (e) => {
+    if (e.target === ov) ov.classList.remove("show");
+  });
+});
+</script>
+</body>
+</html>
