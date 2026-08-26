@@ -590,6 +590,26 @@ export function TripDetailScreen({ route, navigation }: Props) {
     }
   }
 
+  // 拖拽中每次换位都会回调 onOrderChange：云端保存做尾沿防抖，
+  // 停顿/松手后只落库最终顺序一次
+  const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reorderPendingRef = useRef<string[] | null>(null);
+  useEffect(
+    () => () => {
+      if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
+    },
+    [],
+  );
+  function scheduleReorderPersist(orderedIds: string[]) {
+    reorderPendingRef.current = orderedIds;
+    if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
+    reorderTimerRef.current = setTimeout(() => {
+      const ids = reorderPendingRef.current;
+      reorderPendingRef.current = null;
+      if (ids) void handleReorder(ids);
+    }, 500);
+  }
+
   if (error && !trip) {
     return (
       <View style={styles.center}>
@@ -933,7 +953,7 @@ export function TripDetailScreen({ route, navigation }: Props) {
                 onRemove={(item) => {
                   if (item.type !== "transport") void confirmDelete(item);
                 }}
-                onOrderChange={(ids) => void handleReorder(ids)}
+                onOrderChange={scheduleReorderPersist}
               />
             </FadeSwitch>
 
