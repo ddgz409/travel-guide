@@ -23,9 +23,13 @@ import type { Item } from "@travel-guide/shared";
 
 /** 长按激活时长 */
 const ACTIVATE_MS = 280;
-/** 自动滚动边缘/速度（过快会把卡片"甩离"手指） */
+/** 自动滚动边缘/速度 */
 const AUTO_EDGE = 44;
 const AUTO_SPEED = 3;
+/** 行间距（ItemListRow feedCard 的 marginBottom），仅用于提交后递推 tops */
+const ROW_GAP = 12;
+/** 单次拖拽自动滚动总里程上限（防贴边跑飞） */
+const MAX_AUTO_SCROLL = 900;
 /** 震动 ms */
 const TICK_MS = 8;
 
@@ -433,6 +437,9 @@ export function SortableDayList({
     autoDirRef.current = 0;
   }, []);
 
+  // 单次拖拽的自动滚动累计里程（防贴边无限跑飞）
+  const autoMileageRef = useRef(0);
+
   const setAutoDir = useCallback(
     (dir: number) => {
       if (!onAutoScroll) return;
@@ -443,16 +450,51 @@ export function SortableDayList({
       }
       autoDirRef.current = dir;
       if (dir !== 0) {
-        autoTimer.current = setInterval(() => onAutoScroll(dir * AUTO_SPEED), 16);
+        autoTimer.current = setInterval(() => {
+          if (Math.abs(autoMileageRef.current) >= MAX_AUTO_SCROLL) {
+            stopAutoScroll();
+            return;
+          }
+          const dy = dir * AUTO_SPEED;
+          autoMileageRef.current += dy;
+          onAutoScroll(dy);
+        }, 16);
       }
     },
-    [onAutoScroll],
+    [onAutoScroll, stopAutoScroll],
   );
 
   const onDragBegin = useCallback(() => {
+    autoMileageRef.current = 0;
     const win = getScrollWindow?.() ?? null;
     if (win) scrollWindow.value = win;
   }, [getScrollWindow, scrollWindow]);
+
+  /**
+   * 提交/顺序变化后重算每行 tops：首行锚点沿用真实测量值，
+   * 其后按「前一行真实高度 + 行间距」递推。
+   * Android 对纯位置变化不触发 onLayout，若不主动维护，
+   * 被交换过的行会拿着旧坐标参与下一次判定（表现为不响应/
+   * 隔行判定/瞬移到底部）。
+   */
+  const relayoutTops = useCallback(() => {
+    const ids = orderIds.value;
+    const hs = heights.value;
+    const prev = tops.value;
+    const next: Record<string, number> = {};
+    let anchor = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (i === 0) {
+        anchor = typeof prev[id] === "number" ? (prev[id] as number) : 0;
+        next[id] = anchor;
+      } else {
+        const prevId = ids[i - 1];
+        next[id] = next[prevId] + (hs[prevId] || 0) + ROW_GAP;
+      }
+    }
+    tops.value = next;
+  }, [orderIds, heights, tops]);
 
   const onDragEnd = useCallback(() => {
     stopAutoScroll();
@@ -476,9 +518,12 @@ export function SortableDayList({
         .filter((it): it is Item => it != null);
       setOrder(next);
       orderIds.value = ids;
+      // Android 对纯位置变化不触发 onLayout：立即递推新 tops，
+      // 否则被交换的行下次拖拽拿着旧坐标判定（不响应/乱跳/瞬移）
+      relayoutTops();
       onOrderChangeRef.current?.(ids);
     },
-    [order, orderIds],
+    [order, orderIds, relayoutTops],
   );
 
   const moveBy = useCallback(
@@ -500,14 +545,19 @@ export function SortableDayList({
   const onMeasure = useCallback(
     (id: string, y: number, h: number) => {
       // 直接记录真实渲染几何：y=行在列表内容中的绝对偏移，
-      // h=行高。判定与挤开动画全部用真实坐标，不做累加推算。
+      // h=行高。高度变化（如进出编辑态）后重递推 tops，
+      // 让未重新布局的兄弟行也拿到一致坐标。
       if (h <= 0) return;
-      if (heights.value[id] !== h || tops.value[id] !== y) {
+      if (heights.value[id] !== h) {
         heights.value = { ...heights.value, [id]: h };
+        relayoutTops();
+      } else if (tops.value[id] !== y) {
+        // 位置被系统修正：以真实 y 为首行锚点重递推
         tops.value = { ...tops.value, [id]: y };
+        relayoutTops();
       }
     },
-    [heights, tops],
+    [heights, tops, relayoutTops],
   );
 
   return (
