@@ -18,7 +18,6 @@ android {
         versionName = "4.0.0-alpha01"
         // 高德 3D 地图 SDK 10.x 起仅提供 arm 系 so
         ndk {
-            abiFilters += "armeabi-v7a"
             abiFilters += "arm64-v8a"
         }
     }

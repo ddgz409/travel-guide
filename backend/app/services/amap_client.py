@@ -3,6 +3,8 @@
 封装地理编码、POI 周边搜索、路线规划、天气查询。
 文档: https://lbs.amap.com/api/webservice/guide/api/georegeo
 """
+from __future__ import annotations
+
 import logging
 import threading
 import time as _time
@@ -34,6 +36,78 @@ def _amap_throttle() -> None:
 def _is_qps_error(exc: Exception) -> bool:
     msg = str(exc).upper()
     return "CUQPS" in msg or "10021" in msg or "EXCEEDED" in msg
+
+
+def _is_key_switch_error(exc: Exception) -> bool:
+    """日配额 / QPS / Key 无效 → 换下一个 Key 重试。"""
+    msg = str(exc).upper()
+    if _is_qps_error(exc):
+        return True
+    for token in (
+        "USER_DAILY_QUERY_OVER_LIMIT",
+        "10044",
+        "DAILY_QUERY_OVER_LIMIT",
+        "INVALID_USER_KEY",
+        "10001",
+        "USERKEY_PLAT_NOMATCH",
+        "10009",
+    ):
+        if token in msg:
+            return True
+    return False
+
+
+_key_pool_lock = threading.Lock()
+# Key 冷却至该时间戳后可重试（日配额约 1h 后恢复；无效 Key 冷却 7 天）
+_exhausted_until: dict[str, float] = {}
+
+
+def _exhaust_cooldown_s(reason: str) -> float:
+    msg = str(reason).upper()
+    if "INVALID_USER_KEY" in msg or "10001" in msg or "USERKEY" in msg:
+        return 86400.0 * 7
+    if "DAILY" in msg or "10044" in msg or "OVER_LIMIT" in msg:
+        return 3600.0
+    if _is_qps_error(Exception(reason)):
+        return 120.0
+    return 1800.0
+
+
+def _purge_exhausted_keys() -> None:
+    now = _time.time()
+    expired = [k for k, until in _exhausted_until.items() if now >= until]
+    for k in expired:
+        _exhausted_until.pop(k, None)
+
+
+def _mask_key(key: str) -> str:
+    k = (key or "").strip()
+    if len(k) <= 8:
+        return "***"
+    return f"...{k[-8:]}"
+
+
+def _mark_key_exhausted(key: str, reason: str) -> None:
+    cooldown = _exhaust_cooldown_s(reason)
+    until = _time.time() + cooldown
+    with _key_pool_lock:
+        prev = _exhausted_until.get(key, 0.0)
+        if until <= prev:
+            return
+        _exhausted_until[key] = until
+        logger.warning(
+            "高德 Key %s 暂不可用（%s），%.0f 分钟后重试",
+            _mask_key(key),
+            reason,
+            cooldown / 60.0,
+        )
+
+
+def _active_amap_keys(override: list[str] | None = None) -> list[str]:
+    keys = override if override is not None else settings.amap_api_keys
+    with _key_pool_lock:
+        _purge_exhausted_keys()
+        return [k for k in keys if k and k not in _exhausted_until]
 
 # POI 类型码（高德开放平台）
 # 详见 https://lbs.amap.com/api/webservice/guide/api/search
@@ -86,6 +160,50 @@ def _parse_photos(raw: object, limit: int = 6) -> list[str]:
         if len(out) >= limit:
             break
     return out
+
+
+def _poi_name_score(poi_name: str, keyword: str) -> int:
+    """名称匹配分：精确 > 互相包含 > 去常见后缀后相等。用于避免「故宫」命中「天坛」。"""
+    a = (poi_name or "").strip()
+    b = (keyword or "").strip()
+    if not a or not b:
+        return 0
+    if a == b:
+        return 100
+    if b in a:
+        return 90
+    if a in b:
+        return 80
+    # 去掉「景区/风景区/博物院」等后缀再比
+    suffixes = ("风景名胜区", "旅游区", "风景区", "博物院", "博物馆", "公园", "景区", "景点")
+    def strip_suf(s: str) -> str:
+        for suf in suffixes:
+            if s.endswith(suf) and len(s) > len(suf):
+                return s[: -len(suf)]
+        return s
+    aa, bb = strip_suf(a), strip_suf(b)
+    if aa and bb and (aa == bb or bb in aa or aa in bb):
+        return 70
+    return 0
+
+
+def _pick_best_poi(pois: list[Poi], keyword: str) -> Poi | None:
+    """从搜索结果里挑名称最贴近关键词、且尽量有图的 POI。"""
+    if not pois:
+        return None
+    scored: list[tuple[int, int, Poi]] = []
+    for p in pois:
+        score = _poi_name_score(p.name, keyword)
+        has_photo = 1 if p.photos else 0
+        scored.append((score, has_photo, p))
+    # 先比名称分，再比有无图
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    best_score, _, best = scored[0]
+    if best_score > 0:
+        return best
+    # 名称都对不上时：优先有图的第一条（比瞎用第 0 条稍好）
+    with_photos = [p for p in pois if p.photos]
+    return with_photos[0] if with_photos else pois[0]
 
 
 @dataclass
@@ -176,8 +294,13 @@ class AmapClient:
     """高德地图 API 客户端。"""
 
     def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key or settings.AMAP_API_KEY
+        self._keys_override: list[str] | None = [api_key.strip()] if api_key else None
         self._client = httpx.Client(timeout=10.0)
+
+    @property
+    def api_key(self) -> str:
+        keys = _active_amap_keys(self._keys_override)
+        return keys[0] if keys else ""
 
     def _check(self, data: dict) -> None:
         """校验高德响应状态。"""
@@ -185,40 +308,43 @@ class AmapClient:
         if status != "1":
             raise AmapError(f"高德 API 错误: {data.get('info')} (infocode={data.get('infocode')})")
 
-    def _get_json(self, url: str, params: dict, *, retries: int = 3) -> dict:
-        """带节流 + QPS 退避的 GET JSON。"""
+    def _get_json(self, url: str, params: dict, *, retries: int = 2) -> dict:
+        """带节流 + 多 Key 自动切换的 GET JSON。"""
+        keys = _active_amap_keys(self._keys_override)
+        if not keys:
+            raise AmapError("未配置可用的高德 API Key")
+
         last_err: Exception | None = None
-        for attempt in range(retries):
-            _amap_throttle()
-            try:
-                resp = self._client.get(url, params=params)
-                resp.raise_for_status()
-                data = resp.json()
-                self._check(data)
-                return data
-            except AmapError as e:
-                last_err = e
-                if attempt < retries - 1 and _is_qps_error(e):
-                    _time.sleep(1.0 * (attempt + 1))
-                    continue
-                raise
-            except httpx.HTTPError as e:
-                last_err = e
-                if attempt < retries - 1:
-                    _time.sleep(0.6)
-                    continue
-                raise
-        raise AmapError(str(last_err or "高德请求失败"))
+        for key in keys:
+            p = {**params, "key": key}
+            for attempt in range(retries):
+                _amap_throttle()
+                try:
+                    resp = self._client.get(url, params=p)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    self._check(data)
+                    return data
+                except AmapError as e:
+                    last_err = e
+                    if _is_key_switch_error(e):
+                        _mark_key_exhausted(key, str(e))
+                        break
+                    if attempt < retries - 1 and _is_qps_error(e):
+                        _time.sleep(1.0 * (attempt + 1))
+                        continue
+                    raise
+                except httpx.HTTPError as e:
+                    last_err = e
+                    if attempt < retries - 1:
+                        _time.sleep(0.6)
+                        continue
+                    raise
+        raise AmapError(str(last_err or "所有高德 API Key 均不可用"))
 
     def geocode(self, address: str) -> GeoResult:
         """地理编码：地址 -> 坐标 + 城市。"""
-        resp = self._client.get(
-            f"{AMAP_BASE}/geocode/geo",
-            params={"key": self.api_key, "address": address},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        self._check(data)
+        data = self._get_json(f"{AMAP_BASE}/geocode/geo", {"address": address})
         geocodes = data.get("geocodes") or []
         if not geocodes:
             raise AmapError(f"无法解析地址: {address}")
@@ -255,7 +381,6 @@ class AmapClient:
         if not poi_type and not keywords:
             raise ValueError("search_poi_around requires keywords or poi_type")
         params = {
-            "key": self.api_key,
             "location": location,
             "radius": radius,
             "offset": min(limit, 25),
@@ -296,6 +421,105 @@ class AmapClient:
                 continue
         return pois
 
+    def search_poi_ranked(
+        self,
+        city: str,
+        poi_type: str,
+        *,
+        limit: int = 12,
+        location: str | None = None,
+        radius: int = 50000,
+    ) -> list[Poi]:
+        """按高德综合权重（weight）拉取城市 POI。
+
+        扫街榜/状元榜暂无公开 Web API；优先 citylimit 全城 text 搜索（综合权重），
+        不足时再绕市中心 around + weight 补充。
+        """
+        city_key = (city or "").strip()
+        if not city_key:
+            return []
+
+        pois: list[Poi] = []
+        seen: set[str] = set()
+
+        def _append_raw(raw: list[Poi]) -> None:
+            for p in raw:
+                key = (p.name or "").strip().lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                pois.append(p)
+                if len(pois) >= limit * 2:
+                    return
+
+        kw = "特色餐厅|老字号" if poi_type == POI_TYPES["meal"] else "旅游景点|风景名胜"
+
+        # 1) 关键词 + 类型 + 城市限制（综合权重排序）
+        try:
+            _append_raw(
+                self.search_poi_by_keyword(
+                    kw,
+                    city=city_key,
+                    limit=limit * 2,
+                    city_limit=True,
+                    poi_type=poi_type,
+                ),
+            )
+        except (AmapError, ValueError) as e:
+            logger.warning("ranked poi keyword failed city=%s type=%s: %s", city_key, poi_type, e)
+
+        # 2) 仍不足：全城 types 检索
+        if len(pois) < limit:
+            try:
+                params: dict = {
+                    "types": poi_type,
+                    "city": city_key,
+                    "citylimit": "true",
+                    "offset": min(limit * 2, 25),
+                    "page": 1,
+                    "extensions": "all",
+                }
+                data = self._get_json(f"{AMAP_BASE}/place/text", params)
+                batch: list[Poi] = []
+                for p in data.get("pois") or []:
+                    loc = p.get("location") or ""
+                    if not loc:
+                        continue
+                    try:
+                        lng, lat = loc.split(",")
+                        rating, opentime = _parse_biz_ext(p.get("biz_ext") or {})
+                        batch.append(
+                            Poi(
+                                id=p.get("id", ""),
+                                name=p.get("name", ""),
+                                type=p.get("type", ""),
+                                lng=float(lng),
+                                lat=float(lat),
+                                address=p.get("address") or "",
+                                tel=p.get("tel") or "",
+                                opentime=opentime,
+                                rating=rating,
+                                photos=_parse_photos(p.get("photos")),
+                            ),
+                        )
+                    except (ValueError, KeyError):
+                        continue
+                _append_raw(batch)
+            except (AmapError, httpx.HTTPError) as e:
+                logger.warning("ranked poi text failed city=%s type=%s: %s", city_key, poi_type, e)
+
+        # 过滤子 POI（如「故宫博物院-中和殿」），按评分排序
+        filtered: list[Poi] = []
+        for p in pois:
+            name = (p.name or "").strip()
+            if not name:
+                continue
+            if "-" in name and _poi_name_score(name.split("-")[0], name) < 70:
+                continue
+            filtered.append(p)
+        filtered.sort(key=lambda p: (-float(p.rating or 0), len(p.name)))
+        return filtered[:limit]
+
     def search_poi_by_keyword(
         self,
         keyword: str,
@@ -313,7 +537,6 @@ class AmapClient:
         location_center: "lng,lat"，有则按距离排序（添加足迹等场景）。
         """
         params: dict = {
-            "key": self.api_key,
             "keywords": keyword,
             "offset": min(limit, 25),
             "page": max(1, page),
@@ -383,7 +606,8 @@ class AmapClient:
         limit = max(1, min(limit, 6))
         pid = (poi_id or "").strip()
         kw = (keyword or "").strip()
-        cache_key = f"{pid}|{city or ''}|{kw}|{poi_type or ''}|{limit}"
+        # v2：名称匹配 + 主图优先；旧缓存键失效
+        cache_key = f"v2|{pid}|{city or ''}|{kw}|{poi_type or ''}|{limit}"
         cached = _photo_cache.get(cache_key)
         if cached is not None:
             return cached[:limit]
@@ -393,7 +617,7 @@ class AmapClient:
             try:
                 data = self._get_json(
                     f"{AMAP_BASE}/place/detail",
-                    {"key": self.api_key, "id": pid, "extensions": "all"},
+                    {"id": pid, "extensions": "all"},
                 )
                 for p in data.get("pois") or []:
                     photos = _parse_photos(p.get("photos"), limit)
@@ -404,21 +628,25 @@ class AmapClient:
 
         if not photos and kw:
             try:
+                # 多取几条，按名称匹配正确 POI，再取该 POI 主图（photos[0]）
                 pois = self.search_poi_by_keyword(
                     kw,
                     city=city,
-                    limit=1,
+                    limit=8,
                     city_limit=bool(city),
                     poi_type=poi_type,
                 )
-                if pois and pois[0].photos:
-                    photos = pois[0].photos[:limit]
-                elif pois and pois[0].id and pois[0].id != pid:
-                    photos = self.get_poi_photos(poi_id=pois[0].id, limit=limit)
+                best = _pick_best_poi(pois, kw)
+                if best and best.photos:
+                    photos = best.photos[:limit]
+                elif best and best.id and best.id != pid:
+                    photos = self.get_poi_photos(poi_id=best.id, limit=limit)
             except (AmapError, httpx.HTTPError, ValueError) as e:
                 logger.warning("poi photo search failed kw=%s city=%s: %s", kw, city, e)
 
-        _photo_cache[cache_key] = photos
+        # 仅缓存成功结果；空列表不缓存，避免 Key 冷却期间误伤后续请求
+        if photos:
+            _photo_cache[cache_key] = photos
         return photos[:limit]
 
     def plan_route(
@@ -439,15 +667,12 @@ class AmapClient:
         path = path_map.get(mode)
         if not path:
             return None
-        params: dict = {"key": self.api_key, "origin": origin, "destination": destination}
+        params: dict = {"origin": origin, "destination": destination}
         if mode == "transit":
             # transit 必须传 city，否则高德返回错误
             params["city"] = city or "北京"
         try:
-            resp = self._client.get(f"{AMAP_BASE}{path}", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            self._check(data)
+            data = self._get_json(f"{AMAP_BASE}{path}", params)
             route = data.get("route") or {}
             if mode == "transit":
                 # 公交/地铁：返回多条候选方案
@@ -537,13 +762,10 @@ class AmapClient:
         返回 {"city": "...", "province": "...", "adcode": "..."}。
         失败时抛出 AmapError。
         """
-        resp = self._client.get(
+        data = self._get_json(
             f"{AMAP_BASE}/geocode/regeo",
-            params={"key": self.api_key, "location": f"{lng},{lat}"},
+            {"location": f"{lng},{lat}"},
         )
-        resp.raise_for_status()
-        data = resp.json()
-        self._check(data)
         regeocode = data.get("regeocode") or {}
         comp = regeocode.get("addressComponent") or {}
         city = comp.get("city") or ""
@@ -559,13 +781,10 @@ class AmapClient:
     def weather(self, adcode: str) -> dict | None:
         """天气查询。返回当天天气信息，失败返回 None。"""
         try:
-            resp = self._client.get(
+            data = self._get_json(
                 f"{AMAP_BASE}/weather/weatherInfo",
-                params={"key": self.api_key, "city": adcode, "extensions": "base"},
+                {"city": adcode, "extensions": "base"},
             )
-            resp.raise_for_status()
-            data = resp.json()
-            self._check(data)
             lives = data.get("lives") or []
             return lives[0] if lives else None
         except (AmapError, httpx.HTTPError) as e:

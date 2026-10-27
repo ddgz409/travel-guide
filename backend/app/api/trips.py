@@ -480,6 +480,35 @@ def _validate_destination_response(destination: str) -> dict:
     return check_destination(destination).to_dict()
 
 
+def _is_route_name(city: str) -> bool:
+    c = (city or "").strip()
+    return bool(c) and ("环线" in c or "大环线" in c or "路线" in c)
+
+
+def _filter_pois_by_city(pois: list, city_s: str) -> list:
+    """剔除明显不在目标城市的 POI（如搜德令哈却命中安徽同名店）。"""
+    city_n = (city_s or "").strip().replace("市", "")
+    if not city_n or len(city_n) < 2:
+        return pois
+    out: list = []
+    for p in pois:
+        addr = (getattr(p, "address", None) or "").replace("市", "")
+        name = (getattr(p, "name", None) or "")
+        if city_n in addr or city_n in name:
+            out.append(p)
+            continue
+        # 县级市常见写法：地址含上级州名
+        if city_n == "德令哈" and ("海西" in addr or "德令哈" in addr):
+            out.append(p)
+            continue
+        if city_n == "茶卡" and ("乌兰" in addr or "茶卡" in addr):
+            out.append(p)
+            continue
+        if city_n == "大柴旦" and ("海西" in addr or "大柴旦" in addr):
+            out.append(p)
+    return out if out else pois
+
+
 @router.get("/pois/search")
 def search_pois(
     q: str,
@@ -495,6 +524,8 @@ def search_pois(
         return []
     amap = get_amap_client()
     city_s = city.strip().replace("市", "")
+    if _is_route_name(city_s):
+        city_s = ""
     keyword = q.strip()
     try:
         adcode = ""
@@ -596,21 +627,47 @@ def search_pois(
                         break
 
             final = merged[:cap]
+            if city_s:
+                final = _filter_pois_by_city(final, city_s)
         else:
             fetch_n = min(max(limit * 3, 15), 25)
-            results = amap.search_poi_by_keyword(
-                keyword=keyword,
-                city=city_s or None,
-                limit=fetch_n,
-                city_limit=bool(city_s),
-                poi_type=POI_TYPES["attraction"],
-            )
+            results: list = []
+            if has_coords:
+                try:
+                    results = amap.search_poi_around(
+                        location=location,
+                        keywords=keyword,
+                        radius=80000,
+                        limit=fetch_n,
+                        sortrule="distance",
+                    )
+                except Exception:
+                    pass
+            city_key = adcode or city_s
+            if len(results) < fetch_n and city_key:
+                try:
+                    batch = amap.search_poi_by_keyword(
+                        keyword=keyword,
+                        city=city_key,
+                        limit=fetch_n,
+                        city_limit=True,
+                        location_center=location if has_coords else None,
+                        poi_type=POI_TYPES["attraction"],
+                    )
+                    seen = {p.id for p in results}
+                    for p in batch:
+                        if p.id not in seen:
+                            results.append(p)
+                            seen.add(p.id)
+                except Exception:
+                    pass
             if not results and city_s:
                 results = amap.search_poi_by_keyword(
                     keyword=keyword,
                     city=city_s,
                     limit=fetch_n,
                     city_limit=True,
+                    poi_type=POI_TYPES["attraction"],
                 )
 
             def _name_score(name: str) -> int:
@@ -641,6 +698,10 @@ def search_pois(
             ranked = sorted(results, key=lambda p: (-_name_score(p.name), -(p.rating or 0)))
             relevant = [p for p in ranked if _name_score(p.name) > 0]
             final = (relevant or ranked)[: min(limit, 20)]
+            if city_s:
+                filtered = _filter_pois_by_city(final, city_s)
+                if filtered:
+                    final = filtered[: min(limit, 20)]
 
         return [
             {
@@ -709,7 +770,7 @@ def nearby_pois(
 
 @router.get("/pois/suggest")
 def suggest_pois(city: str = ""):
-    """返回目的地热门必去景点（本地精选 + 高德补全，供搜索框推荐芯片）。"""
+    """返回目的地热门景点（高德权重 Top + 本地兜底，供生成页推荐芯片）。"""
     city_s = city.strip()
     if not city_s:
         return {"city": "", "landmarks": []}
@@ -1891,6 +1952,11 @@ def _run_regen_day(trip_id: str, day_index: int, generator) -> None:
             generator.regenerate_day(
                 trip, day_index, db, llm=_llm_for_trip(db, trip)
             )
+            trip = db.get(Trip, trip_id)
+            if trip:
+                trip.status = "ready"
+                trip.error_msg = None
+                db.commit()
         except GeneratorError as e:
             # 标记失败但不影响其他天
             from app.core.database import SessionLocal as _SL

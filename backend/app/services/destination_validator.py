@@ -133,6 +133,7 @@ _ROUTE_CITY_ALIASES: dict[str, str] = {
     "琼中": "琼中黎族苗族自治县",
     "白沙": "白沙黎族自治县",
     "昌江": "昌江黎族自治县",
+    "德令哈": "德令哈市",
 }
 
 
@@ -271,24 +272,28 @@ def _geo_matches_input(raw: str, geo) -> bool:
 
     县级市（如德令哈）高德 city 字段返回州名或空，因此
     city / district / formatted 三处都参与匹配。
+    兴趣点级结果（如输入「你好」命中曾都区某同名小店）不算数，
+    除非输入也出现在 city / district 字段里。
     """
     needle = _normalize_place(raw)
     if len(needle) < 2:
         return False
-    haystacks = [
-        _normalize_place(geo.city or ""),
-        _normalize_place(getattr(geo, "district", "") or ""),
-        _normalize_place(geo.formatted or ""),
-    ]
-    for hay in haystacks:
+    city = _normalize_place(geo.city or "")
+    district = _normalize_place(getattr(geo, "district", "") or "")
+    formatted = _normalize_place(geo.formatted or "")
+    level = (getattr(geo, "level", "") or "").strip()
+    for hay in (city, district, formatted):
         if not hay:
             continue
-        if needle in hay or hay in needle:
-            return True
-        if len(needle) >= 2 and hay[:2] == needle[:2]:
-            return True
-    # 兜底：区县级结果直接信任（level=区县/兴趣点 说明高德精确解析到了该地名）
-    if (getattr(geo, "level", "") or "") in ("区县", "县"):
+        hit = needle in hay or hay in needle or (len(needle) >= 2 and hay[:2] == needle[:2])
+        if not hit:
+            continue
+        # 兴趣点级结果只认行政区划字段，防止随机店铺名带飞校验（如「你好」→ 随州市）
+        if level == "兴趣点" and hay is formatted:
+            continue
+        return True
+    # 兜底：区县级结果直接信任（level=区县/县 说明高德精确解析到了该地名）
+    if level in ("区县", "县"):
         return True
     return False
 

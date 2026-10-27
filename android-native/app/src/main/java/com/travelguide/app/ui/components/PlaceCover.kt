@@ -13,13 +13,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.travelguide.app.data.api.ApiClient
-import com.travelguide.app.data.api.resolveImageUrl
+import coil.request.ImageRequest
+import com.travelguide.app.data.local.PlaceImageCache
 import com.travelguide.app.data.model.Item
 
-/** 拉取地点首图（可复用）：返回已走代理的可用 URL，无图返 null */
+/**
+ * 拉取地点首图（内存+磁盘缓存，对齐 RN PlaceImage）。
+ * 有缓存时首帧即可出图，不再每次打 place-images。
+ */
 @Composable
 fun rememberPlaceImage(
     city: String,
@@ -27,12 +31,14 @@ fun rememberPlaceImage(
     kind: String = "",
     poiId: String = "",
 ): String? {
-    var url by remember(city, name, kind, poiId) { mutableStateOf<String?>(null) }
+    var url by remember(city, name, kind, poiId) {
+        mutableStateOf(PlaceImageCache.peek(city, name, kind, poiId)?.firstOrNull())
+    }
     LaunchedEffect(city, name, kind, poiId) {
         if (city.isBlank() || name.isBlank()) return@LaunchedEffect
-        url = runCatching {
-            ApiClient.destinations.placeImages(city, name, kind, 1, poiId).images.firstOrNull()
-        }.getOrNull()?.let { resolveImageUrl(it) }
+        // 已有内存命中则跳过；否则走磁盘→网络
+        if (url != null) return@LaunchedEffect
+        url = PlaceImageCache.getUrls(city, name, kind, poiId, 1).firstOrNull()
     }
     return url
 }
@@ -48,31 +54,32 @@ fun PlaceCover(
     emoji: String,
     emojiBg: Color,
 ) {
-    var imageUrl by remember(item.id, item.name, city) { mutableStateOf<String?>(null) }
+    val kind = when (item.type) {
+        "meal" -> "foods"
+        "attraction" -> "spots"
+        else -> ""
+    }
+    val poiId = item.poiId.orEmpty()
+    var imageUrl by remember(item.id, item.name, city, kind, poiId) {
+        mutableStateOf(
+            if (item.type == "transport" || city.isBlank()) null
+            else PlaceImageCache.peek(city, item.name, kind, poiId)?.firstOrNull(),
+        )
+    }
+    val context = LocalContext.current
 
-    LaunchedEffect(item.id, item.name, city) {
+    LaunchedEffect(item.id, item.name, city, kind, poiId) {
         if (item.type == "transport" || city.isBlank()) return@LaunchedEffect
-        val kind = when (item.type) {
-            "meal" -> "foods"
-            "attraction" -> "spots"
-            else -> ""
-        }
-        val images = runCatching {
-            ApiClient.destinations.placeImages(
-                city = city,
-                name = item.name,
-                kind = kind,
-                limit = 1,
-                poiId = item.poiId.orEmpty(),
-            ).images
-        }.getOrDefault(emptyList())
-        imageUrl = images.firstOrNull()?.let { resolveImageUrl(it) }
+        imageUrl = PlaceImageCache.getUrls(city, item.name, kind, poiId, 1).firstOrNull()
     }
 
     val url = imageUrl
     if (url != null) {
         AsyncImage(
-            model = url,
+            model = ImageRequest.Builder(context)
+                .data(url)
+                .crossfade(false)
+                .build(),
             contentDescription = item.name,
             modifier = modifier,
             contentScale = ContentScale.Crop,

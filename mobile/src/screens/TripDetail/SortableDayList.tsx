@@ -197,6 +197,9 @@ const rowStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+    // Sortable.Flex 强制 alignItems:flex-start（库需测量 item 真实尺寸），
+    // 行必须显式 stretch 拉满容器宽度：右端 ✕/≡ 才能固定不随景点名字长短移动
+    alignSelf: "stretch",
   },
   cardSlot: { flex: 1, minWidth: 0 },
   railLeft: {

@@ -3,6 +3,8 @@ package com.travelguide.app.ui.screens
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.travelguide.app.data.api.ApiClient
+import com.travelguide.app.data.local.GuestStore
+import com.travelguide.app.data.local.LlmStore
 import com.travelguide.app.data.local.TokenStore
 import com.travelguide.app.data.model.AuthPayload
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +28,7 @@ class LoginViewModel : ViewModel() {
     fun onUsernameChange(v: String) = _state.value.let { _state.value = it.copy(username = v, error = null) }
     fun onPasswordChange(v: String) = _state.value.let { _state.value = it.copy(password = v, error = null) }
 
-    fun submit(register: Boolean) {
+    fun submit() {
         val s = _state.value
         if (s.loading) return
         if (s.username.isBlank() || s.password.isBlank()) {
@@ -37,8 +39,10 @@ class LoginViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val payload = AuthPayload(s.username.trim(), s.password)
-                val token = if (register) ApiClient.auth.register(payload) else ApiClient.auth.login(payload)
+                val token = ApiClient.auth.login(payload)
                 TokenStore.set(token.accessToken)
+                GuestStore.exitGuestMode()
+                LlmStore.syncFromCloudIfLoggedIn()
                 _state.value = _state.value.copy(loading = false, success = true)
             } catch (e: HttpException) {
                 _state.value = _state.value.copy(

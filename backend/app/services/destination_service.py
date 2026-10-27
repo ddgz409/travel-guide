@@ -7,7 +7,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -40,7 +39,7 @@ def _cached_cover_url(city: str, name: str, url: str) -> str | None:
     if not url or not url.startswith("http"):
         return url
     try:
-        safe = f"{city}_{name}".replace(" ", "_").replace("/", "_").replace("\\", "_")[:60]
+        safe = f"v2_{city}_{name}".replace(" ", "_").replace("/", "_").replace("\\", "_")[:60]
         digest = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
         filename = f"{safe}_{digest}.jpg"
         path = _COVERS_DIR / filename
@@ -202,19 +201,29 @@ def _poi_to_item(poi: Poi, desc: str) -> dict[str, Any]:
     return item
 
 
+def _pick_cover_url(urls: list[str]) -> str | None:
+    """优先用高德 POI 主图 photos[0]（详情页首页那张）；坏图再往下试。"""
+    if not urls:
+        return None
+    # 主图优先
+    if check_image_quality(urls[0]):
+        return urls[0]
+    # 主图不合格时才在剩余图里挑
+    return pick_best_image(urls[1:]) or urls[0]
+
+
 def _finalize_item_images(items: list[dict[str, Any]], city: str) -> list[dict[str, Any]]:
     """统一把好图落盘到 static/covers 返回稳定 URL（对齐 /place-images 管线）。
 
-    高德原始图 URL 会过期/有防盗链，首张还可能是黑图占位图；
-    与 _enrich_items_with_photos 互斥：只处理已有 image 的条目，避免重复下载。
+    优先保留高德主图（photos[0]），避免「质量重选」挑到不相关实景。
     """
     for it in items:
         url = str(it.get("image") or "").strip()
         if not url:
             continue
-        good = pick_best_image([url] + [u for u in (it.get("images") or []) if u != url])
+        candidates = [url] + [u for u in (it.get("images") or []) if u and u != url]
+        good = _pick_cover_url(candidates)
         if not good:
-            # 全部不合格：去掉坏图，让前端走 place-images 兜底
             it.pop("image", None)
             it.pop("images", None)
             continue
@@ -255,9 +264,8 @@ def _enrich_items_with_photos(
             limit=3,
         )
         if photos:
-            # 与 /place-images 一致：先质检挑好图，避免黑图/占位图直接上墙；
-            # 落盘缓存由后续 _finalize_item_images 统一做，此处不重复下载。
-            good = pick_best_image(photos)
+            # 优先高德主图 photos[0]；落盘由 _finalize_item_images 统一处理
+            good = _pick_cover_url(photos)
             if good:
                 out[idx]["image"] = good
                 out[idx]["images"] = photos[:3]
@@ -294,19 +302,78 @@ def _local_culture(city: str) -> list[dict[str, Any]]:
     ]
 
 
+def _ranked_spot_items(city: str, amap, *, limit: int = 12) -> list[dict[str, Any]]:
+    """高德权重 Top 风景名胜 → 城市详情「热门景点」列表。"""
+    items: list[dict[str, Any]] = []
+    try:
+        pois = amap.search_poi_ranked(city, POI_TYPES["attraction"], limit=limit * 2)
+    except Exception:
+        logger.exception("ranked spots failed city=%s", city)
+        return items
+    for poi in pois:
+        if not poi.name or is_micro_poi(poi.name):
+            continue
+        items.append(
+            _poi_to_item(
+                poi,
+                _poi_desc(poi, f"{city}高德热门"),
+            ),
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _ranked_food_items(city: str, amap, *, limit: int = 10) -> list[dict[str, Any]]:
+    """高德权重 Top 餐饮 POI（近似状元榜人气餐厅，非扫街榜原生数据）。"""
+    items: list[dict[str, Any]] = []
+    try:
+        pois = amap.search_poi_ranked(city, POI_TYPES["meal"], limit=limit * 2)
+    except Exception:
+        logger.exception("ranked foods failed city=%s", city)
+        return items
+    for poi in pois:
+        name = (poi.name or "").strip()
+        if not name or len(name) > 30:
+            continue
+        items.append(
+            _poi_to_item(
+                poi,
+                _poi_desc(poi, "高德人气餐厅"),
+            ),
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
 def _fallback_from_amap(city: str) -> dict[str, Any]:
-    """本地精选景点/美食/人文（按名气排序）+ 高德景点/人文补充，毫秒~秒级返回。"""
+    """高德权重 Top 景点/美食 + 本地精选兜底，毫秒~秒级返回。"""
     city = (city or "").strip()
-    # 本地精选库已按名气排序，全量返回（北京等热门城市 10+ 条）
-    spot_names = landmarks_for(city)
-    spots: list[dict[str, Any]] = [
-        {"name": n, "desc": f"{city}热门必去"} for n in spot_names
-    ]
-    foods = _local_foods(city)
+    amap = get_amap_client()
+    has_key = bool((amap.api_key or "").strip())
+
+    spots: list[dict[str, Any]] = []
+    foods: list[dict[str, Any]] = []
     culture = _local_culture(city)
 
-    amap = get_amap_client()
-    if not (amap.api_key or "").strip():
+    if has_key:
+        spots = _ranked_spot_items(city, amap, limit=12)
+        foods = _ranked_food_items(city, amap, limit=10)
+
+    if len(spots) < 4:
+        seen = {s["name"] for s in spots}
+        for n in landmarks_for(city):
+            if n not in seen:
+                spots.append({"name": n, "desc": f"{city}热门必去"})
+                seen.add(n)
+            if len(spots) >= 12:
+                break
+
+    if not foods:
+        foods = _local_foods(city)
+
+    if not has_key:
         return {
             "city": city,
             "foods": foods,
@@ -319,42 +386,12 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
         city_name = geo.city or city
     except AmapError as e:
         logger.warning("get_city_info geocode failed city=%s: %s", city, e)
-        return {
-            "city": city,
-            "foods": foods,
-            "spots": spots,
-            "humanities": culture,
-        }
-
-    def load_extra_spots() -> list[dict[str, Any]]:
-        # 本地精选不足 8 条时，用高德风景名胜补足
-        if len(spots) >= 8:
-            return []
-        try:
-            around = amap.search_poi_around(
-                geo.location,
-                POI_TYPES["attraction"],
-                radius=20000,
-                limit=12,
-                city=city_name,
-            )
-            extra: list[dict[str, Any]] = []
-            seen = {s["name"] for s in spots}
-            for poi in around:
-                if poi.name in seen or is_micro_poi(poi.name):
-                    continue
-                seen.add(poi.name)
-                extra.append(
-                    _poi_to_item(poi, _poi_desc(poi, f"{city_name}人气景点")),
-                )
-                if len(spots) + len(extra) >= 8:
-                    break
-            return extra
-        except Exception:
-            logger.exception("spot poi search failed city=%s", city)
-            return []
+        city_name = city
+        geo = None
 
     def load_culture() -> list[dict[str, Any]]:
+        if geo is None:
+            return culture
         try:
             pois = amap.search_poi_around(
                 geo.location,
@@ -362,16 +399,16 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
                 radius=20000,
                 limit=12,
                 city=city_name,
+                sortrule="weight",
             )
         except Exception:
             logger.exception("culture poi search failed city=%s", city)
-            return []
+            return culture
         items: list[dict[str, Any]] = []
         seen = {s["name"] for s in spots}
         for poi in pois:
             if not poi.name or poi.name in seen or is_micro_poi(poi.name):
                 continue
-            # 科教文化类 POI 混入学校/培训等噪点，按名称过滤
             if any(
                 k in poi.name
                 for k in ("大学", "学院", "学校", "中学", "小学", "幼儿园", "培训", "驾校")
@@ -381,32 +418,22 @@ def _fallback_from_amap(city: str) -> dict[str, Any]:
             items.append(_poi_to_item(poi, _poi_desc(poi, f"{city_name}人文地标")))
             if len(items) >= 10:
                 break
-        return items
+        return items or culture
 
     try:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f_spots = pool.submit(load_extra_spots) if len(spots) < 8 else None
-            f_culture = pool.submit(load_culture)
-            if f_spots:
-                spots.extend(f_spots.result(timeout=5))
-            culture = f_culture.result(timeout=5) or culture
-    except FuturesTimeoutError:
-        logger.warning("city info amap parallel timeout city=%s", city)
-
-    if not foods:
-        foods = _local_foods(city_name)
+        culture = load_culture()
+    except Exception:
+        logger.exception("city culture load failed city=%s", city)
 
     spots = _enrich_items_with_photos(spots, city_name, "spots")
     foods = _enrich_items_with_photos(foods, city_name, "foods")
 
-    # 统一把好图落盘为稳定本地 URL，避免高德原始图过期/防盗链导致前端裂图；
-    # 无图条目交由前端 place-images 兜底补图。
     spots = _finalize_item_images(spots, city_name)
     foods = _finalize_item_images(foods, city_name)
     culture = _finalize_item_images(culture, city_name)
 
     logger.info(
-        "City info fast city=%s foods=%d spots=%d humanities=%d",
+        "City info amap-ranked city=%s foods=%d spots=%d humanities=%d",
         city,
         len(foods),
         len(spots),
@@ -470,6 +497,27 @@ def get_city_info(city: str, user: "User | None" = None) -> dict[str, Any]:
     return result
 
 
+def _find_static_cover(city: str, name: str) -> str | None:
+    """高德暂不可用时，回退已落盘的 static/covers。"""
+    if not name.strip():
+        return None
+    covers_dir = _COVERS_DIR
+    if not covers_dir.is_dir():
+        return None
+    city_s = city.strip()
+    name_s = name.strip()
+    prefix = f"v2_{city_s}_{name_s}".replace(" ", "_").replace("/", "_").replace("\\", "_")[:60]
+    for path in sorted(covers_dir.glob(f"{prefix}*.jpg"), key=lambda p: -p.stat().st_mtime):
+        if path.stat().st_size > 1024:
+            return f"/static/covers/{path.name}"
+    for path in sorted(covers_dir.glob("*.jpg"), key=lambda p: -p.stat().st_mtime):
+        stem = path.stem
+        if name_s in stem and (not city_s or city_s in stem):
+            if path.stat().st_size > 1024:
+                return f"/static/covers/{path.name}"
+    return None
+
+
 def get_place_images(
     city: str,
     name: str,
@@ -477,7 +525,7 @@ def get_place_images(
     limit: int = 3,
     poi_id: str = "",
 ) -> dict[str, Any]:
-    """单地点图片：仅高德 POI 实景图，质量检测过滤黑图/纯色。"""
+    """单地点图片：匹配正确 POI 后优先用高德详情页主图 photos[0]。"""
     city = (city or "").strip()
     name = (name or "").strip()
     limit = max(1, min(limit, 6))
@@ -489,7 +537,6 @@ def get_place_images(
 
     try:
         if (amap.api_key or "").strip():
-            # 多拿几张，逐个质量检测
             raw = amap.get_poi_photos(
                 poi_id=poi_id.strip() or None,
                 keyword=name,
@@ -497,9 +544,8 @@ def get_place_images(
                 poi_type=poi_type,
                 limit=max(limit, 6),
             )
-            good_url = pick_best_image(raw)
-            # 未指定类型且未命中时，退一步用景点类型再搜一次，
-            # 否则部分 POI 关键词搜索拿不到照片（收藏夹地点多为景点）
+            good_url = _pick_cover_url(raw)
+            # 未指定类型且未命中时，用景点类型再搜一次
             if not good_url and poi_type is None:
                 raw = amap.get_poi_photos(
                     poi_id=poi_id.strip() or None,
@@ -508,13 +554,19 @@ def get_place_images(
                     poi_type=POI_TYPES["attraction"],
                     limit=max(limit, 6),
                 )
-                good_url = pick_best_image(raw)
+                good_url = _pick_cover_url(raw)
             if good_url:
                 source = "amap"
     except Exception:
         logger.exception("amap place images failed city=%s name=%s", city, name)
 
-    cached_url = _cached_cover_url(city, name, good_url) if good_url else None
+    if not good_url:
+        static = _find_static_cover(city, name)
+        if static:
+            good_url = static
+            source = "static"
+
+    cached_url = _cached_cover_url(city, name, good_url) if good_url and good_url.startswith("http") else good_url
 
     return {
         "city": city,
@@ -544,7 +596,7 @@ def get_city_covers(pairs: list[dict[str, str]]) -> dict[str, str | None]:
                 poi_type=POI_TYPES["attraction"],
                 limit=6,
             )
-            good = pick_best_image(photos)
+            good = _pick_cover_url(photos)
             out[city] = _cached_cover_url(city, landmark, good) if good else None
         except Exception:
             logger.exception("city cover failed city=%s landmark=%s", city, landmark)

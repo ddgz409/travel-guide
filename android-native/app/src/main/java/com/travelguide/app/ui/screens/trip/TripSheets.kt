@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -55,8 +56,14 @@ import com.travelguide.app.data.model.Location
 import com.travelguide.app.data.model.PoiSearchResult
 import com.travelguide.app.data.model.Trip
 import com.travelguide.app.data.model.matchCities
+import com.travelguide.app.data.util.resolvePoiSearchCity
+import com.travelguide.app.ui.components.rememberPlaceImage
 import com.travelguide.app.ui.theme.ZhijingColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
 
 private val ADD_TYPES = listOf("attraction" to "景点", "meal" to "餐饮", "hotel" to "住宿")
 
@@ -65,24 +72,78 @@ private val ADD_TYPES = listOf("attraction" to "景点", "meal" to "餐饮", "ho
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddSpotSheet(
-    city: String,
+    dayCity: String?,
+    tripDestination: String,
     dayLabel: String,
     busy: Boolean,
-    /** 当天行程锚点坐标：传给后端逆地理定位城市，
-     *  避免多城路线名（如「青甘环线」）当 city 导致搜不到 */
     anchor: Location?,
+    pickedLocation: Location? = null,
     onSelectPoi: (PoiSearchResult, String) -> Unit,
-    onAddCustom: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val searchCity = remember(dayCity, tripDestination) {
+        resolvePoiSearchCity(dayCity, tripDestination)
+    }
     var query by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("attraction") }
     var results by remember { mutableStateOf<List<PoiSearchResult>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
+    var customBusy by remember { mutableStateOf(false) }
+
+    val poiKind = when (type) {
+        "meal" -> "foods"
+        "hotel" -> "hotels"
+        else -> "spots"
+    }
+
+    fun validateAndAddCustom(name: String) {
+        if (name.isBlank() || busy || customBusy) return
+        customBusy = true
+        scope.launch {
+            try {
+                val list = ApiClient.trips.searchPois(
+                    q = name,
+                    city = searchCity.ifBlank { name },
+                    limit = 5,
+                    lng = anchor?.lng,
+                    lat = anchor?.lat,
+                )
+                when {
+                    list.isEmpty() -> {
+                        val hint = searchCity.ifBlank { "当前城市" }
+                        Toast.makeText(
+                            context,
+                            "未在「$hint」找到「$name」，请从下方搜索结果选择",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    list.size == 1 || list.any { it.name.trim() == name.trim() } -> {
+                        val pick = list.firstOrNull { it.name.trim() == name.trim() } ?: list.first()
+                        if (pick.location == null) {
+                            Toast.makeText(context, "该地点缺少坐标，请换关键词搜索", Toast.LENGTH_SHORT).show()
+                        } else {
+                            onSelectPoi(pick, type)
+                        }
+                    }
+                    else -> {
+                        results = list
+                        query = name
+                        Toast.makeText(context, "找到多个相似地点，请选择正确的一项", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (_: Exception) {
+                Toast.makeText(context, "地点校验失败，请稍后重试", Toast.LENGTH_SHORT).show()
+            } finally {
+                customBusy = false
+            }
+        }
+    }
 
     // 搜索防抖（400ms）
-    LaunchedEffect(query, type) {
+    LaunchedEffect(query, type, searchCity, anchor?.lng, anchor?.lat) {
         results = emptyList()
         if (query.isBlank()) {
             searching = false
@@ -93,8 +154,7 @@ fun AddSpotSheet(
         try {
             results = ApiClient.trips.searchPois(
                 q = query.trim(),
-                // 无坐标时用关键字兜底当城市（对齐 RN 版），避免空 city 零结果
-                city = city.trim().ifBlank { query.trim() },
+                city = searchCity.ifBlank { query.trim() },
                 limit = 8,
                 lng = anchor?.lng,
                 lat = anchor?.lat,
@@ -113,6 +173,22 @@ fun AddSpotSheet(
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Text("添加地点 · $dayLabel", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+            if (pickedLocation != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "已选地图坐标 · ${"%.5f".format(pickedLocation.lat)}, ${"%.5f".format(pickedLocation.lng)}",
+                    fontSize = 12.sp,
+                    color = ZhijingColors.BrandHot,
+                )
+            }
+            if (searchCity.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "搜索范围：$searchCity（环线行程按当天城市定位）",
+                    fontSize = 11.sp,
+                    color = ZhijingColors.Muted,
+                )
+            }
             Spacer(Modifier.height(12.dp))
 
             // 类型选择
@@ -143,13 +219,11 @@ fun AddSpotSheet(
                 )
                 Spacer(Modifier.width(8.dp))
                 Button(
-                    onClick = {
-                        if (customName.isNotBlank() && !busy) onAddCustom(customName.trim(), type)
-                    },
-                    enabled = customName.isNotBlank() && !busy,
+                    onClick = { validateAndAddCustom(customName.trim()) },
+                    enabled = customName.isNotBlank() && !busy && !customBusy,
                     colors = ButtonDefaults.buttonColors(containerColor = ZhijingColors.BrandHot),
                 ) {
-                    Text("添加")
+                    Text(if (customBusy) "校验中…" else "添加")
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -159,7 +233,11 @@ fun AddSpotSheet(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("在 $city 搜索${TYPE_LABEL[type] ?: ""}…", fontSize = 13.sp) },
+                placeholder = { Text(
+                    if (searchCity.isNotBlank()) "在 $searchCity 搜索${TYPE_LABEL[type] ?: ""}…"
+                    else "输入关键字搜索${TYPE_LABEL[type] ?: "地点"}…",
+                    fontSize = 13.sp,
+                ) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 colors = fieldColors(),
@@ -173,19 +251,47 @@ fun AddSpotSheet(
             } else {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                     items(results, key = { it.poiId.ifEmpty { it.name } }) { poi ->
+                        val coverUrl = rememberPlaceImage(
+                            city = searchCity.ifBlank { tripDestination },
+                            name = poi.name,
+                            kind = poiKind,
+                            poiId = poi.poiId,
+                        )
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(ZhijingColors.BgSurface)
-                                .clickable(enabled = !busy) { onSelectPoi(poi, type) }
+                                .clickable(enabled = !busy && poi.location != null) {
+                                    if (poi.location != null) onSelectPoi(poi, type)
+                                }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            Box(
+                                Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(ZhijingColors.Line),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (coverUrl != null) {
+                                    AsyncImage(
+                                        model = coverUrl,
+                                        contentDescription = poi.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Text("📍", fontSize = 18.sp)
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(poi.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (poi.address.isNotBlank()) {
-                                    Text(poi.address, fontSize = 12.sp, color = ZhijingColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val addr = poi.address.ifBlank { poi.location?.address.orEmpty() }
+                                if (addr.isNotBlank()) {
+                                    Text(addr, fontSize = 12.sp, color = ZhijingColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                             poi.rating?.let {
@@ -259,9 +365,9 @@ fun AddCitySheet(
                 CityChipRow(suggestions) { city = it }
             } else {
                 Text(
-                    "未匹配到「$query」相关城市，请检查城市名称",
+                    "未在列表中找到「$query」，仍可直接添加（将校验地名）",
                     fontSize = 12.sp,
-                    color = ZhijingColors.Danger,
+                    color = ZhijingColors.Muted,
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -340,115 +446,7 @@ private fun CityChipRow(cities: List<String>, onPick: (String) -> Unit) {
     }
 }
 
-// ---------- 地点详情（v1 精简版） ----------
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ItemDetailSheet(
-    item: Item,
-    city: String,
-    onToggleSelected: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val badge = typeBadge(item.type)
-    // 真实图片画廊（对齐 RN TripItemDetailScreen 的 PlaceImage 行）
-    var gallery by remember(item.id, city) { mutableStateOf<List<String>?>(null) }
-    LaunchedEffect(item.id, city) {
-        if (city.isBlank()) return@LaunchedEffect
-        val kind = when (item.type) {
-            "meal" -> "foods"
-            "attraction" -> "spots"
-            else -> ""
-        }
-        gallery = runCatching {
-            ApiClient.destinations.placeImages(
-                city = city,
-                name = item.name,
-                kind = kind,
-                limit = 3,
-                poiId = item.poiId.orEmpty(),
-            ).images
-        }.getOrDefault(emptyList()).map { resolveImageUrl(it) }
-    }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = ZhijingColors.Card,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    item.name,
-                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Box(Modifier.clip(RoundedCornerShape(6.dp)).background(badge.bg).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                    Text(TYPE_LABEL[item.type] ?: item.type, fontSize = 12.sp, color = badge.fg)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-
-            // 图片画廊
-            val imgs = gallery.orEmpty()
-            if (imgs.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    imgs.forEach { url ->
-                        AsyncImage(
-                            model = url,
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .size(width = 140.dp, height = 96.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(ZhijingColors.BgSurface),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            Text(
-                buildList {
-                    add(SLOT_LABEL[item.timeSlot] ?: item.timeSlot.ifBlank { null })
-                    item.durationMin?.let { add("${it}分钟") }
-                    item.cost?.let { add("¥${it.toLong()}") }
-                    item.rating?.let { add("评分 $it") }
-                }.filterNotNull().joinToString(" · "),
-                fontSize = 13.sp,
-                color = ZhijingColors.Muted,
-            )
-
-            item.location?.address?.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.height(6.dp))
-                Text("📍 $it", fontSize = 13.sp, color = ZhijingColors.Muted)
-            }
-
-            item.description?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                Spacer(Modifier.height(10.dp))
-                Text(it, fontSize = 14.sp, lineHeight = 22.sp)
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (item.selected) "已加入精选行程" else "已从精选中隐藏", fontSize = 14.sp)
-                Spacer(Modifier.weight(1f))
-                Switch(
-                    checked = item.selected,
-                    onCheckedChange = onToggleSelected,
-                    colors = SwitchDefaults.colors(checkedTrackColor = ZhijingColors.BrandHot),
-                )
-            }
-            Spacer(Modifier.height(28.dp))
-        }
-    }
-}
+// ---------- 表单颜色 ----------
 
 @Composable
 private fun fieldColors() = OutlinedTextFieldDefaults.colors(

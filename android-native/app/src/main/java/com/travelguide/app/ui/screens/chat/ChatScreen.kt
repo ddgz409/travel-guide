@@ -1,5 +1,6 @@
 package com.travelguide.app.ui.screens.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,22 +14,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +54,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.travelguide.app.data.api.ApiClient
@@ -51,16 +64,31 @@ import com.travelguide.app.data.api.ChatStreamRequest
 import com.travelguide.app.data.api.ErrorBody
 import com.travelguide.app.data.api.GeneratePayload
 import com.travelguide.app.data.api.GenPreferences
-import com.travelguide.app.data.local.LlmStore
+import com.travelguide.app.data.api.CollectionPlace
+import com.travelguide.app.data.local.ChatHistoryMsg
+import com.travelguide.app.data.local.ChatHistorySession
+import com.travelguide.app.data.local.ChatHistoryStore
+import com.travelguide.app.data.local.CollectionPrefillStore
+import com.travelguide.app.data.local.GuestStore
+import com.travelguide.app.data.local.TokenStore
+import com.travelguide.app.data.local.toLlmOverride
+import com.travelguide.app.data.util.getChatSearchSubtitle
+import com.travelguide.app.ui.components.ModelPickerSheet
+import com.travelguide.app.ui.components.TripListSheet
+import com.travelguide.app.ui.components.toAgentTrips
+import com.travelguide.app.ui.components.rememberModelPicker
 import com.travelguide.app.ui.theme.ZhijingColors
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -68,6 +96,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+
+private const val AI_IDLE_TIMEOUT_MS = 75_000L
 
 private const val WELCOME = """你好！我是「知径」AI 旅行助手 🌍
 
@@ -106,17 +136,41 @@ private data class SseEvent(
     val tool: String? = null,
     val result: String? = null,
     val payload: JsonObject? = null,
+    @SerialName("rate_limited") val rateLimited: Boolean = false,
 )
 
 private sealed interface DialogState {
     data class OpenTrip(val title: String, val tripId: String) : DialogState
     data class DeleteTrip(val tripId: String, val title: String, val meta: String) : DialogState
     data class PlanConfirm(val action: JsonObject) : DialogState
-    data class TripList(val trips: List<JsonObject>) : DialogState
+    data class TripList(val trips: List<JsonObject>, val message: String? = null) : DialogState
 }
 
 private fun iso(cal: Calendar): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+
+private fun slimHistory(msgs: List<ChatMsg>): List<ChatHistoryMsg> =
+    msgs
+        .filter { m ->
+            m.role == "user" || m.content.isNotBlank() || m.reasoning.isNotBlank() || m.widget != null
+        }
+        .map { ChatHistoryMsg(it.role, it.content, it.reasoning) }
+
+private suspend fun persistChatSession(userKey: String, sessionId: String, msgs: List<ChatMsg>) {
+    if (msgs.isEmpty()) return
+    val slim = slimHistory(msgs)
+    if (slim.isEmpty()) return
+    val title = (msgs.find { it.role == "user" }?.content ?: "新对话").take(30)
+    ChatHistoryStore.saveSession(
+        userKey,
+        ChatHistorySession(
+            id = sessionId,
+            title = title,
+            msgs = slim,
+            updatedAt = System.currentTimeMillis(),
+        ),
+    )
+}
 
 // ---------- 主屏 ----------
 
@@ -126,12 +180,29 @@ fun ChatScreen(
     tripId: String?,
     onBack: () -> Unit,
     onOpenTrip: (String) -> Unit,
+    prefill: String? = null,
+    sessionId: String? = null,
+    onOpenHistory: () -> Unit = {},
+    onOpenPhoto: () -> Unit = {},
+    onOpenShare: (String) -> Unit = {},
+    onOpenCollectionEditor: () -> Unit = {},
+    onOpenModelManage: () -> Unit = {},
 ) {
-    var msgs by remember { mutableStateOf(listOf(ChatMsg("assistant", WELCOME))) }
-    var input by remember { mutableStateOf("") }
+    val modelPicker = rememberModelPicker(onOpenModelManage)
+    val activeSessionId = remember {
+        sessionId?.takeIf { it.isNotBlank() } ?: ChatHistoryStore.genSessionId()
+    }
+    var userKey by remember { mutableStateOf("guest") }
+    var msgs by remember { mutableStateOf(emptyList<ChatMsg>()) }
+    var input by remember { mutableStateOf(prefill.orEmpty()) }
     var loading by remember { mutableStateOf(false) }
     var planBusy by remember { mutableStateOf(false) }
+    var smartPlanMode by remember { mutableStateOf(false) }
+    var rateLimited by remember { mutableStateOf(false) }
+    val smartPlanBackRef = remember { mutableStateOf<(() -> Boolean)?>(null) }
     var dialog by remember { mutableStateOf<DialogState?>(null) }
+    val msgsSnapshot = remember { mutableStateOf(msgs) }
+    SideEffect { msgsSnapshot.value = msgs }
 
     val scope = rememberCoroutineScope()
     val callRef = remember { mutableStateOf<retrofit2.Call<okhttp3.ResponseBody>?>(null) }
@@ -145,9 +216,41 @@ fun ChatScreen(
         msgs = msgs.dropLast(1) + ChatMsg("assistant", content, reasoning, widget)
     }
 
+    LaunchedEffect(Unit) {
+        userKey = runCatching { ApiClient.auth.me().id }.getOrDefault("guest")
+    }
+
+    LaunchedEffect(activeSessionId, userKey) {
+        val session = ChatHistoryStore.getSession(userKey, activeSessionId)
+        if (session != null && session.msgs.isNotEmpty()) {
+            msgs = session.msgs.map { m -> ChatMsg(m.role, m.content, m.reasoning) }
+        }
+    }
+
+    // 消息变化时防抖落盘（对齐 RN）
+    LaunchedEffect(msgs, userKey) {
+        if (msgs.isEmpty()) return@LaunchedEffect
+        delay(400)
+        persistChatSession(userKey, activeSessionId, msgs)
+    }
+
+    DisposableEffect(activeSessionId, userKey) {
+        onDispose {
+            val latest = msgsSnapshot.value
+            if (latest.isNotEmpty()) {
+                kotlinx.coroutines.runBlocking {
+                    persistChatSession(userKey, activeSessionId, latest)
+                }
+            }
+        }
+    }
+
     // 新消息/流式更新时滚到底部
+    val showWelcome = msgs.isEmpty()
     LaunchedEffect(msgs.size, msgs.lastOrNull()?.content?.length ?: 0) {
-        listState.scrollToItem(msgs.size - 1)
+        if (!showWelcome && msgs.isNotEmpty()) {
+            listState.scrollToItem(msgs.size - 1)
+        }
     }
 
     fun send(raw: String) {
@@ -157,13 +260,14 @@ fun ChatScreen(
         val history = msgs + ChatMsg("user", text)
         msgs = history + ChatMsg("assistant")
         loading = true
+        rateLimited = false
 
         scope.launch(Dispatchers.IO) {
             val call = ApiClient.chat.stream(
                 ChatStreamRequest(
                     messages = history.map { ChatMessageDto(it.role, it.content) },
                     tripId = tripId,
-                    llm = LlmStore.localLlmOverride(),
+                    llm = modelPicker.curModel.toLlmOverride(),
                 ),
             )
             callRef.value = call
@@ -176,18 +280,29 @@ fun ChatScreen(
                     val detail = runCatching {
                         AppJson.decodeFromString<ErrorBody>(resp.errorBody()?.string().orEmpty()).detail
                     }.getOrNull() ?: "请求失败（${resp.code()}）"
+                    if (resp.code() == 429) {
+                        withContext(Dispatchers.Main) { rateLimited = true }
+                    }
                     updateLast("❌ $detail", "", null)
                     return@launch
                 }
                 val source = resp.body()!!.source()
+                source.timeout().timeout(AI_IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 while (!source.exhausted()) {
                     val line = source.readUtf8Line() ?: break
+                    source.timeout().timeout(AI_IDLE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     if (!line.startsWith("data: ")) continue
                     val data = line.removePrefix("data: ").trim()
                     if (data == "[DONE]") break
                     val ev = runCatching { AppJson.decodeFromString<SseEvent>(data) }.getOrNull() ?: continue
                     when (ev.type) {
-                        "content", "error" -> aiContent += ev.content
+                        "content" -> aiContent += ev.content
+                        "error" -> {
+                            aiContent += ev.content
+                            if (ev.rateLimited) {
+                                withContext(Dispatchers.Main) { rateLimited = true }
+                            }
+                        }
                         "reasoning" -> aiReasoning += ev.content
                         "action" -> {
                             val p = ev.payload
@@ -214,19 +329,54 @@ fun ChatScreen(
                                 "show_trip_list" -> withContext(Dispatchers.Main) {
                                     dialog = DialogState.TripList(
                                         p["trips"]?.jsonArray?.map { it.jsonObject } ?: emptyList(),
+                                        p["message"]?.jsonPrimitive?.contentOrNull,
                                     )
                                 }
-                                "open_share", "open_collection_editor" ->
-                                    aiContent += "\n🚧 该功能将在后续版本提供。"
+                                "open_share" -> {
+                                    val token = p["token"]?.jsonPrimitive?.contentOrNull
+                                    if (!token.isNullOrBlank()) {
+                                        withContext(Dispatchers.Main) {
+                                            loading = false
+                                            onOpenShare(token)
+                                        }
+                                        return@launch
+                                    }
+                                }
+                                "open_collection_editor" -> withContext(Dispatchers.Main) {
+                                    loading = false
+                                    val places = p["places"]?.jsonArray?.mapNotNull { el ->
+                                        val obj = el.jsonObject
+                                        val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                                        CollectionPlace(
+                                            name = name,
+                                            city = obj["city"]?.jsonPrimitive?.contentOrNull,
+                                            address = obj["address"]?.jsonPrimitive?.contentOrNull,
+                                            lat = obj["lat"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
+                                            lng = obj["lng"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
+                                        )
+                                    } ?: emptyList()
+                                    CollectionPrefillStore.pending = CollectionPrefillStore.Prefill(
+                                        title = p["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                        summary = p["summary"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                        emoji = p["emoji"]?.jsonPrimitive?.contentOrNull ?: "📁",
+                                        destination = p["destination"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                                        places = places,
+                                    )
+                                    onOpenCollectionEditor()
+                                }
                                 else -> {}
                             }
                         }
                         "tool_result" -> if (ev.tool == "list_trips") {
-                            val arr = runCatching {
-                                AppJson.parseToJsonElement(ev.result.orEmpty()).jsonObject["trips"]?.jsonArray
+                            val root = runCatching {
+                                AppJson.parseToJsonElement(ev.result.orEmpty()).jsonObject
                             }.getOrNull()
+                            val arr = root?.get("trips")?.jsonArray
                             if (arr != null) withContext(Dispatchers.Main) {
-                                dialog = DialogState.TripList(arr.map { it.jsonObject })
+                                dialog = DialogState.TripList(
+                                    arr.map { it.jsonObject },
+                                    root["message"]?.jsonPrimitive?.contentOrNull,
+                                )
                             }
                         }
                         "confirmation_required" -> {
@@ -249,7 +399,15 @@ fun ChatScreen(
                     msgs = msgs.dropLast(1)
                 }
             } catch (e: SocketTimeoutException) {
-                updateLast("⏱️ AI 长时间没有响应，已自动断开。请重试。", aiReasoning, aiWidget)
+                if (call.isCanceled) {
+                    // 用户主动停止
+                } else {
+                    updateLast(
+                        "⏱️ AI 长时间没有响应，已自动断开。请重试，或在「模型管理」切换更稳定的模型。",
+                        aiReasoning,
+                        aiWidget,
+                    )
+                }
             } catch (e: IOException) {
                 if (!call.isCanceled) updateLast("❌ 网络异常，请重试", aiReasoning, aiWidget)
             } catch (e: Exception) {
@@ -264,6 +422,13 @@ fun ChatScreen(
     fun stop() {
         callRef.value?.cancel()
         loading = false
+    }
+
+    fun clearChat() {
+        stop()
+        msgs = emptyList()
+        input = ""
+        scope.launch { ChatHistoryStore.deleteSession(userKey, activeSessionId) }
     }
 
     fun startPlan(action: JsonObject) {
@@ -283,9 +448,13 @@ fun ChatScreen(
                         transport = action["transport"]?.jsonPrimitive?.contentOrNull ?: "公共交通",
                         chatHint = action["chat_hint"]?.jsonPrimitive?.contentOrNull,
                     ),
-                    llm = LlmStore.localLlmOverride(),
+                    llm = modelPicker.curModel.toLlmOverride(),
                 )
-                val trip = ApiClient.trips.generate(payload)
+                val trip = if (GuestStore.isGuestSync() && TokenStore.getSync() == null) {
+                    ApiClient.trips.guestGenerate(payload).also { GuestStore.rememberTrip(it.id) }
+                } else {
+                    ApiClient.trips.generate(payload)
+                }
                 withContext(Dispatchers.Main) { onOpenTrip(trip.id) }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { pushAssistant("❌ ${e.message ?: "规划失败，请重试"}") }
@@ -295,104 +464,101 @@ fun ChatScreen(
         }
     }
 
+    BackHandler(enabled = smartPlanMode) {
+        if (smartPlanBackRef.value?.invoke() != true) smartPlanMode = false
+    }
+
     Column(Modifier.fillMaxSize().background(ZhijingColors.Bg)) {
-        // 顶栏
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "‹",
-                fontSize = 26.sp,
-                color = ZhijingColors.Ink,
-                modifier = Modifier.clickable { onBack() }.padding(8.dp),
+        ChatScreenHeader(
+            smartPlanMode = smartPlanMode,
+            tripId = tripId,
+            modelProvider = modelPicker.curModel.provider,
+            modelLabel = modelPicker.curModel.label,
+            hasConversation = msgs.isNotEmpty(),
+            onBack = {
+                if (smartPlanMode) {
+                    if (smartPlanBackRef.value?.invoke() != true) smartPlanMode = false
+                } else onBack()
+            },
+            onOpenSmartPlan = { smartPlanMode = true },
+            onOpenHistory = onOpenHistory,
+            onClear = ::clearChat,
+        )
+
+        if (smartPlanMode) {
+            SmartPlanPanel(
+                onClose = { smartPlanMode = false },
+                onOpenTrip = onOpenTrip,
+                backHandlerRef = smartPlanBackRef,
+                onOpenModelManage = onOpenModelManage,
             )
-            Text("AI 助手", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ZhijingColors.Ink)
-            if (tripId != null) {
-                Text(
-                    "结合当前攻略",
-                    fontSize = 12.sp,
-                    color = ZhijingColors.BrandHot,
-                    modifier = Modifier.padding(start = 8.dp),
+        } else {
+            if (showWelcome) {
+                ChatWelcomePane(
+                    modifier = Modifier.weight(1f),
+                    onOpenSmartPlan = { smartPlanMode = true },
+                    onQuickSend = ::send,
                 )
-            }
-        }
-
-        // 消息列表
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            itemsIndexed(msgs) { i, m ->
-                Bubble(
-                    msg = m,
-                    loading = loading && i == msgs.size - 1,
-                    onSend = ::send,
-                    onPlanConfirm = { dialog = DialogState.PlanConfirm(it) },
-                    planBusy = planBusy,
-                )
-            }
-        }
-
-        // 快捷提问（仅初始）
-        if (msgs.size <= 1) {
-            FlowRow(
-                Modifier.padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                QUICK.forEach { (label, text) ->
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(ZhijingColors.BrandSoft)
-                            .clickable { send(text) }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                    ) {
-                        Text(label, fontSize = 13.sp, color = ZhijingColors.BrandHot)
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 8.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(msgs) { i, m ->
+                        Bubble(
+                            msg = m,
+                            loading = loading && i == msgs.size - 1,
+                            onSend = ::send,
+                            onPlanConfirm = { dialog = DialogState.PlanConfirm(it) },
+                            planBusy = planBusy,
+                        )
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-        }
 
-        // 输入栏
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextField(
-                value = input,
-                onValueChange = { input = it },
-                placeholder = { Text("输入你的旅行问题…", color = ZhijingColors.Muted) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = ZhijingColors.Card,
-                    unfocusedContainerColor = ZhijingColors.Card,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                maxLines = 4,
-            )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(23.dp))
-                    .background(if (loading) ZhijingColors.Muted else ZhijingColors.Brand)
-                    .clickable { if (loading) stop() else send(input) },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (loading) {
-                    Text("■", color = Color.White, fontSize = 16.sp)
-                } else {
-                    Text("➤", color = Color.White, fontSize = 18.sp)
+            if (rateLimited && !smartPlanMode) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFF8E6))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "⚠️ 免费模型暂时繁忙（被限流），建议切换到更稳定的免费模型",
+                        Modifier.weight(1f),
+                        fontSize = 12.sp,
+                        color = Color(0xFF8A6100),
+                        lineHeight = 18.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(ZhijingColors.Brand)
+                            .clickable { modelPicker.openModelPopup() }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text("切换模型", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
                 }
             }
+
+            ChatInputBar(
+                modelLabel = modelPicker.curModel.label,
+                input = input,
+                onInputChange = { input = it },
+                loading = loading,
+                onOpenModelPicker = { modelPicker.openModelPopup() },
+                onOpenPhoto = onOpenPhoto,
+                onSend = { send(input) },
+                onStop = ::stop,
+            )
         }
     }
 
@@ -435,28 +601,310 @@ fun ChatScreen(
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("取消") } },
         )
-        is DialogState.TripList -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("我的攻略") },
-            text = {
-                Column {
-                    d.trips.forEach { t ->
-                        Text(
-                            t["title"]?.jsonPrimitive?.contentOrNull ?: "未命名攻略",
+        is DialogState.TripList -> TripListSheet(
+            visible = true,
+            trips = d.trips.toAgentTrips(),
+            message = d.message,
+            onClose = { dialog = null },
+            onSelect = { tripId ->
+                dialog = null
+                onOpenTrip(tripId)
+            },
+        )
+        null -> {}
+    }
+
+    ModelPickerSheet(modelPicker)
+}
+
+// ---------- 布局组件 ----------
+
+@Composable
+private fun ChatScreenHeader(
+    smartPlanMode: Boolean,
+    tripId: String?,
+    modelProvider: String,
+    modelLabel: String,
+    hasConversation: Boolean,
+    onBack: () -> Unit,
+    onOpenSmartPlan: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(ZhijingColors.Card)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "‹",
+                fontSize = 28.sp,
+                color = ZhijingColors.Ink,
+                modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (smartPlanMode) "智能规划" else "AI 旅行助手",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ZhijingColors.Ink,
+                )
+                Text(
+                    if (smartPlanMode) {
+                        "输入关键词，一键生成行程"
+                    } else {
+                        getChatSearchSubtitle(modelProvider, modelLabel) +
+                            if (tripId != null) " · 已关联行程" else ""
+                    },
+                    fontSize = 11.sp,
+                    color = ZhijingColors.Muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (!smartPlanMode) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HeaderChip("历史", filled = false, onClick = onOpenHistory)
+                if (hasConversation) {
+                    HeaderChip("清空", filled = true, onClick = onClear)
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(ZhijingColors.Ink)
+                        .clickable(onClick = onOpenSmartPlan)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text("智能规划", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(ZhijingColors.Line))
+}
+
+@Composable
+private fun HeaderChip(label: String, filled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (filled) ZhijingColors.BrandSoft else ZhijingColors.Card)
+            .then(
+                if (filled) Modifier else Modifier.border(1.dp, ZhijingColors.Line, RoundedCornerShape(18.dp)),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            color = if (filled) ZhijingColors.BrandHot else ZhijingColors.Ink,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChatWelcomePane(
+    modifier: Modifier = Modifier,
+    onOpenSmartPlan: () -> Unit,
+    onQuickSend: (String) -> Unit,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("🌍", fontSize = 48.sp)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            WELCOME,
+            fontSize = 14.sp,
+            color = ZhijingColors.Muted,
+            lineHeight = 22.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(ZhijingColors.Ink)
+                .clickable(onClick = onOpenSmartPlan)
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("✦ 体验智能规划", fontSize = 15.sp, color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(12.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            QUICK.forEach { (label, text) ->
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(ZhijingColors.Card)
+                        .border(1.dp, ZhijingColors.Line, RoundedCornerShape(26.dp))
+                        .clickable { onQuickSend(text) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text(label, fontSize = 12.sp, color = ZhijingColors.Ink, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatInputBar(
+    modelLabel: String,
+    input: String,
+    onInputChange: (String) -> Unit,
+    loading: Boolean,
+    onOpenModelPicker: () -> Unit,
+    onOpenPhoto: () -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(ZhijingColors.Card)
+            .imePadding()
+            .navigationBarsPadding(),
+    ) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(ZhijingColors.Line))
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(ZhijingColors.BrandSoft)
+                    .border(1.dp, ZhijingColors.Brand, RoundedCornerShape(20.dp))
+                    .clickable(onClick = onOpenModelPicker)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    "$modelLabel ▲",
+                    fontSize = 12.sp,
+                    color = ZhijingColors.BrandHot,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InputCircleButton(
+                    enabled = !loading,
+                    background = ZhijingColors.BrandSoft,
+                    borderColor = ZhijingColors.Brand,
+                    onClick = onOpenPhoto,
+                ) {
+                    Icon(
+                        Icons.Filled.PhotoCamera,
+                        contentDescription = "拍照识景",
+                        tint = ZhijingColors.BrandHot,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                TextField(
+                    value = input,
+                    onValueChange = onInputChange,
+                    placeholder = { Text("输入旅行问题…", color = ZhijingColors.Muted) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 42.dp),
+                    enabled = !loading,
+                    shape = RoundedCornerShape(26.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = ZhijingColors.Bg,
+                        unfocusedContainerColor = ZhijingColors.Bg,
+                        disabledContainerColor = ZhijingColors.Bg,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    maxLines = 4,
+                )
+                Spacer(Modifier.width(8.dp))
+                val canSend = input.trim().isNotEmpty()
+                InputCircleButton(
+                    enabled = loading || canSend,
+                    background = when {
+                        loading -> ZhijingColors.Danger
+                        canSend -> ZhijingColors.Brand
+                        else -> ZhijingColors.Brand.copy(alpha = 0.4f)
+                    },
+                    borderColor = Color.Transparent,
+                    onClick = { if (loading) onStop() else onSend() },
+                ) {
+                    if (loading) {
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = "停止",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "发送",
+                            tint = Color.White,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    dialog = null
-                                    t["id"]?.jsonPrimitive?.contentOrNull?.let(onOpenTrip)
-                                }
-                                .padding(vertical = 8.dp),
+                                .size(20.dp)
+                                .padding(start = 2.dp),
                         )
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { dialog = null }) { Text("关闭") } },
-        )
-        null -> {}
+            }
+        }
+    }
+}
+
+@Composable
+private fun InputCircleButton(
+    enabled: Boolean,
+    background: Color,
+    borderColor: Color,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .background(background)
+            .then(
+                if (borderColor.alpha > 0f) {
+                    Modifier.border(1.dp, borderColor, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
@@ -478,17 +926,20 @@ private fun Bubble(
     ) {
         Column(
             Modifier
-                .weight(1f, fill = false)
+                .fillMaxWidth(if (isUser) 0.82f else 0.88f)
                 .clip(
                     RoundedCornerShape(
-                        topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp,
+                        topStart = if (isUser) 16.dp else 4.dp,
+                        topEnd = if (isUser) 4.dp else 16.dp,
+                        bottomStart = 16.dp,
+                        bottomEnd = 16.dp,
                     ),
                 )
                 .background(if (isUser) ZhijingColors.Brand else ZhijingColors.Card)
                 .then(
                     if (isUser) Modifier else Modifier.border(1.dp, ZhijingColors.Line, RoundedCornerShape(16.dp)),
                 )
-                .padding(12.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             if (!isUser && msg.reasoning.isNotBlank()) {
                 Text(

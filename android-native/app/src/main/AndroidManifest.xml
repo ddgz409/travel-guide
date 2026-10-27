@@ -13,34 +13,65 @@
     <application
         android:name=".TravelGuideApp"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Zhijing"
         android:usesCleartextTraffic="true">
 
-        <!-- 高德 Android 平台 key（绑定 com.travelguide.app + debug 签名 SHA1） -->
+        <!-- 高德 Android 平台 key（主 Key；备用见 AmapKeyManager，鉴权失败自动切换） -->
         <meta-data
             android:name="com.amap.api.v2.apikey"
-            android:value="fb02cc4aaba7fa927a4e0fa5c1ba9403" />
+            android:value="7d58611092da0873f64e7fc4690e7a34" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.Zhijing">
+            android:theme="@style/Theme.Zhijing.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- 深链：与 RN 版 zhijing:// scheme 对齐（分享页等） -->
+            <!-- 深链：zhijing:// 与 RN 对齐 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="zhijing" />
             </intent-filter>
+            <!-- 分享页 HTTP/HTTPS 深链（对齐 RN shareUrl + App linking） -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="http"
+                    android:host="81.71.159.218"
+                    android:port="8000"
+                    android:pathPrefix="/share" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="81.71.159.218"
+                    android:pathPrefix="/share" />
+            </intent-filter>
         </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

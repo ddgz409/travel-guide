@@ -443,6 +443,25 @@ class GuideGenerator:
         logger.info("攻略 %s 多城市生成完成：%s（%d 天）", trip.id, " -> ".join(cities), days_count)
         clear_progress(trip_id)
 
+    def _resolve_day_city(self, trip: Trip, day_index: int, old_day: Day | None) -> str:
+        """解析某一天应对应的城市（优先 day.city，其次 route 分段，最后 destination）。"""
+        if old_day and (old_day.city or "").strip():
+            return old_day.city.strip()
+        route = [c.strip() for c in (trip.route or []) if c and str(c).strip()]
+        if not route:
+            prefs_route = (trip.preferences or {}).get("route") or []
+            route = [str(c).strip() for c in prefs_route if c and str(c).strip()]
+        if route:
+            days_count = (trip.end_date - trip.start_date).days + 1
+            allocations = self._allocate_days(route, days_count)
+            idx = 0
+            for city, n_days in allocations:
+                for _ in range(n_days):
+                    idx += 1
+                    if idx == day_index:
+                        return city
+        return (trip.destination or "").strip()
+
     def regenerate_day(
         self,
         trip: Trip,
@@ -453,11 +472,16 @@ class GuideGenerator:
         """重新生成指定某一天。"""
         active_llm = llm or self.llm
         try:
-            # 以该天所在城市为准（新增城市的天用「重新生成当天」时按新城市生成）
-            old_day = next((d for d in trip.days if d.day_index == day_index), None)
-            city = (old_day.city if old_day and old_day.city else trip.destination) or trip.destination
+            from app.services.destination_validator import _ROUTE_CITY_ALIASES
 
-            geo = self.amap.geocode(city)
+            # 以该天所在城市为准（环线按 route 分段，新增城市的天用 day.city）
+            old_day = next((d for d in trip.days if d.day_index == day_index), None)
+            city = self._resolve_day_city(trip, day_index, old_day)
+            if not city:
+                raise GeneratorError("无法确定当天所在城市，请先在「管理城市」中设置")
+
+            geo_probe = _ROUTE_CITY_ALIASES.get(city, city)
+            geo = self.amap.geocode(geo_probe)
             must_include = (trip.preferences or {}).get("must_include") or []
             pool = self._fetch_poi_pool(geo, city, must_include)
             if not pool:

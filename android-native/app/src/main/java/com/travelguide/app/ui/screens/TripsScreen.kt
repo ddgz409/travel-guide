@@ -1,8 +1,10 @@
 package com.travelguide.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.travelguide.app.data.api.ApiClient
+import com.travelguide.app.data.local.GuestStore
+import com.travelguide.app.data.local.TokenStore
+import com.travelguide.app.data.model.Trip
 import com.travelguide.app.data.model.TripListItem
 import com.travelguide.app.data.model.landmarksFor
 import com.travelguide.app.ui.components.rememberPlaceImage
@@ -65,38 +74,118 @@ private data class TripPhase(val label: String, val tone: PhaseTone)
  * 我的行程（对齐 RN TripsScreen）：
  * 大标题 + 分享链接入口 + 马卡龙色行程卡（状态徽章 / 日期侧条 / 头像组 / 旋转封面图）。
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TripsScreen(
     onOpenTrip: (String) -> Unit,
     onOpenGenerate: () -> Unit,
     onOpenShare: () -> Unit,
+    onOpenCheckInMap: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
 ) {
     var trips by remember { mutableStateOf<List<TripListItem>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<TripListItem?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun load() {
+    fun load(showSpinner: Boolean = true) {
         scope.launch {
-            trips = null
+            if (showSpinner) trips = null
             error = null
             try {
-                trips = ApiClient.trips.list()
+                val loggedIn = TokenStore.getSync() != null
+                val guest = GuestStore.isGuestSync()
+                trips = when {
+                    guest && !loggedIn -> {
+                        GuestStore.tripIdsSync().mapNotNull { id ->
+                            runCatching { ApiClient.trips.get(id).toListItem() }.getOrNull()
+                        }
+                    }
+                    loggedIn -> ApiClient.trips.list()
+                    else -> emptyList()
+                }
             } catch (e: Exception) {
                 error = "加载失败：${e.message}"
+            } finally {
+                refreshing = false
             }
         }
     }
 
+    val isGuest = GuestStore.isGuestSync() && TokenStore.getSync() == null
+    val isLoggedOut = TokenStore.getSync() == null && !GuestStore.isGuestSync()
+    val guestTripCount = GuestStore.tripIdsSync().size
+
     LaunchedEffect(Unit) { load() }
 
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { refreshing = true; load(showSpinner = false) },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     Column(Modifier.fillMaxSize().padding(top = 44.dp)) {
-        Text(
-            "我的行程",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = ZhijingColors.Ink,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
-        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "我的行程",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = ZhijingColors.Ink,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "分享链接",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = ZhijingColors.BrandHot,
+                modifier = Modifier.clickable { onOpenShare() }.padding(8.dp),
+            )
+        }
+        if (isLoggedOut) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 0.dp)
+                    .padding(bottom = 10.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ZhijingColors.BrandSoft)
+                    .clickable { onOpenLogin() }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "登录后可云端保存行程",
+                    fontSize = 12.sp,
+                    color = ZhijingColors.Ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("去登录 ›", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = ZhijingColors.BrandHot)
+            }
+        }
+        if (isGuest) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 0.dp)
+                    .padding(bottom = 10.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ZhijingColors.BrandSoft)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "游客最多保留 ${GuestStore.TRIP_LIMIT} 条（$guestTripCount/${GuestStore.TRIP_LIMIT}），登录后可云端保存",
+                    fontSize = 12.sp,
+                    color = ZhijingColors.Ink,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
         when {
             error != null -> Column(
                 Modifier.fillMaxSize().padding(32.dp),
@@ -119,7 +208,11 @@ fun TripsScreen(
             }
             trips!!.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "还没有行程，点底部「＋」开始规划",
+                    when {
+                        isLoggedOut -> "还没有行程，登录或点底部「＋」开始规划"
+                        isGuest -> "还没有行程，点底部「＋」开始规划"
+                        else -> "还没有行程，点底部「＋」开始规划"
+                    },
                     fontSize = 15.sp,
                     color = ZhijingColors.Muted,
                     textAlign = TextAlign.Center,
@@ -141,17 +234,52 @@ fun TripsScreen(
                             index = index,
                             modifier = Modifier.padding(bottom = 14.dp),
                             onPress = { onOpenTrip(trip.id) },
+                            onLongPress = if (!isGuest && !isLoggedOut) {
+                                { pendingDelete = trip }
+                            } else null,
                         )
                     }
                 }
             }
         }
     }
+    }
+
+    pendingDelete?.let { trip ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除攻略") },
+            text = { Text("确定删除「${trip.title.ifBlank { "${trip.destination}行程" }}」？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = trip.id
+                        pendingDelete = null
+                        scope.launch {
+                            runCatching { ApiClient.trips.remove(id) }
+                                .onSuccess { load() }
+                                .onFailure { error = "删除失败：${it.message}" }
+                        }
+                    },
+                ) { Text("删除", color = ZhijingColors.Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            },
+        )
+    }
 }
 
 /** 行程卡片（对齐 RN TripCard：40 圆角马卡龙卡 + 徽章 + 侧条元信息 + 头像组 + 封面） */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TripCard(item: TripListItem, index: Int, modifier: Modifier = Modifier, onPress: () -> Unit) {
+private fun TripCard(
+    item: TripListItem,
+    index: Int,
+    modifier: Modifier = Modifier,
+    onPress: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
     val bg = PASTELS[index % PASTELS.size]
     val phase = tripPhase(item)
     val (days, nights) = daysNights(item.startDate, item.endDate)
@@ -165,7 +293,10 @@ private fun TripCard(item: TripListItem, index: Int, modifier: Modifier = Modifi
             .shadow(8.dp, RoundedCornerShape(40.dp))
             .clip(RoundedCornerShape(40.dp))
             .background(bg)
-            .clickable(onClick = onPress),
+            .combinedClickable(
+                onClick = onPress,
+                onLongClick = { onLongPress?.invoke() },
+            ),
     ) {
         Column(
             Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 18.dp),
@@ -320,3 +451,15 @@ private fun statusLabel(s: String): String = when (s) {
     "generating" -> "生成中"
     else -> "失败"
 }
+
+private fun Trip.toListItem() = TripListItem(
+    id = id,
+    title = title,
+    destination = destination,
+    startDate = startDate,
+    endDate = endDate,
+    travelers = travelers,
+    budgetTotal = budgetTotal,
+    status = status,
+    createdAt = createdAt,
+)

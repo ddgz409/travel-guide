@@ -1,11 +1,13 @@
 package com.travelguide.app.ui.screens
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -14,7 +16,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -26,14 +30,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.travelguide.app.data.local.GuestStore
 import com.travelguide.app.ui.theme.ZhijingColors
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     onLoggedIn: () -> Unit,
+    onGuestEnter: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    onOpenRegister: () -> Unit = {},
     vm: LoginViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(state.success) {
         if (state.success) onLoggedIn()
@@ -44,8 +54,22 @@ fun LoginScreen(
             .fillMaxSize()
             .padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
+        if (onBack != null) {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Text(
+                    "‹",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onBack).padding(8.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
         Text(
             text = "知径",
             fontSize = 40.sp,
@@ -84,7 +108,7 @@ fun LoginScreen(
 
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { vm.submit(register = false) },
+            onClick = { vm.submit() },
             enabled = !state.loading,
             modifier = Modifier
                 .fillMaxWidth()
@@ -94,14 +118,28 @@ fun LoginScreen(
             else Text("登录", fontSize = 16.sp)
         }
         Spacer(Modifier.height(10.dp))
+        TextButton(onClick = onOpenRegister, enabled = !state.loading) {
+            Text("注册新账号", fontSize = 15.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("共同编辑需要登录账号", fontSize = 12.sp, color = ZhijingColors.Muted)
+        Spacer(Modifier.height(10.dp))
         OutlinedButton(
-            onClick = { vm.submit(register = true) },
+            onClick = {
+                scope.launch {
+                    GuestStore.enterGuest()
+                    onGuestEnter()
+                }
+            },
             enabled = !state.loading,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
         ) {
-            Text("注册新账号", fontSize = 16.sp)
+            Text("游客体验", fontSize = 16.sp, color = ZhijingColors.BrandHot, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text("无需登录，先生成一份攻略试试", fontSize = 12.sp, color = ZhijingColors.Muted)
         }
     }
 }

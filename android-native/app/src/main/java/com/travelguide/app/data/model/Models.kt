@@ -134,6 +134,14 @@ data class ExternalRefs(
 )
 
 @Serializable
+data class QuickRecommendCard(
+    val id: String = "",
+    val title: String = "",
+    val tagline: String = "",
+    @SerialName("external_refs") val externalRefs: ExternalRefs = ExternalRefs(),
+)
+
+@Serializable
 data class RouteOption(
     val id: String,
     val title: String = "",

@@ -63,6 +63,14 @@ import kotlin.math.sin
 
 enum class MainTab { TRIPS, EXPLORE, ME }
 
+/**
+ * Tab 状态提到 NavHost 外：离开 MAIN 进详情时 MainScreen 会被卸掉，
+ * 普通 remember 会丢，侧滑返回就又落回默认「探索」（像直接回了首页）。
+ */
+object MainTabHolder {
+    var current: MainTab = MainTab.EXPLORE
+}
+
 private val TAB_LABELS = mapOf(
     MainTab.TRIPS to "计划",
     MainTab.EXPLORE to "探索",
@@ -80,11 +88,12 @@ val TAB_BAR_RESERVE = 86.dp
 @Composable
 fun MainScreen(
     onOpenTrip: (String) -> Unit,
-    onOpenGenerate: (String?) -> Unit,
+    onOpenGenerate: (String?, String?) -> Unit,
     onOpenShare: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenCityGuide: (String) -> Unit,
+    onOpenCityDetail: (String) -> Unit = onOpenCityGuide,
     onOpenSharedCollections: () -> Unit,
     onOpenCollectionDetail: (String) -> Unit,
     onOpenUserProfile: (String, String) -> Unit,
@@ -92,18 +101,26 @@ fun MainScreen(
     onOpenFavorites: () -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenFootprints: () -> Unit,
+    onOpenAddFootprint: () -> Unit,
+    onOpenCheckInMap: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
 ) {
-    var tab by remember { mutableStateOf(MainTab.EXPLORE) }
+    var tab by remember { mutableStateOf(MainTabHolder.current) }
     var plusOpen by remember { mutableStateOf(false) }
+
+    fun switchTab(t: MainTab) {
+        tab = t
+        MainTabHolder.current = t
+    }
 
     Box(Modifier.fillMaxSize().background(ZhijingColors.Bg)) {
         // 探索页始终组合（保活），其余 Tab 覆盖其上
         ExploreScreen(
             active = tab == MainTab.EXPLORE,
-            onOpenMe = { tab = MainTab.ME },
+            onOpenMe = { switchTab(MainTab.ME) },
             onOpenSettings = onOpenSettings,
             onOpenChat = onOpenChat,
-            onOpenGenerate = onOpenGenerate,
+            onOpenGenerate = { dest -> onOpenGenerate(dest, null) },
             onOpenCityGuide = onOpenCityGuide,
             onOpenSharedCollections = onOpenSharedCollections,
             onOpenCollectionDetail = onOpenCollectionDetail,
@@ -114,8 +131,10 @@ fun MainScreen(
             Box(Modifier.fillMaxSize().background(ZhijingColors.Bg).padding(bottom = TAB_BAR_RESERVE)) {
                 TripsScreen(
                     onOpenTrip = onOpenTrip,
-                    onOpenGenerate = { onOpenGenerate(null) },
+                    onOpenGenerate = { onOpenGenerate(null, null) },
                     onOpenShare = onOpenShare,
+                    onOpenCheckInMap = onOpenCheckInMap,
+                    onOpenLogin = onOpenLogin,
                 )
             }
         }
@@ -126,12 +145,14 @@ fun MainScreen(
                     onOpenFavorites = onOpenFavorites,
                     onOpenSubscriptions = onOpenSubscriptions,
                     onOpenFootprints = onOpenFootprints,
+                    onOpenAddFootprint = onOpenAddFootprint,
+                    onOpenCheckInMap = onOpenCheckInMap,
                 )
             }
         }
         ZhijingTabBar(
             active = tab,
-            onChange = { tab = it },
+            onChange = { switchTab(it) },
             onPlus = { plusOpen = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -140,7 +161,8 @@ fun MainScreen(
     if (plusOpen) {
         PlusMenuOverlay(
             onDismiss = { plusOpen = false },
-            onPick = { plusOpen = false; onOpenGenerate(null) },
+            onQuick = { plusOpen = false; onOpenGenerate(null, "quick") },
+            onCustom = { plusOpen = false; onOpenGenerate(null, "custom") },
         )
     }
 }
@@ -163,7 +185,7 @@ private val ROT_SPRING = spring<Float>(0.58f, 240f)
  * 快速球先出场、AI 球晚 120ms；+ 旋转 45° 成 ×，轻蒙层点按关闭。
  */
 @Composable
-private fun PlusMenuOverlay(onDismiss: () -> Unit, onPick: () -> Unit) {
+private fun PlusMenuOverlay(onDismiss: () -> Unit, onQuick: () -> Unit, onCustom: () -> Unit) {
     val scope = rememberCoroutineScope()
     val pQuick = remember { Animatable(0f) }
     val pAI = remember { Animatable(0f) }
@@ -194,7 +216,7 @@ private fun PlusMenuOverlay(onDismiss: () -> Unit, onPick: () -> Unit) {
         }
     }
 
-    fun pick(tapped: Animatable<Float, AnimationVector1D>, other: Animatable<Float, AnimationVector1D>) {
+    fun pick(tapped: Animatable<Float, AnimationVector1D>, other: Animatable<Float, AnimationVector1D>, action: () -> Unit) {
         if (closing) return
         closing = true
         scope.launch {
@@ -207,7 +229,7 @@ private fun PlusMenuOverlay(onDismiss: () -> Unit, onPick: () -> Unit) {
             launch { scrim.animateTo(0f, tween(160)) }
             delay(200)
             onDismiss()
-            onPick()
+            action()
         }
     }
 
@@ -235,7 +257,7 @@ private fun PlusMenuOverlay(onDismiss: () -> Unit, onPick: () -> Unit) {
                 phi = QUICK_PHI,
                 cx = cx,
                 cy = cy,
-                onClick = { pick(pQuick, pAI) },
+                onClick = { pick(pQuick, pAI, onQuick) },
             )
             BubbleBall(
                 icon = "🤖",
@@ -244,7 +266,7 @@ private fun PlusMenuOverlay(onDismiss: () -> Unit, onPick: () -> Unit) {
                 phi = AI_PHI,
                 cx = cx,
                 cy = cy,
-                onClick = { pick(pAI, pQuick) },
+                onClick = { pick(pAI, pQuick, onCustom) },
             )
 
             // + 旋转成 × 的关闭钮，盖在原 FAB 位置
@@ -333,6 +355,9 @@ private fun BubbleBall(
         }
     }
 }
+/** 对齐 RN cardShadow：轻阴影，避免 Compose 默认灰色重影 */
+private val TabCardShadow = Color.Black.copy(alpha = 0.08f)
+
 /** 白色胶囊底栏：浅蓝气泡滑到当前 Tab（对齐 RN CustomTabBar 简化版） */
 @Composable
 private fun ZhijingTabBar(
@@ -349,7 +374,7 @@ private fun ZhijingTabBar(
             Modifier
                 .weight(1f)
                 .height(52.dp)
-                .shadow(10.dp, RoundedCornerShape(30.dp))
+                .shadow(6.dp, RoundedCornerShape(30.dp), ambientColor = TabCardShadow, spotColor = TabCardShadow)
                 .clip(RoundedCornerShape(30.dp))
                 .background(Color.White),
         ) {
@@ -391,7 +416,7 @@ private fun ZhijingTabBar(
         Box(
             Modifier
                 .size(52.dp)
-                .shadow(10.dp, CircleShape)
+                .shadow(6.dp, CircleShape, ambientColor = TabCardShadow, spotColor = TabCardShadow)
                 .clip(CircleShape)
                 .background(ZhijingColors.Brand)
                 .clickable { onPlus() },

@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +73,7 @@ import coil.compose.AsyncImage
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.MapView
+import com.travelguide.app.ui.components.rememberAmapMapView
 import com.amap.api.maps.model.BitmapDescriptorFactory
 import com.amap.api.maps.model.Circle
 import com.amap.api.maps.model.CircleOptions
@@ -82,6 +84,9 @@ import com.travelguide.app.data.api.ApiClient
 import com.travelguide.app.data.api.CollectionSummary
 import com.travelguide.app.data.model.CITY_CATALOG
 import com.travelguide.app.data.model.matchCities
+import com.travelguide.app.data.util.DeviceLocation
+import com.travelguide.app.data.util.LocationCache
+import com.travelguide.app.data.util.fetchDeviceLocation
 import com.travelguide.app.data.util.wgs84ToGcj02
 import com.travelguide.app.ui.components.rememberPlaceImage
 import com.travelguide.app.ui.theme.ZhijingColors
@@ -96,26 +101,24 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
-private data class ExploreDest(val name: String, val desc: String, val landmark: String)
-
-/** 设备定位结果（含精度与来源，精度用于水波半径，来源用于验证角标） */
-private data class DeviceLocation(
-    val lat: Double,
-    val lng: Double,
-    val accuracy: Float,
-    val source: String = "",
+private data class ExploreDest(
+    val name: String,
+    val desc: String,
+    val landmark: String,
+    /** 本地兜底图 assets/dest_covers/{coverKey}.jpg；优先走高德主图 API */
+    val coverKey: String = "",
 )
 
-/** 与 RN Explore content.ts 的 DESTINATIONS 对齐 */
+/** 与 RN Explore content.ts 的 DESTINATIONS 对齐；封面优先拉高德 POI 主图 */
 private val DESTINATIONS = listOf(
-    ExploreDest("北京", "故宫长城 · 皇城根下", "故宫博物院"),
-    ExploreDest("成都", "熊猫火锅 · 慢生活", "大熊猫繁育研究基地"),
-    ExploreDest("杭州", "西湖龙井 · 江南烟雨", "西湖"),
-    ExploreDest("大理", "风花雪月 · 苍山洱海", "洱海"),
-    ExploreDest("西安", "兵马俑 · 古城墙", "秦始皇兵马俑博物馆"),
-    ExploreDest("厦门", "鼓浪屿 · 海边慢行", "鼓浪屿"),
-    ExploreDest("上海", "外滩夜景 · 魔都节奏", "外滩"),
-    ExploreDest("三亚", "热带海岛 · 阳光沙滩", "亚龙湾"),
+    ExploreDest("北京", "故宫长城 · 皇城根下", "故宫博物院", "beijing"),
+    ExploreDest("成都", "熊猫火锅 · 慢生活", "大熊猫繁育研究基地", "chengdu"),
+    ExploreDest("杭州", "西湖龙井 · 江南烟雨", "西湖", "hangzhou"),
+    ExploreDest("大理", "风花雪月 · 苍山洱海", "洱海", "dali"),
+    ExploreDest("西安", "兵马俑 · 古城墙", "秦始皇兵马俑博物馆", "xian"),
+    ExploreDest("厦门", "鼓浪屿 · 海边慢行", "鼓浪屿", "xiamen"),
+    ExploreDest("上海", "外滩夜景 · 魔都节奏", "外滩", "shanghai"),
+    ExploreDest("三亚", "热带海岛 · 阳光沙滩", "亚龙湾", "sanya"),
 )
 
 private val INTERESTS = listOf("美食", "人文历史", "自然风光", "亲子", "摄影", "购物")
@@ -149,8 +152,8 @@ fun ExploreScreen(
     var q by remember { mutableStateOf("") }
     var collections by remember { mutableStateOf(emptyList<CollectionSummary>()) }
     var collectionsLoading by remember { mutableStateOf(false) }
-    var locCity by remember { mutableStateOf<String?>(null) }
-    var locPoint by remember { mutableStateOf<DeviceLocation?>(null) }
+    var locCity by remember { mutableStateOf(LocationCache.city?.takeIf { it.isNotBlank() }) }
+    var locPoint by remember { mutableStateOf<DeviceLocation?>(LocationCache.location) }
     var locLoading by remember { mutableStateOf(false) }
     // 手动点「定位」的计数：驱动相机回中（坐标即使没变也要回中，对齐 RN 行为）
     var focusSeq by remember { mutableIntStateOf(0) }
@@ -163,22 +166,29 @@ fun ExploreScreen(
         }
     }
 
+    suspend fun resolveCity(coord: DeviceLocation): String? = withContext(Dispatchers.IO) {
+        runCatching { ApiClient.destinations.regeo(coord.lng, coord.lat).city }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
     fun fetchLocation(manual: Boolean) {
+        if (locLoading) return
         scope.launch {
             locLoading = true
             try {
                 // 手动点「定位」跳过缓存、开高精度模式（对齐 RN getFreshDeviceLocation 的 BestForNavigation）
                 val coord = withContext(Dispatchers.IO) {
                     fetchDeviceLocation(context, fresh = manual, highAccuracy = manual)
-                }
+                } ?: locPoint
                 if (coord != null) {
-                    // coord 已在 fetchDeviceLocation 内统一纠偏为 GCJ-02（对齐 RN locFromPosition）
                     locPoint = coord
                     if (manual) focusSeq++
-                    val city = runCatching {
-                        ApiClient.destinations.regeo(coord.lng, coord.lat).city
-                    }.getOrNull()
-                    if (!city.isNullOrBlank()) locCity = city
+                    val city = resolveCity(coord)
+                    if (!city.isNullOrBlank()) {
+                        locCity = city
+                        LocationCache.remember(coord, city)
+                    }
                 }
             } finally {
                 locLoading = false
@@ -187,22 +197,65 @@ fun ExploreScreen(
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) fetchLocation(manual = false) }
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        val granted = results[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        if (granted) fetchLocation(manual = false)
+    }
+
+    fun ensureLocationPermission(): Boolean {
+        val coarse = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val fine = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        return coarse || fine
+    }
 
     LaunchedEffect(Unit) {
         loadCollections()
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) fetchLocation(manual = false) else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (ensureLocationPermission()) {
+            fetchLocation(manual = false)
+        } else {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ),
+            )
+        }
     }
 
-    // 切回探索页时刷新共享列表（对齐 RN useFocusEffect）
-    LaunchedEffect(active) { if (active) loadCollections() }
+    // 切回探索页：刷新列表；若城市仍空则重试（配额恢复/首次 regeo 失败后自动恢复）
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        loadCollections()
+        if (locCity == null && ensureLocationPermission() && !locLoading) {
+            fetchLocation(manual = false)
+        } else if (locCity == null && locPoint != null && !locLoading) {
+            locLoading = true
+            try {
+                val city = resolveCity(locPoint!!)
+                if (!city.isNullOrBlank()) {
+                    locCity = city
+                    LocationCache.remember(locPoint!!, city)
+                }
+            } finally {
+                locLoading = false
+            }
+        }
+    }
+
+    var sheetFrac by remember { mutableFloatStateOf(0.6f) }
 
     Box(Modifier.fillMaxSize()) {
-        ExploreMapBackdrop()
+        ExploreMapBackdrop(
+            locPoint = locPoint,
+            focusSeq = focusSeq,
+            sheetFraction = sheetFrac,
+        )
         ExploreSheet(
             q = q,
             onQChange = { q = it },
@@ -219,6 +272,7 @@ fun ExploreScreen(
             onOpenGenerateAll = { onOpenGenerate(null) },
             onOpenCollectionDetail = onOpenCollectionDetail,
             onOpenUserProfile = onOpenUserProfile,
+            onSheetFractionChange = { sheetFrac = it },
         )
 
         // 顶栏：头像（进我的）/ 设置
@@ -291,19 +345,53 @@ private fun LocateIcon(size: androidx.compose.ui.unit.Dp = 18.dp, color: Color =
     }
 }
 
-/** 全屏原生高德地图（替代 RN WebView 版）。
- * 定位蓝点/水波纹暂时下线：定位精度问题待排查（用户指示），坐标仍用于城市反查。 */
+/** 全屏原生高德地图：定位点落在「面板上方可见区域」正中，避免被底部 sheet 挡住。 */
 @Composable
-private fun ExploreMapBackdrop() {
-    val context = LocalContext.current
-    val mapView = remember { MapView(context).apply { onCreate(Bundle()) } }
-    DisposableEffect(Unit) {
-        mapView.onResume()
-        onDispose {
-            mapView.onPause()
-            mapView.onDestroy()
+private fun ExploreMapBackdrop(
+    locPoint: DeviceLocation?,
+    focusSeq: Int,
+    sheetFraction: Float,
+) {
+    val mapView = rememberAmapMapView()
+    var userMarker by remember { mutableStateOf<Marker?>(null) }
+    var userCircle by remember { mutableStateOf<Circle?>(null) }
+
+    fun centerCamera(aMap: AMap, view: MapView, latLng: LatLng) {
+        view.post {
+            val w = view.width
+            val h = view.height
+            if (w > 0 && h > 0) {
+                val frac = sheetFraction.coerceIn(0.2f, 0.92f)
+                // 面板占底部 frac；定位点放在上方可见区垂直居中
+                val centerY = (h * (1f - frac) / 2f).toInt().coerceIn(h / 10, h / 2)
+                aMap.setPointToCenter(w / 2, centerY)
+            }
+            aMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
         }
     }
+
+    fun drawUserLocation(aMap: AMap, loc: DeviceLocation) {
+        val latLng = LatLng(loc.lat, loc.lng)
+        userMarker?.remove()
+        userCircle?.remove()
+        userMarker = aMap.addMarker(
+            MarkerOptions()
+                .position(latLng)
+                .anchor(0.5f, 0.5f)
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)),
+        )
+        val radius = loc.accuracy.coerceIn(25f, 180f).toDouble()
+        userCircle = aMap.addCircle(
+            CircleOptions()
+                .center(latLng)
+                .radius(radius)
+                .fillColor(0x331A66FF.toInt())
+                .strokeColor(0x991A66FF.toInt())
+                .strokeWidth(1f),
+        )
+        centerCamera(aMap, mapView, latLng)
+    }
+
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = {
@@ -314,12 +402,24 @@ private fun ExploreMapBackdrop() {
                         isMyLocationButtonEnabled = false
                         isCompassEnabled = false
                     }
-                    // 无定位时给个全国视野，避免默认北京造成误解
-                    aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(35.0, 105.0), 4.2f))
+                    if (locPoint == null) {
+                        aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(35.0, 105.0), 4.2f))
+                    }
                 }
             }
         },
     )
+
+    LaunchedEffect(locPoint?.lat, locPoint?.lng, locPoint?.accuracy, focusSeq, sheetFraction) {
+        val loc = locPoint ?: return@LaunchedEffect
+        repeat(8) {
+            mapView.map?.let { aMap ->
+                drawUserLocation(aMap, loc)
+                return@LaunchedEffect
+            }
+            delay(80)
+        }
+    }
 }
 
 // ---------- 可拖拽底部面板 ----------
@@ -344,6 +444,7 @@ private fun ExploreSheet(
     onOpenGenerateAll: () -> Unit,
     onOpenCollectionDetail: (String) -> Unit,
     onOpenUserProfile: (String, String) -> Unit,
+    onSheetFractionChange: (Float) -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val fullH = maxHeight
@@ -358,6 +459,7 @@ private fun ExploreSheet(
             ),
             label = "sheetFrac",
         )
+        SideEffect { onSheetFractionChange(animatedFrac) }
 
         fun snap() {
             frac = SHEET_ANCHORS.minByOrNull { kotlin.math.abs(it - frac) } ?: 0.6f
@@ -650,13 +752,20 @@ private fun DestCard(dest: ExploreDest, color: Color, modifier: Modifier = Modif
             Text(dest.desc, fontSize = 11.sp, color = ZhijingColors.Muted, maxLines = 2)
         }
         Spacer(Modifier.width(8.dp))
-        DestCover(city = dest.name, landmark = dest.landmark)
+        DestCover(city = dest.name, landmark = dest.landmark, coverKey = dest.coverKey)
     }
 }
 
 @Composable
-private fun DestCover(city: String, landmark: String) {
-    val url = rememberPlaceImage(city, landmark, "spots")
+private fun DestCover(city: String, landmark: String, coverKey: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 优先高德 POI 主图；失败再用本地兜底，避免空白
+    val remote = rememberPlaceImage(city, landmark, "spots")
+    val model: Any? = when {
+        remote != null -> remote
+        coverKey.isNotBlank() -> "file:///android_asset/dest_covers/$coverKey.jpg"
+        else -> null
+    }
     Box(
         Modifier
             .size(54.dp)
@@ -664,9 +773,14 @@ private fun DestCover(city: String, landmark: String) {
             .background(ZhijingColors.BrandSoft),
         contentAlignment = Alignment.Center,
     ) {
-        if (url != null) {
+        if (model != null) {
             AsyncImage(
-                model = url,
+                model = coil.request.ImageRequest.Builder(context)
+                    .data(model)
+                    .memoryCacheKey("dest_${city}_$landmark")
+                    .diskCacheKey("dest_${city}_$landmark")
+                    .crossfade(false)
+                    .build(),
                 contentDescription = landmark,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -677,116 +791,4 @@ private fun DestCover(city: String, landmark: String) {
     }
 }
 
-// ---------- 定位：双路竞速（GPS 准但慢/室内无信号，网络快但有基站误差） ----------
-// 策略：新鲜的 lastKnown 直接用；否则 GPS/NETWORK 同时监听，
-//   快且准（≤60m）立即采纳，否则等到 10 秒收最好的结果；超时兜底旧 lastKnown。
-
-private const val FRESH_MAX_ACCURACY_M = 80f
-private const val FRESH_MAX_AGE_MS = 5 * 60 * 1000L
-
-/** 立即采纳的精度阈值：常规 ≤40 米；手动高精度定位 ≤20 米（等到更好的结果而不是抢第一个） */
-private const val GOOD_ACCURACY_M = 40f
-private const val HIGH_ACCURACY_M = 20f
-
-private fun isFreshEnough(loc: Location?): Boolean =
-    loc != null &&
-        loc.accuracy in 0f..FRESH_MAX_ACCURACY_M &&
-        System.currentTimeMillis() - loc.time <= FRESH_MAX_AGE_MS
-
-/**
- * 统一输出 GCJ-02：对齐 RN utils/location.ts 的 locFromPosition——
- * 不管什么来源，一律做 wgs84ToGcj02（RN 在真机上定位准确，即该管线与设备输出匹配）。
- */
-private fun toGcj02(loc: Location): DeviceLocation {
-    val (lat, lng) = wgs84ToGcj02(loc.latitude, loc.longitude)
-    return DeviceLocation(lat, lng, loc.accuracy, loc.provider.orEmpty())
-}
-
-private suspend fun fetchDeviceLocation(context: Context, fresh: Boolean = false, highAccuracy: Boolean = false): DeviceLocation? {
-    val granted = ContextCompat.checkSelfPermission(
-        context, Manifest.permission.ACCESS_COARSE_LOCATION,
-    ) == PackageManager.PERMISSION_GRANTED
-    if (!granted) return null
-
-    val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-
-    // 候选池：新鲜的 lastKnown 可直接采纳；旧的留作兜底（总比没有强）
-    val candidates = runCatching {
-        listOfNotNull(
-            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER),
-            lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER),
-        )
-    }.getOrDefault(emptyList())
-    // 主动点「定位」跳过缓存快读，强制重新实时定位（对齐 RN getFreshDeviceLocation）
-    if (!fresh) {
-        candidates.filter(::isFreshEnough).minByOrNull { it.accuracy }?.let { return toGcj02(it) }
-    }
-    val staleFallback = candidates.minByOrNull { it.accuracy }
-
-    // 双路竞速：GPS 与 NETWORK 都可用则同时监听，先到且够准者胜；
-    // LocationManager 返回 WGS-84 原始坐标，纠偏在上层统一做。
-    val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
-    if (providers.isEmpty()) {
-        return staleFallback?.let { toGcj02(it) }
-    }
-
-    val result = withTimeoutOrNull(if (highAccuracy) 25000 else 12000) {
-        coroutineScope {
-            suspendCancellableCoroutine { cont ->
-                var best: Location? = null
-                val listeners = mutableListOf<LocationListener>()
-                var earlyStop: Job? = null
-
-                fun finish(loc: DeviceLocation) {
-                    earlyStop?.cancel()
-                    listeners.forEach { runCatching { lm.removeUpdates(it) } }
-                    if (cont.isActive) cont.resume(loc)
-                }
-
-                val listener = object : LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        // 快且准：立即采纳（高精度模式阈值更严，宁等勿凑合）
-                        if (location.accuracy <= if (highAccuracy) HIGH_ACCURACY_M else GOOD_ACCURACY_M) {
-                            finish(toGcj02(location))
-                            return
-                        }
-                        // 不够准：记下最好的，等后续更准的或提前结束采用
-                        if (best == null || location.accuracy < best!!.accuracy) best = location
-                    }
-
-                    @Deprecated("Deprecated in Java")
-                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                    override fun onProviderEnabled(provider: String) {}
-                    override fun onProviderDisabled(provider: String) {}
-                }
-                listeners += listener
-
-                cont.invokeOnCancellation {
-                    earlyStop?.cancel()
-                    listeners.forEach { runCatching { lm.removeUpdates(it) } }
-                }
-
-                val ok = providers.map { p ->
-                    runCatching {
-                        @Suppress("DEPRECATION")
-                        lm.requestLocationUpdates(p, 0L, 0f, listener)
-                    }.isSuccess
-                }
-                if (ok.none { it }) {
-                    if (cont.isActive) cont.resume(null)
-                    return@suspendCancellableCoroutine
-                }
-
-                // 高精度模式多等一会儿（GPS 冷启动需要时间）；常规 6 秒还没拿到够准的，就用目前最好的提前结束
-                earlyStop = launch {
-                    delay(if (highAccuracy) 15000 else 6000)
-                    val b = best
-                    if (b != null) finish(toGcj02(b))
-                }
-            }
-        }
-    }
-    // 超时时兜底：旧 lastKnown 也比空手好（蓝点先大致到位，下次定位再修正）
-    return result ?: staleFallback?.let { toGcj02(it) }
-}
+// 定位实现已提取到 data/util/DeviceLocation.kt（fetchDeviceLocation，探索页与添加足迹共用）

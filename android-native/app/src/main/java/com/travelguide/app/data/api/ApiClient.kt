@@ -33,6 +33,12 @@ object ApiClient {
         private set
     lateinit var collections: CollectionApi
         private set
+    lateinit var users: UserApi
+        private set
+    lateinit var vision: VisionApi
+        private set
+    lateinit var app: AppApi
+        private set
 
     fun init() {
         val logging = HttpLoggingInterceptor().apply {
@@ -78,6 +84,9 @@ object ApiClient {
         trips = retrofit.create(TripApi::class.java)
         destinations = retrofit.create(DestinationApi::class.java)
         collections = retrofit.create(CollectionApi::class.java)
+        users = retrofit.create(UserApi::class.java)
+        vision = retrofit.create(VisionApi::class.java)
+        app = retrofit.create(AppApi::class.java)
         chat = Retrofit.Builder()
             .baseUrl(API_BASE)
             .client(chatClient)

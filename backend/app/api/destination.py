@@ -41,7 +41,7 @@ def city_info(
     city: str = Query(..., min_length=1, max_length=128),
     user: User | None = Depends(get_optional_user),
 ):
-    """联网搜索城市特色美食和热门景点，返回结构化 JSON。
+    """联网拉取城市特色美食和热门景点（高德权重排序），返回结构化 JSON。
 
     游客用服务器默认 Key，登录用户用自己的 Key。
     无有效数据时 foods/spots 为空数组。

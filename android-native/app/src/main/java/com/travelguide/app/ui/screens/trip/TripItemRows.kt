@@ -19,11 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.travelguide.app.data.model.Item
 import com.travelguide.app.data.model.TransportToNext
 import com.travelguide.app.ui.components.PlaceCover
+import com.travelguide.app.ui.components.TransportRouteSheet
 import com.travelguide.app.ui.theme.ZhijingColors
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -56,6 +55,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun NormalItemRow(
     item: Item,
+    tripId: String,
     hasNextRoute: Boolean,
     city: String,
     onClick: () -> Unit,
@@ -130,59 +130,19 @@ fun NormalItemRow(
             }
         }
 
-        if (showRoute && item.transportToNext != null) {
+        if (showRoute) {
             Spacer(Modifier.height(8.dp))
-            TransportChip(item.transportToNext)
+            TransportRouteSheet(
+                tripId = tripId,
+                itemId = item.id,
+                fromName = item.name,
+                transport = item.transportToNext ?: ROUTE_STUB,
+            )
         }
     }
 }
 
-/** 到下一站的交通摘要（v1：点击展开步骤对话框） */
-@Composable
-private fun TransportChip(transport: TransportToNext) {
-    var showDetail by remember { mutableStateOf(false) }
-    val modeEmoji = when (transport.mode) {
-        "walking" -> "🚶"
-        "driving" -> "🚗"
-        "transit" -> "🚌"
-        else -> "🚏"
-    }
-    val minutes = Math.max(1, Math.round(transport.durationS / 60.0)).toLong()
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(ZhijingColors.BgSurface)
-            .clickable { if (transport.detail?.isNotEmpty() == true) showDetail = true }
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-    ) {
-        Text(
-            "$modeEmoji ${Math.round(transport.distanceM / 100.0) * 100}m · 约${minutes}分钟",
-            fontSize = 12.sp,
-            color = ZhijingColors.Muted,
-        )
-    }
-
-    if (showDetail) {
-        AlertDialog(
-            onDismissRequest = { showDetail = false },
-            title = { Text("交通方案") },
-            text = {
-                Column {
-                    transport.detail?.forEach { step ->
-                        Text(
-                            step.instruction ?: step.lineName ?: step.type,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showDetail = false }) { Text("知道了") } },
-        )
-    }
-}
+private val ROUTE_STUB = TransportToNext(mode = "transit")
 
 // ---------- 编辑态：紧凑行 + 拖拽排序列表 ----------
 

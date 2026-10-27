@@ -31,8 +31,27 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 天
 
-    # 高德地图
+    # 高德地图 Web 服务（主 Key + 备用 Key，配额用尽时自动切换）
     AMAP_API_KEY: str = ""
+    AMAP_API_KEY_BACKUP: str = ""
+    # 可选：逗号分隔多个 Key，优先级从左到右（设置后覆盖上面两个）
+    AMAP_API_KEYS: str = ""
+
+    @property
+    def amap_api_keys(self) -> List[str]:
+        """去重后的高德 Key 列表（主 → 备 → 其余）。"""
+        raw: list[str] = []
+        if self.AMAP_API_KEYS.strip():
+            raw = [k.strip() for k in self.AMAP_API_KEYS.split(",")]
+        else:
+            raw = [self.AMAP_API_KEY.strip(), self.AMAP_API_KEY_BACKUP.strip()]
+        seen: set[str] = set()
+        out: list[str] = []
+        for k in raw:
+            if k and k not in seen:
+                seen.add(k)
+                out.append(k)
+        return out
 
     # LLM 服务器默认：智谱 glm-4（用户可在设置页覆盖自己的 key/模型）
     # LLM_PROVIDER: zhipu | doubao | mimo | deepseek | openai

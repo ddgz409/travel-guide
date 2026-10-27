@@ -1,9 +1,11 @@
 package com.travelguide.app.ui.screens.trip
 
 import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,36 +40,48 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
+import com.travelguide.app.data.local.TokenStore
 import com.travelguide.app.data.api.ApiClient
 import com.travelguide.app.data.api.AppJson
+import com.travelguide.app.data.api.CitySpotDto
 import com.travelguide.app.data.api.GenerateProgressEvent
 import com.travelguide.app.data.api.SharePayload
 import com.travelguide.app.data.api.ItemUpdatePayload
 import com.travelguide.app.data.api.CityAddPayload
 import com.travelguide.app.data.model.Day
 import com.travelguide.app.data.model.Item
+import com.travelguide.app.data.model.Location
 import com.travelguide.app.data.model.PoiSearchResult
 import com.travelguide.app.data.model.ReorderEntry
 import com.travelguide.app.data.model.ReorderPayload
 import com.travelguide.app.data.model.Trip
-import com.travelguide.app.ui.components.MapHeader
+import com.travelguide.app.ui.components.DraggableBottomSheet
+import com.travelguide.app.ui.components.HeroRouteMap
+import com.travelguide.app.ui.navigation.MapMarkerNav
+import com.travelguide.app.data.util.polylinesFromItems
+import com.travelguide.app.data.util.polylinesFromTripDays
+import com.travelguide.app.data.util.resolveDayAnchor
+import com.travelguide.app.data.util.routeModeForTransport
+import com.travelguide.app.data.util.routeItemMarkers
+import com.travelguide.app.data.util.ShareChoicePayload
+import com.travelguide.app.ui.components.PoiDetailSheet
+import com.travelguide.app.ui.components.ShareChoiceSheet
 import com.travelguide.app.ui.theme.ZhijingColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
-/** 分享页地址（与 RN shareUrl.ts 一致：后端 8000 端口直接渲染） */
-private const val PUBLIC_SHARE_BASE = "http://81.71.159.218:8000"
+import com.travelguide.app.data.util.ShareUrl
 
 /**
  * 阶段 2 完整行程详情（替代阶段 0 PoC）：
@@ -78,7 +93,11 @@ private const val PUBLIC_SHARE_BASE = "http://81.71.159.218:8000"
 fun TripDetailScreen(
     tripId: String,
     onBack: () -> Unit,
-    onOpenChat: () -> Unit,
+    onOpenChat: (String) -> Unit,
+    onOpenSettlement: () -> Unit = {},
+    onOpenPublish: () -> Unit = {},
+    onOpenItemDetail: (String) -> Unit = {},
+    onOpenMapFull: (String?, List<com.travelguide.app.ui.navigation.MapMarkerNav>, List<List<List<Double>>>) -> Unit = { _, _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -91,9 +110,11 @@ fun TripDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var shareMsg by remember { mutableStateOf<String?>(null) }
+    var shareChoicePayload by remember { mutableStateOf<ShareChoicePayload?>(null) }
+    var pickMode by remember { mutableStateOf(false) }
+    var addCoords by remember { mutableStateOf<Location?>(null) }
 
     var detailItemId by remember { mutableStateOf<String?>(null) }
-    var mapHeight by remember { mutableStateOf(220.dp) }
 
     // 生成中视图状态（对齐 RN genMessage/genReadable/genPhase/genStreaming）
     var genMessage by remember { mutableStateOf("正在启动生成…") }
@@ -189,19 +210,47 @@ fun TripDetailScreen(
         }
     }
 
+    fun onExportPdf() {
+        val t = trip ?: return
+        if (TokenStore.getSync() == null) {
+            toast("登录后才能导出 PDF")
+            return
+        }
+        scope.launch {
+            busy = true
+            try {
+                val bytes = withContext(Dispatchers.IO) { ApiClient.trips.exportPdf(t.id).bytes() }
+                val safe = (t.title.ifBlank { "trip" }).replace(Regex("[^\\w\\u4e00-\\u9fff\\-]+"), "_")
+                val file = File(context.cacheDir, "$safe.pdf")
+                file.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(send, "分享 PDF"))
+            } catch (e: Exception) {
+                toast("导出失败：${e.message ?: "请重试"}")
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     fun onShare() {
         val t = trip ?: return
         runBusy {
             val updated = ApiClient.trips.createShare(t.id, SharePayload(mode = "collab"))
             updated.shareToken?.let { token ->
-                val url = "$PUBLIC_SHARE_BASE/share/$token"
+                val url = ShareUrl.forToken(token)
                 clipboard.setText(AnnotatedString(url))
                 shareMsg = url
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "邀请你一起编辑知径攻略「${updated.title}」（需登录）\n$url")
-                }
-                context.startActivity(Intent.createChooser(send, "分享行程"))
+                shareChoicePayload = ShareChoicePayload(
+                    url = url,
+                    title = "邀请你一起编辑知径攻略「${updated.title}」",
+                    message = "邀请你一起编辑知径攻略「${updated.title}」（需登录）\n$url",
+                )
             }
             updated
         }
@@ -214,19 +263,50 @@ fun TripDetailScreen(
 
     fun onRegenDay() {
         val t = trip ?: return
+        if (activeDay == TRIP_OVERVIEW_TAB) {
+            toast("请先切换到具体某一天")
+            return
+        }
         val day = t.days.getOrNull(activeDay) ?: return
-        runBusy { ApiClient.trips.regenerateDay(t.id, day.dayIndex) }
+        val dayIndex = day.dayIndex
+        val beforeKey = day.items.joinToString("|") { "${it.id}:${it.name}:${it.seq}" }
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                ApiClient.trips.regenerateDay(t.id, dayIndex)
+                var last: Trip? = null
+                repeat(40) {
+                    delay(2500)
+                    val latest = ApiClient.trips.get(t.id)
+                    last = latest
+                    if (latest.status == "failed") {
+                        trip = latest
+                        snackBar(latest.errorMsg ?: "重新生成失败")
+                        return@launch
+                    }
+                    val updated = latest.days.find { it.dayIndex == dayIndex }
+                    val key = updated?.items?.joinToString("|") { "${it.id}:${it.name}:${it.seq}" } ?: ""
+                    if (key.isNotEmpty() && key != beforeKey) {
+                        trip = latest
+                        toast("当天行程已更新")
+                        return@launch
+                    }
+                }
+                last?.let { trip = it }
+                snackBar("重新生成耗时较长，请稍后再看或重试")
+            } catch (e: Exception) {
+                snackBar(e.message ?: "重新生成失败")
+            } finally {
+                busy = false
+            }
+        }
     }
 
     fun onReplanDay() {
         val t = trip ?: return
         val day = t.days.getOrNull(activeDay) ?: return
         runBusy { ApiClient.trips.replanDay(t.id, day.id) }
-    }
-
-    fun onToggleSelected(item: Item, selected: Boolean) {
-        val t = trip ?: return
-        runBusy { ApiClient.trips.updateItem(t.id, item.id, ItemUpdatePayload(selected = selected)) }
     }
 
     fun doDeleteItem(item: Item) {
@@ -248,8 +328,15 @@ fun TripDetailScreen(
 
     fun onAddPoi(poi: PoiSearchResult, type: String) {
         val t = trip ?: return
-        val day = t.days.getOrNull(activeDay) ?: return
+        val dayIdx = if (activeDay == TRIP_OVERVIEW_TAB) 0 else activeDay
+        val day = t.days.getOrNull(dayIdx) ?: return
+        if (poi.location == null) {
+            Toast.makeText(context, "该地点缺少坐标，无法添加", Toast.LENGTH_SHORT).show()
+            return
+        }
         addSpotVisible = false
+        addCoords = null
+        pickMode = false
         runBusy {
             ApiClient.trips.addItem(
                 t.id,
@@ -260,19 +347,6 @@ fun TripDetailScreen(
                     location = poi.location,
                     type = type,
                 ),
-            )
-        }
-    }
-
-    fun onAddCustom(name: String, type: String) {
-        val t = trip ?: return
-        val day = t.days.getOrNull(activeDay) ?: return
-        addSpotVisible = false
-        runBusy {
-            ApiClient.trips.addItem(
-                t.id,
-                day.id,
-                com.travelguide.app.data.model.ItemCreate(name = name, type = type),
             )
         }
     }
@@ -323,9 +397,15 @@ fun TripDetailScreen(
                 else -> {
                     val t = trip!!
                     val days = t.days
-                    val currentDay = days.getOrNull(activeDay) ?: days.firstOrNull()
+                    val isOverview = activeDay == TRIP_OVERVIEW_TAB
+                    val currentDay = if (isOverview) null else days.getOrNull(activeDay) ?: days.firstOrNull()
+                    val overviewItems = remember(days) {
+                        days.flatMap { it.items }.filter { it.selected && it.location != null }
+                    }
                     val dayItems = currentDay?.items.orEmpty()
-                    val selectedCount = dayItems.count { it.selected }
+                    val mapItems = if (isOverview) overviewItems else dayItems
+                    val overviewPolylines = remember(days) { polylinesFromTripDays(days) }
+                    val selectedCount = if (isOverview) overviewItems.size else dayItems.count { it.selected }
                     val canEdit = t.canEdit ?: true
                     val routeOptions = t.preferences.routeOptions.orEmpty()
                     val selectedRouteId = t.preferences.selectedRouteId ?: routeOptions.firstOrNull()?.id
@@ -333,216 +413,307 @@ fun TripDetailScreen(
                         days.flatMap { it.items }.firstOrNull { it.id == id }
                     }
 
-                    Column(Modifier.fillMaxSize()) {
-                        // 顶栏
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(ZhijingColors.Card)
-                                    .clickable(onClick = onBack)
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            ) {
-                                Text("‹", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(t.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    "${t.destination} · ${t.startDate} → ${t.endDate} · ${t.travelers}人" +
-                                        (t.budgetTotal?.let { " · 约 ¥${Math.round(it)}" } ?: ""),
-                                    fontSize = 12.sp,
-                                    color = ZhijingColors.Muted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                    val allTripItems = days.flatMap { it.items }
+                    val chipsTop = if (days.isNotEmpty()) 108.dp else 72.dp
+                    var sheetFraction by remember { mutableFloatStateOf(0.52f) }
+
+                    Box(Modifier.fillMaxSize()) {
+                        HeroRouteMap(
+                            tripId = t.id,
+                            dayId = if (isOverview) null else currentDay?.id,
+                            items = mapItems,
+                            categoryItems = allTripItems,
+                            destination = t.destination,
+                            routeMode = routeModeForTransport(t.preferences.transport),
+                            pickMode = pickMode,
+                            polylineOverride = if (isOverview) overviewPolylines else null,
+                            bottomSheetFraction = sheetFraction,
+                            onMapPick = { lng, lat ->
+                                pickMode = false
+                                addCoords = Location(lng = lng, lat = lat)
+                                addSpotVisible = true
+                            },
+                            fill = true,
+                            chipsTopPadding = chipsTop,
+                            onMarkerClick = { id -> if (id != null && !pickMode) detailItemId = id },
+                            onExpand = {
+                                val markers = routeItemMarkers(mapItems)
+                                onOpenMapFull(
+                                    if (isOverview) "全程总览" else "第 ${currentDay?.dayIndex ?: activeDay + 1} 天路线",
+                                    markers.map { MapMarkerNav(it.lng, it.lat, it.name) },
+                                    if (isOverview) overviewPolylines
+                                    else polylinesFromItems(dayItems.filter { it.selected && it.location != null }),
                                 )
-                            }
-                            if (canEdit) {
+                            },
+                        )
+
+                        Column(
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Box(
                                     Modifier
+                                        .shadow(4.dp, RoundedCornerShape(12.dp))
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(ZhijingColors.BrandSoft)
-                                        .clickable(enabled = !busy) { citySheetVisible = true }
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        .background(Color.White.copy(alpha = 0.96f))
+                                        .clickable(onClick = onBack)
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
                                 ) {
-                                    Text("＋ 城市", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ZhijingColors.BrandHot)
+                                    Text("‹", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                 }
-                            }
-                        }
-
-                        // 天切换
-                        if (days.size > 1) {
-                            DayTabs(days, activeDay) { i -> activeDay = i }
-                        }
-
-                        // 地图（高度可调：拖动手柄上拉压缩、下拉放大，复刻 RN 版抽屉交互）
-                        MapHeader(
-                            items = dayItems,
-                            height = mapHeight,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                        val density = LocalDensity.current
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(26.dp)
-                                .pointerInput(Unit) {
-                                    detectVerticalDragGestures { _, dragAmount ->
-                                        mapHeight = (mapHeight + (dragAmount / density.density).dp)
-                                            .coerceIn(96.dp, 520.dp)
-                                    }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(
-                                Modifier
-                                    .width(44.dp)
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(ZhijingColors.Line),
-                            )
-                        }
-
-                        if (editing && canEdit) {
-                            // 编辑态：紧凑列表独占滚动区
-                            Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)) {
-                                DayHeadActions(
-                                    busy = busy,
-                                    editing = true,
-                                    onRegenDay = ::onRegenDay,
-                                    onReplanDay = ::onReplanDay,
-                                    onAddSpot = { addSpotVisible = true },
-                                    onToggleEdit = { editing = false },
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                                Text("点击卡片 ✕ 删除 · 长按右侧 ≡ 手柄拖动排序", fontSize = 12.sp, color = ZhijingColors.Muted)
-                                Spacer(Modifier.height(8.dp))
-                                EditableDayList(
-                                    items = dayItems,
-                                    dayId = currentDay?.id,
-                                    busy = busy,
-                                    externalItems = dayItems,
-                                    onRemove = { deleteItem = it },
-                                    onCommitOrder = { ordered -> onCommitReorder(currentDay!!, ordered) },
-                                )
-                            }
-                        } else {
-                            // 常规模式：全部内容一个滚动容器
-                            LazyColumn(
-                                Modifier.fillMaxWidth().weight(1f),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                item { ShareBanner(shareMsg, busy, ::onShare) }
-                                item {
-                                    ActionsRow(
-                                        shareToken = t.shareToken,
-                                        busy = busy,
-                                        onAskAi = onOpenChat,
-                                        onOpenSharePage = { token ->
-                                            try {
-                                                context.startActivity(
-                                                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse("$PUBLIC_SHARE_BASE/share/$token")),
-                                                )
-                                            } catch (_: Exception) {
-                                            }
-                                        },
-                                        onTodoFeature = { name -> toast("「$name」将在后续版本上线") },
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(t.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        "${t.destination} · ${t.startDate} → ${t.endDate} · ${t.travelers}人" +
+                                            (t.budgetTotal?.let { " · 约 ¥${kotlin.math.round(it)}" } ?: ""),
+                                        fontSize = 12.sp,
+                                        color = ZhijingColors.Muted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                if (routeOptions.isNotEmpty()) {
-                                    item {
-                                        RouteOptionsBar(routeOptions, selectedRouteId, enabled = canEdit && !busy, onSelect = ::onSelectRoute)
-                                    }
-                                }
                                 if (canEdit) {
+                                    Box(
+                                        Modifier
+                                            .shadow(4.dp, RoundedCornerShape(12.dp))
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.White.copy(alpha = 0.96f))
+                                            .clickable(enabled = !busy) { citySheetVisible = true }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    ) {
+                                        Text("＋ 城市", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ZhijingColors.BrandHot)
+                                    }
+                                }
+                            }
+                            if (days.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                DayTabs(
+                                    days = days,
+                                    activeDay = activeDay,
+                                    onSelect = { i ->
+                                        activeDay = i
+                                        pickMode = false
+                                        if (i == TRIP_OVERVIEW_TAB) editing = false
+                                    },
+                                )
+                            }
+                        }
+
+                        if (pickMode) {
+                            Row(
+                                Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = chipsTop + 4.dp, start = 16.dp, end = 16.dp)
+                                    .fillMaxWidth()
+                                    .shadow(4.dp, RoundedCornerShape(14.dp))
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.White.copy(alpha = 0.96f))
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "👇 在地图上点击要添加的位置",
+                                    Modifier.weight(1f),
+                                    fontSize = 13.sp,
+                                    color = ZhijingColors.Ink,
+                                )
+                                Text(
+                                    "取消",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ZhijingColors.BrandHot,
+                                    modifier = Modifier.clickable { pickMode = false },
+                                )
+                            }
+                        }
+
+                        DraggableBottomSheet(
+                            modifier = Modifier.fillMaxSize(),
+                            initialFraction = 0.52f,
+                            onFractionChange = { sheetFraction = it },
+                        ) {
+                            if (editing && canEdit && !isOverview) {
+                                Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                    DayHeadActions(
+                                        busy = busy,
+                                        editing = true,
+                                        onRegenDay = ::onRegenDay,
+                                        onReplanDay = ::onReplanDay,
+                                        onAddSpot = { pickMode = true },
+                                        onToggleEdit = { editing = false },
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                                    Text("点击卡片 ✕ 删除 · 长按右侧 ≡ 手柄拖动排序", fontSize = 12.sp, color = ZhijingColors.Muted)
+                                    Spacer(Modifier.height(8.dp))
+                                    EditableDayList(
+                                        items = dayItems,
+                                        dayId = currentDay?.id,
+                                        busy = busy,
+                                        externalItems = dayItems,
+                                        onRemove = { deleteItem = it },
+                                        onCommitOrder = { ordered -> onCommitReorder(currentDay!!, ordered) },
+                                    )
+                                }
+                            } else {
+                                LazyColumn(
+                                    Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    item { ShareBanner(shareMsg, busy, ::onShare) }
                                     item {
-                                        DayHeadActions(
+                                        ActionsRow(
+                                            shareToken = t.shareToken,
                                             busy = busy,
-                                            editing = false,
-                                            onRegenDay = ::onRegenDay,
-                                            onReplanDay = ::onReplanDay,
-                                            onAddSpot = { addSpotVisible = true },
-                                            onToggleEdit = { editing = true },
-                                        )
-                                    }
-                                }
-                                item {
-                                    Column {
-                                        Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                                        if (canEdit) {
-                                            Text("点「编辑」可删除或长按 ≡ 手柄拖动调整顺序", fontSize = 12.sp, color = ZhijingColors.Muted)
-                                        }
-                                    }
-                                }
-                                // 常规行（含未选中项，灰显）
-                                dayItems.forEachIndexed { idx, item ->
-                                    item(key = item.id) {
-                                        val hasNextRoute = dayItems.drop(idx + 1).any { it.selected && it.location != null }
-                                        NormalItemRow(
-                                            item = item,
-                                            hasNextRoute = hasNextRoute,
-                                            city = t.destination,
-                                            onClick = {
-                                                if (item.type == "attraction" || item.type == "meal" || item.type == "hotel") {
-                                                    detailItemId = item.id
-                                                } else {
-                                                    detailItemId = item.id
+                                            onAskAi = { onOpenChat("") },
+                                            onOpenSharePage = { token ->
+                                                try {
+                                                    context.startActivity(
+                                                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ShareUrl.forToken(token))),
+                                                    )
+                                                } catch (_: Exception) {
                                                 }
                                             },
+                                            onExportPdf = ::onExportPdf,
+                                            onPublish = onOpenPublish,
+                                            onSettlement = onOpenSettlement,
                                         )
                                     }
-                                }
-                                item {
-                                    val budgetByType = linkedMapOf<String, Double>()
-                                    days.forEach { d ->
-                                        d.items.forEach { it2 ->
-                                            if (it2.selected) {
-                                                budgetByType[it2.type] = (budgetByType[it2.type] ?: 0.0) + (it2.cost ?: 0.0)
+                                    if (isOverview) {
+                                        item {
+                                            TripOverviewSection(
+                                                trip = t,
+                                                days = days,
+                                                onSelectDay = { dayIndex ->
+                                                    activeDay = dayIndex
+                                                    pickMode = false
+                                                },
+                                                onItemClick = { detailItemId = it },
+                                            )
+                                        }
+                                    } else {
+                                        if (routeOptions.isNotEmpty()) {
+                                            item {
+                                                RouteOptionsBar(routeOptions, selectedRouteId, enabled = canEdit && !busy, onSelect = ::onSelectRoute)
+                                            }
+                                        }
+                                        if (canEdit) {
+                                            item {
+                                                DayHeadActions(
+                                                    busy = busy,
+                                                    editing = false,
+                                                    onRegenDay = ::onRegenDay,
+                                                    onReplanDay = ::onReplanDay,
+                                                    onAddSpot = { pickMode = true },
+                                                    onToggleEdit = { editing = true },
+                                                )
+                                            }
+                                        }
+                                        item {
+                                            Column {
+                                                Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                                                if (canEdit) {
+                                                    Text("点「编辑」可删除或长按 ≡ 手柄拖动调整顺序", fontSize = 12.sp, color = ZhijingColors.Muted)
+                                                }
+                                            }
+                                        }
+                                        dayItems.forEachIndexed { idx, item ->
+                                            item(key = item.id) {
+                                                val hasNextRoute = dayItems.drop(idx + 1).any { it.selected && it.location != null }
+                                                NormalItemRow(
+                                                    item = item,
+                                                    tripId = t.id,
+                                                    hasNextRoute = hasNextRoute,
+                                                    city = t.destination,
+                                                    onClick = { detailItemId = item.id },
+                                                )
                                             }
                                         }
                                     }
-                                    val totalCost = budgetByType.values.sum()
-                                    val totalBudget = t.budgetTotal ?: (totalCost * t.travelers)
-                                    BudgetSection(budgetByType, t.travelers, totalBudget)
+                                    item {
+                                        val budgetByType = linkedMapOf<String, Double>()
+                                        days.forEach { d ->
+                                            d.items.forEach { it2 ->
+                                                if (it2.selected) {
+                                                    budgetByType[it2.type] = (budgetByType[it2.type] ?: 0.0) + (it2.cost ?: 0.0)
+                                                }
+                                            }
+                                        }
+                                        val totalCost = budgetByType.values.sum()
+                                        val totalBudget = t.budgetTotal ?: (totalCost * t.travelers)
+                                        BudgetSection(budgetByType, t.travelers, totalBudget)
+                                    }
+                                    item {
+                                        HotelNotesSection(t.destination, t.hotelFetchStatus, t.hotelCandidates)
+                                    }
+                                    if (!t.collaborators.isNullOrEmpty()) {
+                                        item { CollaboratorsRow(t.collaborators) }
+                                    }
+                                    item { Spacer(Modifier.height(12.dp)) }
                                 }
-                                item {
-                                    HotelNotesSection(t.destination, t.hotelFetchStatus, t.hotelCandidates)
-                                }
-                                if (!t.collaborators.isNullOrEmpty()) {
-                                    item { CollaboratorsRow(t.collaborators) }
-                                }
-                                item { Spacer(Modifier.height(12.dp)) }
                             }
                         }
                     }
 
                     // ---------- 弹层 ----------
                     detailItem?.let { di ->
-                        ItemDetailSheet(
-                            item = di,
+                        // 与城市攻略共用同一套详情底单（对齐 RN TripDetail 复用 PoiDetailSheet）
+                        PoiDetailSheet(
+                            item = CitySpotDto(
+                                name = di.name,
+                                desc = di.description?.trim().orEmpty(),
+                                lng = di.location?.lng,
+                                lat = di.location?.lat,
+                                address = di.location?.address,
+                            ),
+                            category = when (di.type) {
+                                "meal" -> "foods"
+                                "hotel" -> "hotels"
+                                else -> "spots"
+                            },
                             city = t.destination,
-                            onToggleSelected = { sel -> onToggleSelected(di, sel) },
-                            onDismiss = { detailItemId = null },
+                            onClose = { detailItemId = null },
+                            onFeedback = { msg ->
+                                detailItemId = null
+                                onOpenChat(msg)
+                            },
+                            tripId = t.id,
+                            tripItemId = di.id,
+                            tripItemSelected = di.selected,
+                            tripAlternatives = di.alternatives,
+                            tripCanEdit = canEdit,
+                            onTripUpdated = { updated -> trip = updated },
+                            onSwapped = { detailItemId = null },
                         )
                     }
                     if (addSpotVisible) {
                         AddSpotSheet(
-                            city = t.destination,
+                            dayCity = currentDay?.city,
+                            tripDestination = t.destination,
                             dayLabel = currentDay?.let { "第 ${it.dayIndex} 天${it.city?.let { c -> " · $c" } ?: ""}" } ?: "",
                             busy = busy,
-                            // 锚点：优先当天第一个有坐标的点，其次全行程（多城路线名下逆地理定位城市）
-                            anchor = currentDay?.items?.firstNotNullOfOrNull { it.location }
-                                ?: t.days.flatMap { it.items }.firstNotNullOfOrNull { it.location },
+                            anchor = resolveDayAnchor(currentDay, addCoords),
+                            pickedLocation = addCoords,
                             onSelectPoi = ::onAddPoi,
-                            onAddCustom = ::onAddCustom,
-                            onDismiss = { addSpotVisible = false },
+                            onDismiss = {
+                                addSpotVisible = false
+                                addCoords = null
+                                pickMode = false
+                            },
                         )
                     }
+                    ShareChoiceSheet(
+                        payload = shareChoicePayload,
+                        onClose = { shareChoicePayload = null },
+                    )
                     if (citySheetVisible) {
                         AddCitySheet(
                             trip = t,

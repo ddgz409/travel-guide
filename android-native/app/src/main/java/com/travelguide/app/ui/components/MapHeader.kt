@@ -1,21 +1,18 @@
 package com.travelguide.app.ui.components
 
-import android.os.Bundle
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
-import com.amap.api.maps.MapView
+import com.travelguide.app.ui.components.rememberAmapMapView
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.LatLngBounds
 import com.amap.api.maps.model.MarkerOptions
@@ -30,19 +27,9 @@ import com.travelguide.app.data.model.Item
  */
 @Composable
 fun MapHeader(items: List<Item>, modifier: Modifier = Modifier, height: Dp = 200.dp) {
-    val context = LocalContext.current
     val pois = remember(items) { items.filter { it.location != null } }
 
-    val mapView = remember {
-        MapView(context).apply { onCreate(Bundle()) }
-    }
-    DisposableEffect(Unit) {
-        mapView.onResume()
-        onDispose {
-            mapView.onPause()
-            mapView.onDestroy()
-        }
-    }
+    val mapView = rememberAmapMapView()
 
     AndroidView(
         modifier = modifier

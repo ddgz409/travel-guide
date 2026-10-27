@@ -70,11 +70,15 @@ fun typeCover(type: String): TypeCover = when (type) {
 
 // ---------- 天数切换条 ----------
 
+/** activeDay = [TRIP_OVERVIEW_TAB] 表示全程总览 */
+const val TRIP_OVERVIEW_TAB = -1
+
 @Composable
 fun DayTabs(
     days: List<com.travelguide.app.data.model.Day>,
     activeDay: Int,
     onSelect: (Int) -> Unit,
+    showOverview: Boolean = true,
 ) {
     Row(
         Modifier
@@ -98,6 +102,139 @@ fun DayTabs(
                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (on) Color.White else ZhijingColors.Ink,
                 )
+            }
+        }
+        if (showOverview) {
+            val on = activeDay == TRIP_OVERVIEW_TAB
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (on) ZhijingColors.BrandHot else ZhijingColors.Card)
+                    .clickable { onSelect(TRIP_OVERVIEW_TAB) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "总览",
+                    fontSize = 13.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (on) Color.White else ZhijingColors.Ink,
+                )
+            }
+        }
+    }
+}
+
+/** 全程总览：统计 + 按天分组的精选地点 */
+@Composable
+fun TripOverviewSection(
+    trip: com.travelguide.app.data.model.Trip,
+    days: List<com.travelguide.app.data.model.Day>,
+    onSelectDay: (Int) -> Unit,
+    onItemClick: (String) -> Unit,
+) {
+    val allSelected = days.flatMap { it.items }.filter { it.selected }
+    val cities = days.mapNotNull { it.city?.takeIf { c -> c.isNotBlank() } }.distinct()
+    val spotCount = allSelected.count { it.type != "transport" }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(ZhijingColors.BrandSoft)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Column {
+                Text("全程总览", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ZhijingColors.Ink)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    buildString {
+                        append("共 ${days.size} 天")
+                        append(" · ${spotCount} 个地点")
+                        if (cities.isNotEmpty()) append(" · ${cities.joinToString("、")}")
+                        append(" · ${trip.travelers} 人")
+                    },
+                    fontSize = 13.sp,
+                    color = ZhijingColors.Muted,
+                    lineHeight = 20.sp,
+                )
+            }
+        }
+
+        days.forEachIndexed { dayIndex, day ->
+            val daySpots = day.items.filter { it.selected && it.type != "transport" }
+            if (daySpots.isEmpty()) return@forEachIndexed
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(ZhijingColors.Card)
+                    .clickable { onSelectDay(dayIndex) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Day ${day.dayIndex}${day.city?.let { " · $it" } ?: ""}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = ZhijingColors.Ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${daySpots.size} 处 ›",
+                        fontSize = 12.sp,
+                        color = ZhijingColors.BrandHot,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Text(
+                    day.date.takeLast(5),
+                    fontSize = 11.sp,
+                    color = ZhijingColors.Muted,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                )
+                daySpots.take(4).forEach { item ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onItemClick(item.id) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val badge = typeBadge(item.type)
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(badge.bg)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                TYPE_LABEL[item.type] ?: item.type,
+                                fontSize = 10.sp,
+                                color = badge.fg,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            item.name,
+                            fontSize = 13.sp,
+                            color = ZhijingColors.Ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                if (daySpots.size > 4) {
+                    Text(
+                        "还有 ${daySpots.size - 4} 处，点击查看当天 ›",
+                        fontSize = 11.sp,
+                        color = ZhijingColors.Muted,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
     }
@@ -264,7 +401,9 @@ fun ActionsRow(
     busy: Boolean,
     onAskAi: () -> Unit,
     onOpenSharePage: (String) -> Unit,
-    onTodoFeature: (String) -> Unit,
+    onExportPdf: () -> Unit = {},
+    onPublish: () -> Unit = {},
+    onSettlement: () -> Unit = {},
 ) {
     Row(
         Modifier
@@ -273,9 +412,9 @@ fun ActionsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ActionChip("问 AI 助手", hot = true) { onAskAi() }
-        ActionChip("导出 PDF", enabled = !busy) { onTodoFeature("导出 PDF") }
-        ActionChip("一键发帖") { onTodoFeature("一键发帖") }
-        ActionChip("AA 分账") { onTodoFeature("AA 分账") }
+        ActionChip("导出 PDF", enabled = !busy) { onExportPdf() }
+        ActionChip("一键发帖") { onPublish() }
+        ActionChip("AA 分账") { onSettlement() }
         if (shareToken != null) {
             ActionChip("打开分享页") { onOpenSharePage(shareToken) }
         }

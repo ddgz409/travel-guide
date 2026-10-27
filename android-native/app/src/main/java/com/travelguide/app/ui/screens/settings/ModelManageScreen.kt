@@ -64,11 +64,21 @@ fun ModelManageScreen(onBack: () -> Unit) {
 
     val scope = rememberCoroutineScope()
 
-    suspend fun refresh() {
+    suspend fun loadLocal() {
         currentLlm = LlmStore.loadLocalLlm()
         providers = LlmStore.loadCustomProviders()
     }
-    LaunchedEffect(Unit) { refresh() }
+
+    suspend fun switchAndSync(switch: suspend () -> Unit) {
+        switch()
+        LlmStore.pushToCloudIfLoggedIn(LlmStore.loadLocalLlm())
+        loadLocal()
+    }
+
+    LaunchedEffect(Unit) {
+        LlmStore.syncFromCloudIfLoggedIn()
+        loadLocal()
+    }
 
     val isDefaultActive = currentLlm.apiKey.isBlank() ||
         (currentLlm.provider == LlmStore.DEFAULT.provider && currentLlm.model == LlmStore.DEFAULT.model)
@@ -110,10 +120,7 @@ fun ModelManageScreen(onBack: () -> Unit) {
                 sub = "服务器默认（无需 API Key）",
                 trailing = if (!isDefaultActive) "切换" else null,
                 onClick = {
-                    scope.launch {
-                        LlmStore.switchToDefault()
-                        refresh()
-                    }
+                    scope.launch { switchAndSync { LlmStore.switchToDefault() } }
                 },
             )
 
@@ -128,10 +135,7 @@ fun ModelManageScreen(onBack: () -> Unit) {
                         sub = p.baseUrl,
                         trailing = if (isActive) "当前" else "切换",
                         onClick = {
-                            scope.launch {
-                                LlmStore.switchToProvider(p)
-                                refresh()
-                            }
+                            scope.launch { switchAndSync { LlmStore.switchToProvider(p) } }
                         },
                         onLongClick = { pendingDelete = p },
                     )
@@ -199,12 +203,11 @@ fun ModelManageScreen(onBack: () -> Unit) {
                                         model = m,
                                     )
                                     LlmStore.saveCustomProvider(p)
-                                    LlmStore.switchToProvider(p)
+                                    switchAndSync { LlmStore.switchToProvider(p) }
                                     name = ""
                                     baseUrl = ""
                                     apiKey = ""
                                     model = ""
-                                    refresh()
                                     formError = "已保存并切换：${p.name}"
                                 } finally {
                                     saving = false
@@ -235,8 +238,11 @@ fun ModelManageScreen(onBack: () -> Unit) {
                         pendingDelete = null
                         scope.launch {
                             LlmStore.deleteCustomProvider(p.provider)
-                            if (currentLlm.provider == p.provider) LlmStore.switchToDefault()
-                            refresh()
+                            if (currentLlm.provider == p.provider) {
+                                switchAndSync { LlmStore.switchToDefault() }
+                            } else {
+                                loadLocal()
+                            }
                         }
                     },
                 ) { Text("删除", color = ZhijingColors.Danger) }

@@ -1,6 +1,7 @@
-"""热门必去景点库 —— 注入候选池，避免高德周边搜到过多打卡点子点。
+"""热门必去景点 —— 优先高德综合权重 POI，本地精选作兜底。
 
-优先用本地精选库；未收录城市走高德风景名胜检索，并做内存+磁盘缓存。
+扫街榜/状元榜暂无公开 Web API；通过 amap search_poi_ranked(weight)
+拉取风景名胜/餐饮 Top N，供城市详情、生成页推荐与攻略候选池使用。
 """
 
 from __future__ import annotations
@@ -248,91 +249,37 @@ def fetch_landmarks_via_amap(
     *,
     limit: int = 12,
 ) -> list[str]:
-    """用高德拉取某城风景名胜/热门景点名称。
-
-    县级市（如德令哈）在高德检索里按城市名过滤常查不到，
-    因此先地理编码拿 adcode/中心点：优先用 adcode 检索，
-    仍为空则退化为绕市中心周边搜索。
-    """
-    from app.services.amap_client import AmapError, POI_TYPES
+    """用高德综合权重拉取某城 Top 风景名胜名称（近似热门榜）。"""
+    from app.services.amap_client import POI_TYPES
 
     city = _normalize_city_key(city) or city.strip()
     if not city:
         return []
 
-    scored: list[tuple[float, str]] = []
-    seen: set[str] = set()
-
-    def _collect(pois) -> None:
-        for p in pois:
-            name = (p.name or "").strip()
-            if not name or is_micro_poi(name):
-                continue
-            if len(name) > 24:
-                continue
-            key = name.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            scored.append((float(p.rating or 0), name))
-
-    # 解析 adcode / 中心点（县级市关键）
-    adcode = ""
-    center = ""
     try:
-        g = amap.geocode(city)
-        if g is not None:
-            adcode = (g.adcode or "").strip()[:6]
-            center = (g.location or "").strip()
-    except AmapError as e:
-        logger.warning("高德地理编码失败 %s: %s", city, e)
+        pois = amap.search_poi_ranked(
+            city,
+            POI_TYPES["attraction"],
+            limit=limit * 2,
+        )
+    except Exception as e:
+        logger.warning("高德权重景点检索失败 %s: %s", city, e)
+        return []
 
-    city_variants = [c for c in (city, adcode) if c]
-    attraction_type = POI_TYPES.get("attraction")
-    queries: list[tuple[str, str | None]] = [
-        ("风景名胜", attraction_type),
-        ("旅游景点", attraction_type),
-        (f"{city}必去", None),
-    ]
-    for cv in city_variants:
-        for keyword, poi_type in queries:
-            try:
-                pois = amap.search_poi_by_keyword(
-                    keyword,
-                    city=cv,
-                    limit=20,
-                    city_limit=True,
-                    poi_type=poi_type,
-                )
-            except AmapError as e:
-                logger.warning("高德景点检索失败 %s/%s: %s", cv, keyword, e)
-                continue
-            _collect(pois)
-            if len(scored) >= limit * 2:
-                break
-        if len(scored) >= limit * 2:
+    names: list[str] = []
+    seen: set[str] = set()
+    for p in pois:
+        name = (p.name or "").strip()
+        if not name or is_micro_poi(name) or len(name) > 24:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+        if len(names) >= limit:
             break
-
-    # 兜底：绕市中心周边搜风景名胜（radius 覆盖县级市全域）
-    if len(scored) < limit and center and "," in center:
-        for kw in ("风景名胜", "景点"):
-            try:
-                pois = amap.search_poi_around(
-                    center,
-                    keywords=kw,
-                    poi_type=attraction_type,
-                    radius=40000,
-                    limit=25,
-                )
-            except AmapError as e:
-                logger.warning("高德周边景点检索失败 %s/%s: %s", city, kw, e)
-                continue
-            _collect(pois)
-            if len(scored) >= limit * 2:
-                break
-
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    return [n for _, n in scored[:limit]]
+    return names
 
 
 def resolve_landmarks(
@@ -342,27 +289,34 @@ def resolve_landmarks(
     limit: int = 12,
     allow_amap: bool = True,
 ) -> list[str]:
-    """本地精选优先；没有则高德检索（带缓存）。"""
-    local = landmarks_for(destination)
-    if local:
-        return local[:limit]
-
-    city = _normalize_city_key(destination)
+    """高德关键词 Top 景点优先；不足时本地精选兜底（带缓存）。"""
+    city = _normalize_city_key(destination) or (destination or "").strip()
     if not city:
         return []
 
+    cache_key = f"v2|{city}"
     _load_disk_cache()
-    cached = _mem_cache.get(city)
+    cached = _mem_cache.get(cache_key)
     if cached:
         return list(cached)[:limit]
 
-    if not allow_amap or amap is None:
-        return []
+    names: list[str] = []
+    if allow_amap and amap is not None:
+        names = fetch_landmarks_via_amap(city, amap, limit=limit)
 
-    names = fetch_landmarks_via_amap(city, amap, limit=limit)
+    if len(names) < max(4, limit // 2):
+        local = landmarks_for(destination)
+        seen = {n.lower() for n in names}
+        for n in local:
+            if n.lower() not in seen:
+                names.append(n)
+                seen.add(n.lower())
+            if len(names) >= limit:
+                break
+
     if names:
         with _cache_lock:
-            _mem_cache[city] = names
+            _mem_cache[cache_key] = names
         _save_disk_cache()
-        logger.info("高德补全热门景点 %s: %s", city, "、".join(names[:6]))
+        logger.info("热门景点 %s: %s", city, "、".join(names[:6]))
     return names[:limit]

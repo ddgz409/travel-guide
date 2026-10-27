@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.travelguide.app.data.api.ApiClient
 import com.travelguide.app.data.model.Trip
-import com.travelguide.app.ui.components.MapHeader
+import com.travelguide.app.data.util.routeModeForTransport
+import com.travelguide.app.ui.components.DayMap
+import com.travelguide.app.ui.navigation.MapMarkerNav
 import com.travelguide.app.ui.screens.trip.CollaboratorsRow
 import com.travelguide.app.ui.screens.trip.SLOT_LABEL
 import com.travelguide.app.ui.screens.trip.TYPE_LABEL
@@ -69,6 +71,8 @@ fun ShareScreen(
     initialToken: String?,
     onBack: () -> Unit,
     onOpenTrip: (String) -> Unit,
+    onNeedLogin: () -> Unit = {},
+    onOpenMapFull: (String?, List<MapMarkerNav>, List<List<List<Double>>>) -> Unit = { _, _, _ -> },
 ) {
     var token by remember { mutableStateOf(initialToken) }
     var trip by remember { mutableStateOf<Trip?>(null) }
@@ -110,6 +114,11 @@ fun ShareScreen(
 
     fun onJoin() {
         val tk = token ?: return
+        if (com.travelguide.app.data.local.TokenStore.getSync() == null) {
+            com.travelguide.app.data.local.AuthReturnHolder.shareToken = tk
+            onNeedLogin()
+            return
+        }
         scope.launch {
             busy = true
             try {
@@ -159,6 +168,7 @@ fun ShareScreen(
                     busy = busy,
                     onDaySelect = { dayIdx = it },
                     onJoin = ::onJoin,
+                    onOpenMapFull = onOpenMapFull,
                 )
             }
         }
@@ -221,6 +231,7 @@ private fun ShareTripContent(
     busy: Boolean,
     onDaySelect: (Int) -> Unit,
     onJoin: () -> Unit,
+    onOpenMapFull: (String?, List<MapMarkerNav>, List<List<List<Double>>>) -> Unit,
 ) {
     val collab = trip.shareMode == "collab"
     val days = trip.days
@@ -334,12 +345,20 @@ private fun ShareTripContent(
             Spacer(Modifier.height(8.dp))
         }
 
-        // 地图
+        // 地图（带路线折线，对齐 RN DayMap）
         if (items.any { it.location != null }) {
             Spacer(Modifier.height(4.dp))
             Text("地图", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ZhijingColors.Ink)
             Spacer(Modifier.height(8.dp))
-            MapHeader(items = items, height = 220.dp)
+            DayMap(
+                tripId = trip.id,
+                dayId = day?.id,
+                items = day?.items.orEmpty(),
+                routeMode = routeModeForTransport(trip.preferences.transport),
+                height = 220.dp,
+                title = "第 ${day?.dayIndex ?: dayIdx + 1} 天路线",
+                onExpand = onOpenMapFull,
+            )
         }
         Spacer(Modifier.height(24.dp))
     }

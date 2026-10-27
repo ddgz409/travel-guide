@@ -1,11 +1,10 @@
 package com.travelguide.app.data.model
 
 /**
- * 城市联想词表：与后端 destination_validator.py 的 COMMON_CITIES + 环线站点别名保持同步。
- * 用于「管理城市」输入联想，纯本地过滤、无需联网。
+ * 热门城市快捷入口（探索页、管理城市空态），非完整词表。
  */
 val CITY_CATALOG: List<String> = listOf(
-    // COMMON_CITIES（与后端一致）
+    // 常见旅游城市
     "北京", "上海", "广州", "深圳", "杭州", "成都", "西安", "南京", "苏州", "重庆",
     "武汉", "长沙", "厦门", "青岛", "大连", "三亚", "丽江", "拉萨", "昆明", "贵阳",
     "哈尔滨", "沈阳", "天津", "济南", "郑州", "合肥", "南昌", "福州", "南宁", "海口",
@@ -14,7 +13,7 @@ val CITY_CATALOG: List<String> = listOf(
     "澳门", "香港", "台北", "乌鲁木齐", "呼和浩特", "银川", "西宁", "兰州", "太原",
     "石家庄", "长春", "顺德", "佛山", "东莞", "惠州", "绍兴", "嘉兴", "湖州", "泉州",
     "漳州", "湛江", "北海", "腾冲", "景德镇", "婺源", "莫干山", "千岛湖", "普陀山",
-    // 环线站点（RING_ROUTES 展开城市 + _ROUTE_CITY_ALIASES 别名）
+    // 环线站点（不在地级 CITIES 表内的别名）
     "茶卡", "大柴旦", "张掖", "祁连", "夏河", "扎尕那", "郎木寺", "玛曲", "若尔盖",
     "康定", "新都桥", "稻城", "亚丁", "塔尔寺", "青海湖", "嘉峪关", "吐鲁番", "喀纳斯",
     "禾木", "赛里木湖", "伊宁", "泸沽湖", "额济纳", "文昌", "琼海", "万宁", "陵水",
@@ -22,13 +21,48 @@ val CITY_CATALOG: List<String> = listOf(
     "白沙", "昌江", "德令哈",
 )
 
-/** 按前缀优先、包含次之过滤联想词（去重、限量） */
+private val CITY_NAME_SET: Set<String> by lazy { CITIES.map { it.name }.toSet() }
+
+/** 热门表中有、但地级 CITIES 里没有的环线/景区别名 */
+private val EXTRA_CITY_ALIASES: List<String> by lazy {
+    CITY_CATALOG.filter { it !in CITY_NAME_SET }
+}
+
+/**
+ * 城市联想：全国地级行政区（CITIES）+ 环线别名，对齐 RN citiesGrouped / matchCityCandidates。
+ */
 fun matchCities(query: String, limit: Int = 12): List<String> {
     val q = query.trim()
     if (q.isEmpty()) return emptyList()
-    val prefix = CITY_CATALOG.filter { it.startsWith(q) }
-    val contains = CITY_CATALOG.filter { !it.startsWith(q) && it.contains(q) }
-    return (prefix + contains).distinct().take(limit)
+    val qLower = q.lowercase()
+
+    data class Scored(val name: String, val score: Int)
+    val scored = mutableListOf<Scored>()
+
+    for (entry in CITIES) {
+        val name = entry.name
+        when {
+            name == q -> scored.add(Scored(name, 0))
+            name.startsWith(q) -> scored.add(Scored(name, 1 + name.length))
+            q.length >= 2 && name.contains(q) -> scored.add(Scored(name, 10 + name.length))
+            entry.letter.equals(q, ignoreCase = true) -> scored.add(Scored(name, 15))
+            name.lowercase().startsWith(qLower) -> scored.add(Scored(name, 8 + name.length))
+        }
+    }
+
+    for (alias in EXTRA_CITY_ALIASES) {
+        when {
+            alias == q -> scored.add(Scored(alias, 0))
+            alias.startsWith(q) -> scored.add(Scored(alias, 2 + alias.length))
+            q.length >= 2 && alias.contains(q) -> scored.add(Scored(alias, 11 + alias.length))
+        }
+    }
+
+    return scored
+        .sortedWith(compareBy({ it.score }, { it.name.length }))
+        .map { it.name }
+        .distinct()
+        .take(limit)
 }
 
 /** 目的地热门景点本地精选（对齐 RN data/landmarks.ts，完整列表由后端高德补全） */

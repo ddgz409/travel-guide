@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="splash_bg">#4D90BB</color>
+
     <style name="Theme.Zhijing" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">#FAFDFF</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#FAFDFF</item>
         <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="Theme.Zhijing.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="postSplashScreenTheme">@style/Theme.Zhijing</item>
     </style>
 </resources>
