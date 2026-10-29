@@ -1,7 +1,11 @@
 package com.travelguide.app.ui.screens.trip
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.core.content.FileProvider
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.shadow
@@ -54,6 +59,7 @@ import com.travelguide.app.data.api.CitySpotDto
 import com.travelguide.app.data.api.GenerateProgressEvent
 import com.travelguide.app.data.api.SharePayload
 import com.travelguide.app.data.api.ItemUpdatePayload
+import com.travelguide.app.data.api.TripUpdatePayload
 import com.travelguide.app.data.api.CityAddPayload
 import com.travelguide.app.data.model.Day
 import com.travelguide.app.data.model.Item
@@ -126,6 +132,15 @@ fun TripDetailScreen(
     var deleteItem by remember { mutableStateOf<Item?>(null) }
     var deleteCity by remember { mutableStateOf<String?>(null) }
 
+    // 标题长按改名：充能 → 飞行 → 编辑
+    var renamePhase by remember { mutableStateOf(RenamePhase.None) }
+    var renameDraft by remember { mutableStateOf("") }
+    var renameSaving by remember { mutableStateOf(false) }
+    var renameExiting by remember { mutableStateOf(false) }
+    var titleBounds by remember { mutableStateOf<Rect?>(null) }
+    var titleHandedOff by remember { mutableStateOf(false) }
+    val titleCharge = remember { Animatable(0f) }
+
     suspend fun load(): Trip? = try {
         val data = ApiClient.trips.get(tripId)
         trip = data
@@ -191,8 +206,64 @@ fun TripDetailScreen(
         }
     }
 
+    // 长按标题后：双环顺时针充注 2s，充满切到飞行过渡
+    LaunchedEffect(renamePhase) {
+        if (renamePhase == RenamePhase.Charging) {
+            titleCharge.snapTo(0f)
+            titleCharge.animateTo(1f, tween(2000, easing = LinearEasing))
+            renamePhase = RenamePhase.Flying
+        }
+    }
+
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     fun snackBar(msg: String) = scope.launch { snackbar.showSnackbar(msg) }
+
+    fun startTitleRename() {
+        val t = trip ?: return
+        if (renamePhase != RenamePhase.None) return
+        renameDraft = t.title
+        titleHandedOff = false
+        renamePhase = RenamePhase.Charging
+    }
+
+    fun closeTitleRename() {
+        if (renameExiting) return
+        renameExiting = true
+    }
+
+    fun confirmTitleRename() {
+        val t = trip ?: return
+        val next = renameDraft.trim()
+        if (next.isEmpty()) {
+            toast("标题不能为空")
+            return
+        }
+        if (next == t.title) {
+            closeTitleRename()
+            return
+        }
+        if (renameSaving) return
+        renameSaving = true
+        scope.launch {
+            try {
+                trip = ApiClient.trips.update(t.id, TripUpdatePayload(title = next))
+                toast("标题已更新")
+                closeTitleRename()
+            } catch (e: Exception) {
+                snackBar(e.message ?: "标题保存失败")
+            } finally {
+                renameSaving = false
+            }
+        }
+    }
+
+    BackHandler(enabled = renamePhase != RenamePhase.None) {
+        if (renamePhase == RenamePhase.Charging) {
+            renamePhase = RenamePhase.None
+        } else {
+            closeTitleRename()
+        }
+    }
 
     // ---------- 操作（全部对齐 RN TripDetailScreen 的 handler） ----------
 
@@ -469,7 +540,15 @@ fun TripDetailScreen(
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(t.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    TripTitlePill(
+                                        title = t.title,
+                                        charging = renamePhase == RenamePhase.Charging,
+                                        hidden = titleHandedOff,
+                                        chargeProgress = { titleCharge.value },
+                                        onBounds = { titleBounds = it },
+                                        onLongPress = { if (canEdit) startTitleRename() },
+                                    )
+                                    Spacer(Modifier.height(3.dp))
                                     Text(
                                         "${t.destination} · ${t.startDate} → ${t.endDate} · ${t.travelers}人" +
                                             (t.budgetTotal?.let { " · 约 ¥${kotlin.math.round(it)}" } ?: ""),
@@ -750,6 +829,25 @@ fun TripDetailScreen(
                             },
                             dismissButton = {
                                 TextButton(onClick = { deleteCity = null }) { Text("取消") }
+                            },
+                        )
+                    }
+
+                    if (renamePhase == RenamePhase.Flying || renamePhase == RenamePhase.Editing) {
+                        TripRenameOverlay(
+                            titleRect = titleBounds,
+                            draftTitle = renameDraft,
+                            saving = renameSaving,
+                            exiting = renameExiting,
+                            onDraftChange = { renameDraft = it },
+                            onConfirm = { confirmTitleRename() },
+                            onCancelRequest = { closeTitleRename() },
+                            onReady = { titleHandedOff = true },
+                            onLanded = { renamePhase = RenamePhase.Editing },
+                            onClosed = {
+                                renamePhase = RenamePhase.None
+                                renameExiting = false
+                                titleHandedOff = false
                             },
                         )
                     }
