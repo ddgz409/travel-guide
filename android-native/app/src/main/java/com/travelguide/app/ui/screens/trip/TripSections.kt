@@ -331,6 +331,27 @@ fun EditFab(
     }
 }
 
+/** 左下角浮动「问 AI 助手」入口 */
+@Composable
+fun AskAiFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .shadow(8.dp, CircleShape)
+            .clip(CircleShape)
+            .background(ZhijingColors.BrandHot)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 52.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "问 AI 助手",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+    }
+}
+
 @Composable
 private fun HeadLink(text: String, enabled: Boolean, onClick: () -> Unit) {
     Text(
@@ -382,7 +403,6 @@ fun ShareBanner(shareMsg: String?, busy: Boolean, onShare: () -> Unit) {
 fun ActionsRow(
     shareToken: String?,
     busy: Boolean,
-    onAskAi: () -> Unit,
     onOpenSharePage: (String) -> Unit,
     onExportPdf: () -> Unit = {},
     onPublish: () -> Unit = {},
@@ -394,7 +414,6 @@ fun ActionsRow(
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ActionChip("问 AI 助手", hot = true) { onAskAi() }
         ActionChip("导出 PDF", enabled = !busy) { onExportPdf() }
         ActionChip("一键发帖") { onPublish() }
         ActionChip("AA 分账") { onSettlement() }
@@ -405,11 +424,11 @@ fun ActionsRow(
 }
 
 @Composable
-private fun ActionChip(text: String, hot: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+private fun ActionChip(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(if (hot) ZhijingColors.BrandSoft else ZhijingColors.BgSurface)
+            .background(ZhijingColors.BgSurface)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp),
     ) {
@@ -417,7 +436,7 @@ private fun ActionChip(text: String, hot: Boolean = false, enabled: Boolean = tr
             text,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = if (hot) ZhijingColors.BrandHot else ZhijingColors.Ink,
+            color = ZhijingColors.Ink,
         )
     }
 }

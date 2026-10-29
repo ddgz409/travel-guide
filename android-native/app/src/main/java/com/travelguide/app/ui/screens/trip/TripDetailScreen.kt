@@ -652,7 +652,6 @@ fun TripDetailScreen(
                                         ActionsRow(
                                             shareToken = t.shareToken,
                                             busy = busy,
-                                            onAskAi = { onOpenChat("") },
                                             onOpenSharePage = { token ->
                                                 try {
                                                     context.startActivity(
@@ -738,6 +737,17 @@ fun TripDetailScreen(
                                     item { Spacer(Modifier.height(12.dp)) }
                                 }
                             }
+                        }
+
+                        // 左下角「问 AI 助手」浮动入口（原操作行中的胶囊按钮）
+                        if (!editing) {
+                            AskAiFab(
+                                onClick = { onOpenChat("") },
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .navigationBarsPadding()
+                                    .padding(start = 16.dp, bottom = 22.dp),
+                            )
                         }
 
                         // 右下角「编辑」浮动入口（合并原「添加地点 / 编辑」两个按钮）
