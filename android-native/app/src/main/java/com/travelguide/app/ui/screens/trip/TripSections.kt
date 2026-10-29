@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -283,6 +284,7 @@ fun RouteOptionsBar(
 
 // ---------- 当天操作头 ----------
 
+/** 当天操作：重新生成 / AI 重新规划；编辑态追加「＋ 添加地点」 */
 @Composable
 fun DayHeadActions(
     busy: Boolean,
@@ -290,30 +292,42 @@ fun DayHeadActions(
     onRegenDay: () -> Unit,
     onReplanDay: () -> Unit,
     onAddSpot: () -> Unit,
-    onToggleEdit: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            HeadLink(if (busy) "处理中…" else "重新生成当天", enabled = !busy, onClick = onRegenDay)
-            HeadLink("AI 重新规划", enabled = !busy, onClick = onReplanDay)
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            HeadButton("＋ 添加地点", enabled = !busy, onClick = onAddSpot, modifier = Modifier.weight(1f))
-            HeadButton(
-                text = if (editing) "完成" else "编辑",
-                enabled = !busy,
-                onClick = onToggleEdit,
-                active = editing,
-                modifier = Modifier.weight(1f),
-            )
-        }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        HeadLink(if (busy) "处理中…" else "重新生成当天", enabled = !busy, onClick = onRegenDay)
+        HeadLink("AI 重新规划", enabled = !busy, onClick = onReplanDay)
+        if (editing) HeadLink("＋ 添加地点", enabled = !busy, onClick = onAddSpot)
+    }
+}
+
+/** 右下角浮动「编辑」入口：非编辑态切换进编辑，编辑态显示「完成」 */
+@Composable
+fun EditFab(
+    editing: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .shadow(6.dp, CircleShape)
+            .clip(CircleShape)
+            .background(if (editing) ZhijingColors.BrandHot else ZhijingColors.BrandSoft)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (editing) "完成" else "编辑",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (editing) Color.White else ZhijingColors.BrandHot,
+        )
     }
 }
 
@@ -329,37 +343,6 @@ private fun HeadLink(text: String, enabled: Boolean, onClick: () -> Unit) {
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 4.dp, horizontal = 2.dp),
     )
-}
-
-@Composable
-private fun HeadButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    active: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                when {
-                    active -> ZhijingColors.BrandHot
-                    enabled -> ZhijingColors.BrandSoft
-                    else -> ZhijingColors.Line
-                },
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (active) Color.White else ZhijingColors.BrandHot,
-        )
-    }
 }
 
 // ---------- 分享横幅 + 操作按钮行 ----------

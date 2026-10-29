@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -626,7 +627,6 @@ fun TripDetailScreen(
                                         onRegenDay = ::onRegenDay,
                                         onReplanDay = ::onReplanDay,
                                         onAddSpot = { pickMode = true },
-                                        onToggleEdit = { editing = false },
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
@@ -644,7 +644,7 @@ fun TripDetailScreen(
                             } else {
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 84.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     item { ShareBanner(shareMsg, busy, ::onShare) }
@@ -692,7 +692,6 @@ fun TripDetailScreen(
                                                     onRegenDay = ::onRegenDay,
                                                     onReplanDay = ::onReplanDay,
                                                     onAddSpot = { pickMode = true },
-                                                    onToggleEdit = { editing = true },
                                                 )
                                             }
                                         }
@@ -700,7 +699,7 @@ fun TripDetailScreen(
                                             Column {
                                                 Text("精选行程 · $selectedCount 个安排", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                                                 if (canEdit) {
-                                                    Text("点「编辑」可删除或长按 ≡ 手柄拖动调整顺序", fontSize = 12.sp, color = ZhijingColors.Muted)
+                                                    Text("点右下角「编辑」可删除或长按 ≡ 手柄拖动调整顺序", fontSize = 12.sp, color = ZhijingColors.Muted)
                                                 }
                                             }
                                         }
@@ -739,6 +738,22 @@ fun TripDetailScreen(
                                     item { Spacer(Modifier.height(12.dp)) }
                                 }
                             }
+                        }
+
+                        // 右下角「编辑」浮动入口（合并原「添加地点 / 编辑」两个按钮）
+                        if (canEdit && !isOverview) {
+                            EditFab(
+                                editing = editing,
+                                enabled = !busy,
+                                onClick = {
+                                    editing = !editing
+                                    pickMode = false
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .navigationBarsPadding()
+                                    .padding(end = 16.dp, bottom = 22.dp),
+                            )
                         }
                     }
 
