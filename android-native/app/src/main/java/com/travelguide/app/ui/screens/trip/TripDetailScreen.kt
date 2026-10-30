@@ -8,6 +8,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
@@ -116,7 +117,7 @@ fun TripDetailScreen(
     var activeDay by remember { mutableStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var shareMsg by remember { mutableStateOf<String?>(null) }
+    var moreOpen by remember { mutableStateOf(false) }
     var shareChoicePayload by remember { mutableStateOf<ShareChoicePayload?>(null) }
     var pickMode by remember { mutableStateOf(false) }
     var addCoords by remember { mutableStateOf<Location?>(null) }
@@ -266,6 +267,8 @@ fun TripDetailScreen(
         }
     }
 
+    BackHandler(enabled = moreOpen) { moreOpen = false }
+
     // ---------- 操作（全部对齐 RN TripDetailScreen 的 handler） ----------
 
     fun runBusy(action: suspend () -> Trip?) {
@@ -317,7 +320,6 @@ fun TripDetailScreen(
             updated.shareToken?.let { token ->
                 val url = ShareUrl.forToken(token)
                 clipboard.setText(AnnotatedString(url))
-                shareMsg = url
                 shareChoicePayload = ShareChoicePayload(
                     url = url,
                     title = "邀请你一起编辑知径攻略「${updated.title}」",
@@ -580,6 +582,7 @@ fun TripDetailScreen(
                                     onSelect = { i ->
                                         activeDay = i
                                         pickMode = false
+                                        moreOpen = false
                                         if (i == TRIP_OVERVIEW_TAB) editing = false
                                     },
                                 )
@@ -647,24 +650,6 @@ fun TripDetailScreen(
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 84.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    item { ShareBanner(shareMsg, busy, ::onShare) }
-                                    item {
-                                        ActionsRow(
-                                            shareToken = t.shareToken,
-                                            busy = busy,
-                                            onOpenSharePage = { token ->
-                                                try {
-                                                    context.startActivity(
-                                                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ShareUrl.forToken(token))),
-                                                    )
-                                                } catch (_: Exception) {
-                                                }
-                                            },
-                                            onExportPdf = ::onExportPdf,
-                                            onPublish = onOpenPublish,
-                                            onSettlement = onOpenSettlement,
-                                        )
-                                    }
                                     if (isOverview) {
                                         item {
                                             TripOverviewSection(
@@ -750,19 +735,76 @@ fun TripDetailScreen(
                             )
                         }
 
-                        // 右下角「编辑」浮动入口（合并原「添加地点 / 编辑」两个按钮）
-                        if (canEdit && !isOverview) {
-                            EditFab(
-                                editing = editing,
-                                enabled = !busy,
-                                onClick = {
-                                    editing = !editing
-                                    pickMode = false
+                        // 右下角浮动入口：左侧「编辑」，右侧「⋮」更多（分享/导出/分账/发帖）
+                        val moreItems = buildList {
+                            add("分享链接" to ::onShare)
+                            add("导出 PDF" to ::onExportPdf)
+                            add("AA 分账" to onOpenSettlement)
+                            add("一键发帖" to onOpenPublish)
+                            t.shareToken?.let { token ->
+                                add(
+                                    "打开分享页" to {
+                                        try {
+                                            context.startActivity(
+                                                Intent(
+                                                    Intent.ACTION_VIEW,
+                                                    android.net.Uri.parse(ShareUrl.forToken(token)),
+                                                ),
+                                            )
+                                        } catch (_: Exception) {
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        Row(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .navigationBarsPadding()
+                                .padding(end = 16.dp, bottom = 22.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (canEdit && !isOverview) {
+                                EditFab(
+                                    editing = editing,
+                                    enabled = !busy,
+                                    onClick = {
+                                        editing = !editing
+                                        moreOpen = false
+                                        pickMode = false
+                                    },
+                                )
+                            }
+                            if (!editing) {
+                                MoreFab(onClick = { moreOpen = true })
+                            }
+                        }
+
+                        // 更多菜单：透明遮罩关闭 + 玻璃面板浮在圆钮正上方
+                        if (moreOpen && !editing) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { moreOpen = false },
+                            )
+                            MoreMenuPanel(
+                                items = moreItems.map { (label, action) ->
+                                    label to {
+                                        moreOpen = false
+                                        action()
+                                    }
                                 },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .navigationBarsPadding()
-                                    .padding(end = 16.dp, bottom = 22.dp),
+                                    .padding(
+                                        end = 16.dp,
+                                        bottom = 22.dp + FabHeight + 10.dp,
+                                    ),
                             )
                         }
                     }

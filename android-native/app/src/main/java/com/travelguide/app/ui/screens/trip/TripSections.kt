@@ -2,6 +2,7 @@ package com.travelguide.app.ui.screens.trip
 
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -305,6 +308,9 @@ fun DayHeadActions(
     }
 }
 
+/** 底部浮动按钮统一高度，保证「AI / 编辑 / 更多」三者顶部与底部对齐 */
+val FabHeight = 56.dp
+
 /** 右下角浮动「编辑」入口：非编辑态切换进编辑，编辑态显示「完成」 */
 @Composable
 fun EditFab(
@@ -315,11 +321,12 @@ fun EditFab(
 ) {
     Box(
         modifier
+            .height(FabHeight)
             .shadow(6.dp, CircleShape)
             .clip(CircleShape)
             .background(if (editing) ZhijingColors.BrandHot else ZhijingColors.BrandSoft)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -336,11 +343,12 @@ fun EditFab(
 fun AskAiFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
+            .height(FabHeight)
             .shadow(8.dp, CircleShape)
             .clip(CircleShape)
             .background(ZhijingColors.BrandHot)
             .clickable(onClick = onClick)
-            .padding(horizontal = 52.dp, vertical = 14.dp),
+            .padding(horizontal = 52.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -366,78 +374,66 @@ private fun HeadLink(text: String, enabled: Boolean, onClick: () -> Unit) {
     )
 }
 
-// ---------- 分享横幅 + 操作按钮行 ----------
+// ---------- 右下角「更多」圆钮（分享 / 导出 / 分账 / 发帖） ----------
 
+/** 右下角浮动圆钮：三个竖点，点开由页面渲染玻璃面板 */
 @Composable
-fun ShareBanner(shareMsg: String?, busy: Boolean, onShare: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(ZhijingColors.BrandSoft)
-            .clickable(enabled = !busy, onClick = onShare)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("分享链接", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                shareMsg ?: "邀请好友一起编辑这条行程 · 复制链接",
-                fontSize = 12.sp,
-                color = ZhijingColors.Muted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (busy) "…" else "分享",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = ZhijingColors.BrandHot,
-        )
-    }
-}
-
-@Composable
-fun ActionsRow(
-    shareToken: String?,
-    busy: Boolean,
-    onOpenSharePage: (String) -> Unit,
-    onExportPdf: () -> Unit = {},
-    onPublish: () -> Unit = {},
-    onSettlement: () -> Unit = {},
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ActionChip("导出 PDF", enabled = !busy) { onExportPdf() }
-        ActionChip("一键发帖") { onPublish() }
-        ActionChip("AA 分账") { onSettlement() }
-        if (shareToken != null) {
-            ActionChip("打开分享页") { onOpenSharePage(shareToken) }
-        }
-    }
-}
-
-@Composable
-private fun ActionChip(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+fun MoreFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(ZhijingColors.BgSurface)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+        modifier
+            .size(FabHeight)
+            .shadow(6.dp, CircleShape)
+            .clip(CircleShape)
+            .background(ZhijingColors.BrandSoft)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = ZhijingColors.Ink,
-        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            repeat(3) {
+                Box(
+                    Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(ZhijingColors.BrandHot),
+                )
+            }
+        }
+    }
+}
+
+/** 「更多」玻璃面板：白→淡蓝的半透明磨砂渐变 + 白色描边 + 22dp 圆角 */
+@Composable
+fun MoreMenuPanel(items: List<Pair<String, () -> Unit>>, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        modifier
+            .width(188.dp)
+            .shadow(18.dp, shape)
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.95f),
+                        Color(0xFFDFF2FE).copy(alpha = 0.88f),
+                    ),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.9f), shape)
+            .padding(vertical = 6.dp),
+    ) {
+        items.forEach { (label, action) ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = action)
+                    .padding(horizontal = 20.dp, vertical = 13.dp),
+            ) {
+                Text(label, fontSize = 14.sp, color = ZhijingColors.Ink)
+            }
+        }
     }
 }
 
